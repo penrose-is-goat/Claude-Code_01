@@ -12,7 +12,7 @@ A comprehensive, self-contained portfolio analysis website inspired by [Portfoli
 
 | Feature | Description |
 |---------|-------------|
-| **Ticker Search** | Search any stock/ETF with autocomplete via Yahoo Finance |
+| **Ticker Search** | Search any stock/ETF with autocomplete. 28 tickers in demo mode, unlimited with free API key |
 | **Live Prices** | Real-time price, daily change, market state indicator |
 | **Key Metrics** | Beta, P/E, Forward P/E, Delta, Gamma, Alpha, Market Cap, Volume, Yield |
 | **Price Charts** | Interactive Chart.js charts with 9 time ranges (1M, 3M, 6M, YTD, 1Y, 3Y, 5Y, 10Y, MAX) |
@@ -49,13 +49,33 @@ A comprehensive, self-contained portfolio analysis website inspired by [Portfoli
 
 ---
 
+## Two Modes: Demo & Live
+
+The app works in **two modes**:
+
+| Mode | How | What You Get |
+|------|-----|-------------|
+| **Demo Mode** | Just open `index.html` - no setup needed | 28 popular tickers (AAPL, NVDA, SPY, etc.) with simulated prices and real fundamental metrics |
+| **Live Mode** | Add a free API key in Settings | Any ticker worldwide, real-time prices from Financial Modeling Prep (250 requests/day free) |
+
+### Getting a Free API Key (for Live Mode)
+
+1. Go to [financialmodelingprep.com/developer/docs](https://financialmodelingprep.com/developer/docs/)
+2. Click **"Get Free API Key"** (no credit card needed)
+3. Copy your key, open the app, go to **Settings** tab
+4. Paste it and click **Save Key**
+
+---
+
 ## Quick Start
 
 ### Option 1: Just Open the File (Simplest)
 
 1. Download `index.html` from this repository
 2. Double-click to open in any modern browser (Chrome, Firefox, Edge, Safari)
-3. Start searching for tickers in the search bar
+3. Start searching for tickers in the search bar (try AAPL, NVDA, SPY, TSLA, etc.)
+4. The app starts in **Demo Mode** with sample data for 28 popular tickers
+5. For live data on any ticker, add a free API key in the **Settings** tab
 
 That's it. No server, no installation, no dependencies to install.
 
@@ -224,8 +244,8 @@ bash build.sh
 | **Vanilla JavaScript** | No frameworks - runs anywhere, zero build step |
 | **[sql.js](https://github.com/sql-js/sql.js/)** | SQLite compiled to WebAssembly, runs in-browser |
 | **[Chart.js](https://www.chartjs.org/)** | Interactive, responsive charts |
-| **Yahoo Finance API** | Live stock quotes, historical prices, fundamentals |
-| **CORS Proxies** | `corsproxy.io` and `allorigins.win` for browser API access |
+| **[Financial Modeling Prep](https://financialmodelingprep.com/)** | Live stock quotes, historical prices, fundamentals (free API key) |
+| **Built-in Sample Data** | 28 popular tickers with realistic simulated data for demo mode |
 | **localStorage** | Automatic database persistence between sessions |
 
 ---
@@ -285,10 +305,13 @@ Type any stock symbol (e.g., `AAPL`, `MSFT`, `SPY`) in the search bar and press 
 
 | Issue | Solution |
 |-------|----------|
-| "All API proxies failed" | CORS proxies may be temporarily down. Wait a moment and retry. |
+| "Ticker not found" in demo mode | Only 28 popular tickers work without an API key. Add a free key in Settings for any ticker. |
+| "Invalid API key" | Double-check your FMP key in Settings. Get a new one at [financialmodelingprep.com](https://financialmodelingprep.com/developer/docs/) |
+| "Rate limited" | Free FMP tier allows 250 requests/day. Wait until tomorrow or upgrade your key. |
 | Charts not loading | Ensure you have internet access (Chart.js and sql.js load from CDN) |
 | Data looks stale | Click Settings > Clear API Cache, then re-search the ticker |
 | Database lost on refresh | The app auto-saves to localStorage. If localStorage is full, export the DB file first. |
+| DEMO DATA badge showing | This means you're in demo mode. Add a free API key for real-time data. |
 | Slow on mobile | Large backtests with 10Y of data can be heavy. Use shorter time ranges on mobile. |
 
 ---

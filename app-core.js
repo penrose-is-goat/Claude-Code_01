@@ -5,24 +5,19 @@ const PA = window.PA = {};
 
 /* ---- Config ---- */
 PA.Config = {
-  PROXIES: [
-    url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-    url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
-  ],
-  YF_BASE: 'https://query1.finance.yahoo.com',
-  YF_BASE2: 'https://query2.finance.yahoo.com',
+  FMP_BASE: 'https://financialmodelingprep.com/api/v3',
+  FMP_KEY: '', // Set via settings
   RISK_FREE: 0.05,
   COLORS: ['#4f8ff7','#34d399','#f87171','#fbbf24','#a78bfa','#fb923c','#22d3ee','#f472b6','#84cc16','#e879f9'],
-  RANGES: {
-    '1M':  { range:'1mo',  interval:'1d' },
-    '3M':  { range:'3mo',  interval:'1d' },
-    '6M':  { range:'6mo',  interval:'1d' },
-    'YTD': { range:'ytd',  interval:'1d' },
-    '1Y':  { range:'1y',   interval:'1d' },
-    '3Y':  { range:'3y',   interval:'1wk' },
-    '5Y':  { range:'5y',   interval:'1wk' },
-    '10Y': { range:'10y',  interval:'1mo' },
-    'MAX': { range:'max',  interval:'1mo' }
+  RANGE_DAYS: { '1M':30, '3M':90, '6M':180, 'YTD':0, '1Y':365, '3Y':1095, '5Y':1825, '10Y':3650, 'MAX':9999 },
+  getApiKey() {
+    if (this.FMP_KEY) return this.FMP_KEY;
+    try { const s = localStorage.getItem('pa_fmp_key'); if (s) { this.FMP_KEY = s; return s; } } catch(e){}
+    return '';
+  },
+  setApiKey(key) {
+    this.FMP_KEY = key;
+    try { localStorage.setItem('pa_fmp_key', key); } catch(e){}
   }
 };
 
@@ -149,25 +144,10 @@ PA.DB = {
   }
 };
 
-/* ---- API (Yahoo Finance via CORS proxy) ---- */
+/* ---- API (Financial Modeling Prep + Sample Data Fallback) ---- */
 PA.API = {
   cache: new Map(),
-  CACHE_TTL: 60000,
-  async fetchWithProxy(url) {
-    for (const mkProxy of PA.Config.PROXIES) {
-      try {
-        const proxyUrl = mkProxy(url);
-        const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
-        if (resp.ok) { return await resp.json(); }
-      } catch(e) { continue; }
-    }
-    // Try direct as last resort
-    try {
-      const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
-      if (resp.ok) return await resp.json();
-    } catch(e) {}
-    throw new Error('All API proxies failed for: ' + url);
-  },
+  CACHE_TTL: 120000,
   getCached(key) {
     const item = this.cache.get(key);
     if (item && Date.now() - item.ts < this.CACHE_TTL) return item.data;
@@ -175,71 +155,293 @@ PA.API = {
   },
   setCache(key, data) { this.cache.set(key, { data, ts: Date.now() }); },
 
+  hasApiKey() { return !!PA.Config.getApiKey(); },
+
+  async fmpFetch(endpoint) {
+    const key = PA.Config.getApiKey();
+    if (!key) throw new Error('NO_API_KEY');
+    const url = `${PA.Config.FMP_BASE}${endpoint}${endpoint.includes('?') ? '&' : '?'}apikey=${key}`;
+    const resp = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (resp.status === 401 || resp.status === 403) throw new Error('INVALID_API_KEY');
+    if (resp.status === 429) throw new Error('RATE_LIMITED');
+    if (!resp.ok) throw new Error(`API error: ${resp.status}`);
+    return await resp.json();
+  },
+
+  // Get quote for one or more tickers (FMP returns array)
   async getQuote(tickers) {
-    const key = 'quote:' + tickers.join(',');
+    const tickerStr = tickers.join(',');
+    const key = 'quote:' + tickerStr;
     let cached = this.getCached(key);
     if (cached) return cached;
-    const url = `${PA.Config.YF_BASE}/v7/finance/quote?symbols=${tickers.join(',')}`;
-    const data = await this.fetchWithProxy(url);
-    const result = data?.quoteResponse?.result || [];
-    this.setCache(key, result);
-    return result;
+    if (!this.hasApiKey()) return tickers.map(t => PA.SampleData.getQuote(t)).filter(Boolean);
+    try {
+      const data = await this.fmpFetch(`/quote/${tickerStr}`);
+      const result = Array.isArray(data) ? data : [];
+      // Normalize FMP fields to our standard format
+      const normalized = result.map(q => ({
+        symbol: q.symbol,
+        shortName: q.name,
+        longName: q.name,
+        exchange: q.exchange,
+        currency: 'USD',
+        marketState: q.marketCap ? 'REGULAR' : 'CLOSED',
+        regularMarketPrice: q.price,
+        regularMarketChange: q.change,
+        regularMarketChangePercent: q.changesPercentage,
+        regularMarketVolume: q.volume,
+        regularMarketOpen: q.open,
+        regularMarketDayHigh: q.dayHigh,
+        regularMarketDayLow: q.dayLow,
+        regularMarketPreviousClose: q.previousClose,
+        marketCap: q.marketCap,
+        beta: q.beta || null,
+        trailingPE: q.pe,
+        forwardPE: q.forwardPE || null,
+        epsTrailingTwelveMonths: q.eps,
+        epsForward: null,
+        trailingAnnualDividendYield: q.dividendYield ? q.dividendYield / 100 : null,
+        fiftyTwoWeekHigh: q.yearHigh,
+        fiftyTwoWeekLow: q.yearLow,
+        fiftyDayAverage: q.priceAvg50,
+        twoHundredDayAverage: q.priceAvg200,
+        sharesOutstanding: q.sharesOutstanding,
+        bookValue: null,
+        priceToBook: null,
+        averageDailyVolume3Month: q.avgVolume
+      }));
+      this.setCache(key, normalized);
+      return normalized;
+    } catch(e) {
+      if (e.message === 'NO_API_KEY') return tickers.map(t => PA.SampleData.getQuote(t)).filter(Boolean);
+      throw e;
+    }
   },
 
-  async getQuoteSummary(ticker) {
-    const key = 'summary:' + ticker;
+  // Get detailed profile/stats
+  async getProfile(ticker) {
+    const key = 'profile:' + ticker;
     let cached = this.getCached(key);
     if (cached) return cached;
-    const modules = 'defaultKeyStatistics,summaryDetail,financialData,price';
-    const url = `${PA.Config.YF_BASE2}/v10/finance/quoteSummary/${ticker}?modules=${modules}`;
-    const data = await this.fetchWithProxy(url);
-    const result = data?.quoteSummary?.result?.[0] || {};
-    this.setCache(key, result);
-    return result;
+    if (!this.hasApiKey()) return null;
+    try {
+      const data = await this.fmpFetch(`/profile/${ticker}`);
+      const result = Array.isArray(data) && data[0] ? data[0] : null;
+      if (result) this.setCache(key, result);
+      return result;
+    } catch(e) { return null; }
   },
 
+  // Get key metrics (P/E, fwd P/E, book value, etc)
+  async getKeyMetrics(ticker) {
+    const key = 'metrics:' + ticker;
+    let cached = this.getCached(key);
+    if (cached) return cached;
+    if (!this.hasApiKey()) return null;
+    try {
+      const data = await this.fmpFetch(`/key-metrics-ttm/${ticker}`);
+      const result = Array.isArray(data) && data[0] ? data[0] : null;
+      if (result) this.setCache(key, result);
+      return result;
+    } catch(e) { return null; }
+  },
+
+  // Get historical prices
   async getHistory(ticker, rangeKey='1Y') {
-    const cfg = PA.Config.RANGES[rangeKey] || PA.Config.RANGES['1Y'];
-    const key = `hist:${ticker}:${rangeKey}`;
-    let cached = this.getCached(key);
+    const cacheKey = `hist:${ticker}:${rangeKey}`;
+    let cached = this.getCached(cacheKey);
     if (cached) return cached;
-    const url = `${PA.Config.YF_BASE}/v8/finance/chart/${ticker}?range=${cfg.range}&interval=${cfg.interval}&includePrePost=false`;
-    const data = await this.fetchWithProxy(url);
-    const result = data?.chart?.result?.[0] || null;
-    if (result) this.setCache(key, result);
-    return result;
+    if (!this.hasApiKey()) {
+      const sample = PA.SampleData.getHistory(ticker, rangeKey);
+      if (sample) return sample;
+      return { dates:[], prices:[], volumes:[] };
+    }
+    try {
+      const days = PA.Config.RANGE_DAYS[rangeKey] || 365;
+      let endpoint;
+      if (rangeKey === 'YTD') {
+        const yr = new Date().getFullYear();
+        endpoint = `/historical-price-full/${ticker}?from=${yr}-01-01`;
+      } else if (days > 1825) {
+        endpoint = `/historical-price-full/${ticker}`;
+      } else {
+        const to = new Date();
+        const from = new Date(to);
+        from.setDate(from.getDate() - days);
+        endpoint = `/historical-price-full/${ticker}?from=${from.toISOString().split('T')[0]}&to=${to.toISOString().split('T')[0]}`;
+      }
+      const data = await this.fmpFetch(endpoint);
+      const historical = data?.historical || [];
+      // FMP returns newest first, reverse to oldest first
+      const sorted = historical.slice().reverse();
+      const result = {
+        dates: sorted.map(d => d.date),
+        prices: sorted.map(d => d.adjClose ?? d.close),
+        volumes: sorted.map(d => d.volume || 0)
+      };
+      this.setCache(cacheKey, result);
+      return result;
+    } catch(e) {
+      if (e.message === 'NO_API_KEY') {
+        const sample = PA.SampleData.getHistory(ticker, rangeKey);
+        return sample || { dates:[], prices:[], volumes:[] };
+      }
+      throw e;
+    }
   },
 
+  // Search tickers
   async search(query) {
     if (!query || query.length < 1) return [];
     const key = 'search:' + query;
     let cached = this.getCached(key);
     if (cached) return cached;
-    const url = `${PA.Config.YF_BASE}/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=8&newsCount=0`;
-    const data = await this.fetchWithProxy(url);
-    const result = data?.quotes || [];
-    this.setCache(key, result);
-    return result;
+    // Always search local DB first
+    const local = PA.DB.selectAll(
+      `SELECT ticker, name, exchange FROM securities WHERE ticker LIKE ? OR name LIKE ? LIMIT 8`,
+      [`%${query}%`, `%${query}%`]
+    ).map(r => ({ symbol: r.ticker, shortname: r.name, exchange: r.exchange }));
+    if (!this.hasApiKey()) { this.setCache(key, local); return local; }
+    try {
+      const data = await this.fmpFetch(`/search?query=${encodeURIComponent(query)}&limit=8`);
+      const remote = (Array.isArray(data) ? data : []).map(r => ({
+        symbol: r.symbol, shortname: r.name, exchange: r.exchangeShortName || r.exchange || ''
+      }));
+      // Merge local + remote, deduplicate
+      const seen = new Set();
+      const merged = [];
+      [...local, ...remote].forEach(r => {
+        if (r.symbol && !seen.has(r.symbol)) { seen.add(r.symbol); merged.push(r); }
+      });
+      this.setCache(key, merged);
+      return merged;
+    } catch(e) { return local; }
   },
 
+  // Legacy compat - parseHistory now just returns the data as-is since getHistory already normalizes
   parseHistory(result) {
     if (!result) return { dates:[], prices:[], volumes:[] };
-    const ts = result.timestamp || [];
-    const q = result.indicators?.quote?.[0] || {};
-    const adj = result.indicators?.adjclose?.[0]?.adjclose;
-    const dates = ts.map(t => new Date(t * 1000).toISOString().split('T')[0]);
-    const prices = (adj || q.close || []).map(v => v != null ? +v.toFixed(2) : null);
-    const volumes = (q.volume || []);
-    // Filter nulls
-    const filtered = { dates:[], prices:[], volumes:[] };
-    for (let i = 0; i < dates.length; i++) {
-      if (prices[i] != null) {
-        filtered.dates.push(dates[i]);
-        filtered.prices.push(prices[i]);
-        filtered.volumes.push(volumes[i] || 0);
-      }
+    // Already in {dates, prices, volumes} format from getHistory
+    if (result.dates) return result;
+    // Legacy Yahoo format fallback
+    return { dates:[], prices:[], volumes:[] };
+  }
+};
+
+/* ---- Sample Data (works without any API key) ---- */
+PA.SampleData = {
+  // Generate realistic price history using geometric brownian motion
+  _generatePrices(basePrice, annualReturn, annualVol, days) {
+    const dt = 1/252;
+    const drift = (annualReturn - 0.5*annualVol*annualVol)*dt;
+    const diffusion = annualVol*Math.sqrt(dt);
+    const prices = [basePrice];
+    // Use seeded pseudo-random for consistency
+    let seed = basePrice * 1000;
+    const rand = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+    const boxMuller = () => { const u1=rand(), u2=rand(); return Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2); };
+    for (let i = 1; i < days; i++) {
+      const prev = prices[i-1];
+      prices.push(prev * Math.exp(drift + diffusion * boxMuller()));
     }
-    return filtered;
+    return prices.map(p => Math.round(p * 100) / 100);
+  },
+
+  _generateDates(days) {
+    const dates = [];
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    for (let i = 0; i < days; i++) {
+      d.setDate(d.getDate() + 1);
+      const dow = d.getDay();
+      if (dow === 0 || dow === 6) continue; // skip weekends
+      dates.push(d.toISOString().split('T')[0]);
+    }
+    return dates;
+  },
+
+  _stockProfiles: {
+    SPY:  { price:585, ret:0.10, vol:0.15, name:'SPDR S&P 500 ETF', beta:1.00, pe:23.5, fwdPe:21.2, cap:540e9, volume:75e6, yield:0.013, sector:'Index Fund', exchange:'NYSE' },
+    QQQ:  { price:510, ret:0.15, vol:0.20, name:'Invesco QQQ Trust', beta:1.15, pe:31.2, fwdPe:27.8, cap:250e9, volume:45e6, yield:0.006, sector:'Index Fund', exchange:'NASDAQ' },
+    DIA:  { price:425, ret:0.08, vol:0.14, name:'SPDR Dow Jones ETF', beta:0.95, pe:20.1, fwdPe:18.5, cap:35e9, volume:3.5e6, yield:0.017, sector:'Index Fund', exchange:'NYSE' },
+    IWM:  { price:225, ret:0.07, vol:0.22, name:'iShares Russell 2000', beta:1.20, pe:26.8, fwdPe:22.1, cap:65e9, volume:25e6, yield:0.012, sector:'Index Fund', exchange:'NYSE' },
+    VTI:  { price:290, ret:0.10, vol:0.15, name:'Vanguard Total Stock Market', beta:1.00, pe:24.1, fwdPe:21.5, cap:420e9, volume:4e6, yield:0.013, sector:'Index Fund', exchange:'NYSE' },
+    VOO:  { price:540, ret:0.10, vol:0.15, name:'Vanguard S&P 500 ETF', beta:1.00, pe:23.5, fwdPe:21.2, cap:500e9, volume:5e6, yield:0.013, sector:'Index Fund', exchange:'NYSE' },
+    BND:  { price:72,  ret:0.03, vol:0.05, name:'Vanguard Total Bond Market', beta:0.05, pe:null, fwdPe:null, cap:110e9, volume:7e6, yield:0.035, sector:'Fixed Income', exchange:'NYSE' },
+    GLD:  { price:285, ret:0.08, vol:0.14, name:'SPDR Gold Shares', beta:0.05, pe:null, fwdPe:null, cap:75e9, volume:8e6, yield:0, sector:'Commodities', exchange:'NYSE' },
+    TLT:  { price:92,  ret:0.02, vol:0.16, name:'iShares 20+ Year Treasury', beta:-0.30, pe:null, fwdPe:null, cap:55e9, volume:20e6, yield:0.038, sector:'Fixed Income', exchange:'NYSE' },
+    AAPL: { price:235, ret:0.15, vol:0.25, name:'Apple Inc.', beta:1.21, pe:33.5, fwdPe:30.2, cap:3.6e12, volume:55e6, yield:0.005, sector:'Technology', exchange:'NASDAQ' },
+    MSFT: { price:455, ret:0.18, vol:0.24, name:'Microsoft Corporation', beta:0.90, pe:37.2, fwdPe:32.1, cap:3.4e12, volume:22e6, yield:0.007, sector:'Technology', exchange:'NASDAQ' },
+    GOOGL:{ price:185, ret:0.14, vol:0.26, name:'Alphabet Inc.', beta:1.08, pe:25.8, fwdPe:22.5, cap:2.3e12, volume:25e6, yield:0.005, sector:'Technology', exchange:'NASDAQ' },
+    AMZN: { price:225, ret:0.20, vol:0.30, name:'Amazon.com Inc.', beta:1.15, pe:62.5, fwdPe:38.2, cap:2.3e12, volume:40e6, yield:0, sector:'Consumer Cyclical', exchange:'NASDAQ' },
+    NVDA: { price:140, ret:0.35, vol:0.50, name:'NVIDIA Corporation', beta:1.65, pe:65.3, fwdPe:32.5, cap:3.4e12, volume:250e6, yield:0.0003, sector:'Technology', exchange:'NASDAQ' },
+    META: { price:620, ret:0.22, vol:0.35, name:'Meta Platforms Inc.', beta:1.25, pe:28.5, fwdPe:23.8, cap:1.6e12, volume:15e6, yield:0.003, sector:'Technology', exchange:'NASDAQ' },
+    TSLA: { price:350, ret:0.25, vol:0.55, name:'Tesla Inc.', beta:2.05, pe:95.2, fwdPe:65.0, cap:1.1e12, volume:90e6, yield:0, sector:'Consumer Cyclical', exchange:'NASDAQ' },
+    JPM:  { price:255, ret:0.12, vol:0.22, name:'JPMorgan Chase & Co.', beta:1.10, pe:12.5, fwdPe:11.8, cap:735e9, volume:9e6, yield:0.021, sector:'Financial Services', exchange:'NYSE' },
+    V:    { price:320, ret:0.14, vol:0.20, name:'Visa Inc.', beta:0.95, pe:32.1, fwdPe:27.5, cap:620e9, volume:6e6, yield:0.007, sector:'Financial Services', exchange:'NYSE' },
+    JNJ:  { price:160, ret:0.06, vol:0.15, name:'Johnson & Johnson', beta:0.55, pe:22.8, fwdPe:15.2, cap:385e9, volume:7e6, yield:0.031, sector:'Healthcare', exchange:'NYSE' },
+    WMT:  { price:95,  ret:0.10, vol:0.18, name:'Walmart Inc.', beta:0.52, pe:37.5, fwdPe:30.2, cap:640e9, volume:8e6, yield:0.010, sector:'Consumer Defensive', exchange:'NYSE' },
+    XOM:  { price:112, ret:0.08, vol:0.25, name:'Exxon Mobil Corp.', beta:0.80, pe:14.2, fwdPe:13.5, cap:500e9, volume:14e6, yield:0.033, sector:'Energy', exchange:'NYSE' },
+    PG:   { price:170, ret:0.07, vol:0.14, name:'Procter & Gamble', beta:0.42, pe:28.5, fwdPe:24.2, cap:400e9, volume:6e6, yield:0.024, sector:'Consumer Defensive', exchange:'NYSE' },
+    HD:   { price:410, ret:0.12, vol:0.22, name:'Home Depot Inc.', beta:1.05, pe:26.3, fwdPe:23.8, cap:400e9, volume:4e6, yield:0.023, sector:'Consumer Cyclical', exchange:'NYSE' },
+    BAC:  { price:45,  ret:0.10, vol:0.28, name:'Bank of America', beta:1.35, pe:13.2, fwdPe:11.5, cap:355e9, volume:35e6, yield:0.024, sector:'Financial Services', exchange:'NYSE' },
+    MA:   { price:535, ret:0.15, vol:0.21, name:'Mastercard Inc.', beta:1.08, pe:38.5, fwdPe:31.2, cap:500e9, volume:3e6, yield:0.005, sector:'Financial Services', exchange:'NYSE' },
+    UNH:  { price:520, ret:0.14, vol:0.22, name:'UnitedHealth Group', beta:0.65, pe:32.1, fwdPe:18.5, cap:480e9, volume:3.5e6, yield:0.015, sector:'Healthcare', exchange:'NYSE' },
+    AGG:  { price:100, ret:0.025, vol:0.04, name:'iShares Core US Agg Bond', beta:0.03, pe:null, fwdPe:null, cap:95e9, volume:6e6, yield:0.033, sector:'Fixed Income', exchange:'NYSE' },
+    VNQ:  { price:88,  ret:0.06, vol:0.20, name:'Vanguard Real Estate ETF', beta:0.85, pe:35.2, fwdPe:30.0, cap:35e9, volume:4e6, yield:0.038, sector:'Real Estate', exchange:'NYSE' }
+  },
+
+  getQuote(ticker) {
+    const p = this._stockProfiles[ticker.toUpperCase()];
+    if (!p) return null;
+    const change = Math.round((Math.random() - 0.48) * p.price * 0.03 * 100) / 100;
+    const changePct = (change / p.price) * 100;
+    return {
+      symbol: ticker.toUpperCase(),
+      shortName: p.name,
+      longName: p.name,
+      exchange: p.exchange,
+      currency: 'USD',
+      marketState: 'REGULAR',
+      regularMarketPrice: p.price,
+      regularMarketChange: change,
+      regularMarketChangePercent: changePct,
+      regularMarketVolume: p.volume,
+      regularMarketOpen: p.price - change * 0.3,
+      regularMarketDayHigh: p.price + Math.abs(change) * 0.5,
+      regularMarketDayLow: p.price - Math.abs(change) * 0.5,
+      regularMarketPreviousClose: p.price - change,
+      marketCap: p.cap,
+      beta: p.beta,
+      trailingPE: p.pe,
+      forwardPE: p.fwdPe,
+      epsTrailingTwelveMonths: p.pe ? p.price / p.pe : null,
+      epsForward: p.fwdPe ? p.price / p.fwdPe : null,
+      trailingAnnualDividendYield: p.yield,
+      fiftyTwoWeekHigh: Math.round(p.price * 1.25 * 100) / 100,
+      fiftyTwoWeekLow: Math.round(p.price * 0.78 * 100) / 100,
+      fiftyDayAverage: Math.round(p.price * 0.98 * 100) / 100,
+      twoHundredDayAverage: Math.round(p.price * 0.93 * 100) / 100,
+      sharesOutstanding: p.cap / p.price,
+      bookValue: null,
+      priceToBook: null,
+      averageDailyVolume3Month: p.volume,
+      _isSampleData: true
+    };
+  },
+
+  getHistory(ticker, rangeKey='1Y') {
+    const p = this._stockProfiles[ticker.toUpperCase()];
+    if (!p) return null;
+    const rangeDays = PA.Config.RANGE_DAYS[rangeKey] || 365;
+    const actualDays = rangeKey === 'YTD' ? Math.floor((new Date() - new Date(new Date().getFullYear(),0,1)) / 86400000) : Math.min(rangeDays, 2600);
+    const dates = this._generateDates(actualDays);
+    const prices = this._generatePrices(p.price * 0.75, p.ret, p.vol, dates.length);
+    // Scale so last price ~ current price
+    const scale = p.price / prices[prices.length - 1];
+    const scaledPrices = prices.map(px => Math.round(px * scale * 100) / 100);
+    const volumes = dates.map(() => Math.round(p.volume * (0.7 + Math.random() * 0.6)));
+    return { dates, prices: scaledPrices, volumes };
   }
 };
 

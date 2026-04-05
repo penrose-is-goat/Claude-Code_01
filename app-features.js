@@ -47,76 +47,77 @@ PA.Ticker = {
     if (emptyEl) emptyEl.style.display = 'none';
     try {
       // Fetch quote and history in parallel
-      const [quotes, history, summary] = await Promise.allSettled([
+      const [quotes, history] = await Promise.allSettled([
         PA.API.getQuote([ticker]),
-        PA.API.getHistory(ticker, this.currentRange),
-        PA.API.getQuoteSummary(ticker)
+        PA.API.getHistory(ticker, this.currentRange)
       ]);
       const quote = quotes.status === 'fulfilled' ? (quotes.value[0] || null) : null;
       const hist = history.status === 'fulfilled' ? history.value : null;
-      const sum = summary.status === 'fulfilled' ? summary.value : {};
 
       if (!quote) {
+        const isSample = !PA.API.hasApiKey();
         document.getElementById('ticker-content').innerHTML =
-          `<div class="empty-state"><h3>Ticker "${ticker}" not found</h3><p>Please check the symbol and try again.</p></div>`;
+          '<div class="empty-state"><h3>Ticker "' + ticker + '" not found</h3><p>' +
+          (isSample ? 'In demo mode, only 28 popular tickers are available. Add a free API key in Settings to search any ticker.' : 'Please check the symbol and try again.') +
+          '</p></div>';
         return;
       }
-      this.current = { ticker, quote, hist, summary: sum };
+      this.current = { ticker, quote, hist };
       this.render();
-      // Save to DB
-      this.saveToDb(ticker, quote, sum, hist);
+      this.saveToDb(ticker, quote, hist);
     } catch(e) {
+      let msg = e.message;
+      if (msg === 'INVALID_API_KEY') msg = 'Invalid API key. Please check your key in Settings.';
+      else if (msg === 'RATE_LIMITED') msg = 'API rate limit reached. Free tier allows 250 requests/day. Try again later.';
       document.getElementById('ticker-content').innerHTML =
-        `<div class="empty-state"><h3>Error loading data</h3><p>${e.message}</p><p style="margin-top:8px;font-size:0.8rem;color:var(--text-muted)">API proxies may be temporarily unavailable. Try again in a moment.</p></div>`;
+        '<div class="empty-state"><h3>Error loading data</h3><p>' + msg + '</p></div>';
     }
   },
 
   render() {
     if (!this.current) return;
-    const { ticker, quote: q, hist, summary: s } = this.current;
-    const ks = s?.defaultKeyStatistics || {};
-    const sd = s?.summaryDetail || {};
-    const fd = s?.financialData || {};
+    const { ticker, quote: q, hist } = this.current;
 
     const change = q.regularMarketChange || 0;
     const changePct = q.regularMarketChangePercent || 0;
     const changeClass = change >= 0 ? 'positive' : 'negative';
     const changeSign = change >= 0 ? '+' : '';
 
-    // Get parsed history
-    const hData = PA.API.parseHistory(hist);
-    // Compute Greeks from history
-    let computedAlpha='N/A', computedDelta='N/A', computedGamma='N/A', computedBeta='N/A';
+    // Get history data
+    const hData = hist || { dates:[], prices:[], volumes:[] };
+    // Async compute Greeks
     if (hData.prices.length > 30) {
-      // We need SPY data for comparison
-      this.computeGreeks(ticker, hData);
+      this.computeGreeks(ticker);
     }
 
-    // Extract values with fallbacks
-    const beta = this.v(ks.beta) ?? this.v(q.beta) ?? null;
-    const pe = this.v(sd.trailingPE) ?? this.v(q.trailingPE) ?? null;
-    const fwdPe = this.v(ks.forwardPE) ?? this.v(sd.forwardPE) ?? null;
-    const mktCap = q.marketCap || null;
-    const volume = q.regularMarketVolume || null;
-    const yld = this.v(sd.dividendYield) ?? (q.trailingAnnualDividendYield || null);
+    // Extract values directly from normalized quote
+    const beta = q.beta;
+    const pe = q.trailingPE;
+    const fwdPe = q.forwardPE;
+    const mktCap = q.marketCap;
+    const volume = q.regularMarketVolume;
+    const yld = q.trailingAnnualDividendYield;
+
+    const sampleBadge = q._isSampleData ? '<span style="background:var(--yellow);color:#000;padding:2px 8px;border-radius:4px;font-size:0.7rem;font-weight:700;margin-left:8px">DEMO DATA</span>' : '';
 
     const html = `
       <div class="ticker-header">
         <span class="ticker-symbol">${q.symbol || ticker}</span>
-        <span class="ticker-name">${q.shortName || q.longName || ''}</span>
+        <span class="ticker-name">${q.shortName || q.longName || ''}${sampleBadge}</span>
         <span style="flex:1"></span>
         <span class="ticker-price">${PA.Fmt.currency(q.regularMarketPrice)}</span>
         <span class="ticker-change ${changeClass}">${changeSign}${change.toFixed(2)} (${changeSign}${changePct.toFixed(2)}%)</span>
       </div>
       <div style="color:var(--text-muted);font-size:0.8rem;margin-bottom:20px">
-        ${q.fullExchangeName || q.exchange || ''} &middot; ${q.currency || 'USD'} &middot;
+        ${q.exchange || ''} &middot; ${q.currency || 'USD'} &middot;
         Market ${q.marketState === 'REGULAR' ? '<span class="positive">Open</span>' : '<span class="negative">Closed</span>'}
+        ${q._isSampleData ? ' &middot; <span style="color:var(--yellow)">Add a free API key in Settings for live data</span>' : ''}
       </div>
 
       <div class="grid-5" id="metrics-grid">
         <div class="metric-card">
           <div class="metric-label">Beta</div>
-          <div class="metric-value">${beta != null ? PA.Fmt.ratio(beta) : '<span id="metric-beta">--</span>'}</div>
+          <div class="metric-value" id="metric-beta">${beta != null ? PA.Fmt.ratio(beta) : '--'}</div>
         </div>
         <div class="metric-card">
           <div class="metric-label">P/E Ratio</div>
@@ -184,7 +185,7 @@ PA.Ticker = {
 
     // Render range buttons
     const rangeContainer = document.getElementById('ticker-ranges');
-    Object.keys(PA.Config.RANGES).forEach(r => {
+    Object.keys(PA.Config.RANGE_DAYS).forEach(r => {
       const btn = document.createElement('button');
       btn.className = 'range-btn' + (r === this.currentRange ? ' active' : '');
       btn.textContent = r;
@@ -204,34 +205,23 @@ PA.Ticker = {
     const stats = [
       ['EPS (TTM)', PA.Fmt.currency(q.epsTrailingTwelveMonths)],
       ['Forward EPS', PA.Fmt.currency(q.epsForward)],
-      ['Price/Book', PA.Fmt.ratio(q.priceToBook ?? this.v(sd.priceToBook))],
+      ['Price/Book', PA.Fmt.ratio(q.priceToBook)],
       ['50-Day Avg', PA.Fmt.currency(q.fiftyDayAverage)],
       ['200-Day Avg', PA.Fmt.currency(q.twoHundredDayAverage)],
-      ['Avg Volume', volume ? PA.Fmt.compact(q.averageDailyVolume3Month || q.averageDailyVolume10Day) : 'N/A'],
-      ['Shares Out', q.sharesOutstanding ? PA.Fmt.compact(q.sharesOutstanding) : 'N/A'],
-      ['Ex-Div Date', q.exDividendDate ? new Date(q.exDividendDate*1000).toLocaleDateString() : 'N/A']
+      ['Avg Volume', q.averageDailyVolume3Month ? PA.Fmt.compact(q.averageDailyVolume3Month) : 'N/A'],
+      ['Shares Out', q.sharesOutstanding ? PA.Fmt.compact(q.sharesOutstanding) : 'N/A']
     ];
     statsTable.innerHTML = stats.map(([k,v]) =>
-      `<tr><td style="font-family:var(--font);color:var(--text-secondary)">${k}</td><td class="right">${v}</td></tr>`
+      '<tr><td style="font-family:var(--font);color:var(--text-secondary)">' + k + '</td><td class="right">' + v + '</td></tr>'
     ).join('');
-  },
-
-  v(obj) {
-    if (obj == null) return null;
-    if (typeof obj === 'object' && 'raw' in obj) return obj.raw;
-    if (typeof obj === 'number') return obj;
-    return null;
   },
 
   async computeGreeks(ticker) {
     try {
       // Fetch SPY history for same range
-      const [stockHist, spyHist] = await Promise.all([
-        PA.API.getHistory(ticker, this.currentRange),
-        PA.API.getHistory('SPY', this.currentRange)
-      ]);
-      const stockData = PA.API.parseHistory(stockHist);
-      const spyData = PA.API.parseHistory(spyHist);
+      const spyHist = await PA.API.getHistory('SPY', this.currentRange);
+      const stockData = this.current.hist || { dates:[], prices:[], volumes:[] };
+      const spyData = spyHist || { dates:[], prices:[], volumes:[] };
       if (stockData.prices.length < 20 || spyData.prices.length < 20) return;
 
       const sReturns = PA.Compute.dailyReturns(stockData.prices);
@@ -273,7 +263,7 @@ PA.Ticker = {
     if (this.current) {
       const hist = await PA.API.getHistory(this.current.ticker, range);
       this.current.hist = hist;
-      const hData = PA.API.parseHistory(hist);
+      const hData = hist || { dates:[], prices:[], volumes:[] };
       // Update range buttons
       document.querySelectorAll('#ticker-ranges .range-btn').forEach(b => {
         b.classList.toggle('active', b.textContent === range);
@@ -286,13 +276,10 @@ PA.Ticker = {
     }
   },
 
-  saveToDb(ticker, quote, summary, hist) {
-    const ks = summary?.defaultKeyStatistics || {};
-    const sd = summary?.summaryDetail || {};
+  saveToDb(ticker, quote, hist) {
     PA.DB.exec(`INSERT OR REPLACE INTO securities(ticker,name,sector,exchange,asset_type)
       VALUES(?,?,?,?,?)`, [
-      ticker, quote.shortName || quote.longName || '', quote.sector || '', quote.exchange || '',
-      quote.quoteType === 'ETF' ? 'etf' : 'equity'
+      ticker, quote.shortName || quote.longName || '', '', quote.exchange || '', 'equity'
     ]);
     PA.DB.exec(`INSERT INTO quotes(ticker,price,open_price,high,low,close_price,prev_close,volume,avg_volume,
       market_cap,beta,pe_ratio,fwd_pe_ratio,eps,fwd_eps,dividend_yield,fifty_two_week_high,fifty_two_week_low,
@@ -301,18 +288,16 @@ PA.Ticker = {
       ticker, quote.regularMarketPrice, quote.regularMarketOpen, quote.regularMarketDayHigh,
       quote.regularMarketDayLow, quote.regularMarketPrice, quote.regularMarketPreviousClose,
       quote.regularMarketVolume, quote.averageDailyVolume3Month, quote.marketCap,
-      this.v(ks.beta) ?? quote.beta, this.v(sd.trailingPE) ?? quote.trailingPE,
-      this.v(ks.forwardPE) ?? this.v(sd.forwardPE), quote.epsTrailingTwelveMonths, quote.epsForward,
-      this.v(sd.dividendYield), quote.fiftyTwoWeekHigh, quote.fiftyTwoWeekLow,
+      quote.beta, quote.trailingPE, quote.forwardPE, quote.epsTrailingTwelveMonths, quote.epsForward,
+      quote.trailingAnnualDividendYield, quote.fiftyTwoWeekHigh, quote.fiftyTwoWeekLow,
       quote.fiftyDayAverage, quote.twoHundredDayAverage, quote.sharesOutstanding,
       quote.bookValue, quote.priceToBook
     ]);
     // Save price history
-    if (hist) {
-      const hData = PA.API.parseHistory(hist);
-      hData.dates.forEach((d, i) => {
+    if (hist && hist.dates) {
+      hist.dates.forEach((d, i) => {
         PA.DB.exec(`INSERT OR IGNORE INTO price_history(ticker,date,close_price,adj_close,volume)
-          VALUES(?,?,?,?,?)`, [ticker, d, hData.prices[i], hData.prices[i], hData.volumes[i]]);
+          VALUES(?,?,?,?,?)`, [ticker, d, hist.prices[i], hist.prices[i], hist.volumes[i]]);
       });
     }
     PA.DB.save();

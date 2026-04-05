@@ -27,7 +27,10 @@ PA.Backtest = {
       const unique = [...new Set(tickers)];
       const histories = await Promise.all(unique.map(t => PA.API.getHistory(t, range)));
       const dataMap = {};
-      unique.forEach((t, i) => { dataMap[t] = PA.API.parseHistory(histories[i]); });
+      unique.forEach((t, i) => {
+        const h = histories[i];
+        dataMap[t] = (h && h.dates) ? h : { dates:[], prices:[], volumes:[] };
+      });
 
       // Find common date range
       const allDates = unique.map(t => new Set(dataMap[t].dates));
@@ -204,11 +207,14 @@ PA.Compare = {
       (quotes || []).forEach(q => { quoteMap[q.symbol] = q; });
 
       const dataMap = {};
-      this.tickers.forEach((t, i) => { dataMap[t] = PA.API.parseHistory(histories[i]); });
+      this.tickers.forEach((t, i) => {
+        const h = histories[i];
+        dataMap[t] = (h && h.dates) ? h : { dates:[], prices:[], volumes:[] };
+      });
 
       // SPY for Greeks
       const spyHist = await PA.API.getHistory('SPY', range);
-      const spyData = PA.API.parseHistory(spyHist);
+      const spyData = (spyHist && spyHist.dates) ? spyHist : { dates:[], prices:[], volumes:[] };
       const spyReturns = PA.Compute.dailyReturns(spyData.prices);
 
       // Build comparison table
