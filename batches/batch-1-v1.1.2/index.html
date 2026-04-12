@@ -1,0 +1,2876 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio Analyzer Pro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+<style>
+/* ============================================================
+   Portfolio Analyzer Pro - Styles
+   ============================================================ */
+:root {
+  --bg-primary: #0f1117;
+  --bg-secondary: #1a1d27;
+  --bg-tertiary: #242836;
+  --bg-card: #1e2233;
+  --bg-input: #2a2e3f;
+  --bg-hover: #2f3447;
+  --text-primary: #e8eaed;
+  --text-secondary: #9aa0a6;
+  --text-muted: #6b7280;
+  --accent: #4f8ff7;
+  --accent-hover: #3a7be0;
+  --green: #34d399;
+  --green-bg: rgba(52,211,153,0.1);
+  --red: #f87171;
+  --red-bg: rgba(248,113,113,0.1);
+  --yellow: #fbbf24;
+  --border: #2d3248;
+  --border-light: #3d4258;
+  --shadow: 0 4px 24px rgba(0,0,0,0.3);
+  --radius: 8px;
+  --radius-lg: 12px;
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --transition: 0.2s ease;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html { font-size:14px; }
+body {
+  font-family: var(--font);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+}
+::-webkit-scrollbar { width:6px; height:6px; }
+::-webkit-scrollbar-track { background: var(--bg-secondary); }
+::-webkit-scrollbar-thumb { background: var(--border-light); border-radius:3px; }
+a { color: var(--accent); text-decoration:none; }
+button { cursor:pointer; font-family:var(--font); }
+input,select,textarea { font-family:var(--font); }
+/* Header */
+.header {
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.logo {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.logo svg { width:24px; height:24px; }
+.search-container {
+  flex: 1;
+  max-width: 500px;
+  position: relative;
+}
+.search-input {
+  width: 100%;
+  padding: 8px 16px 8px 36px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  outline: none;
+  transition: var(--transition);
+}
+.search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,143,247,0.15); }
+.search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+}
+.search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-top: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+  display: none;
+  z-index: 200;
+  box-shadow: var(--shadow);
+}
+.search-dropdown.active { display:block; }
+.search-item {
+  padding: 10px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: var(--transition);
+}
+.search-item:hover { background: var(--bg-hover); }
+.search-item:last-child { border-bottom:none; }
+.search-item .ticker { font-weight:600; color:var(--accent); }
+.search-item .name { color:var(--text-secondary); font-size:0.85rem; }
+.search-item .exchange { color:var(--text-muted); font-size:0.75rem; }
+.header-actions { display:flex; align-items:center; gap:12px; }
+.btn {
+  padding: 7px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: var(--transition);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn:hover { background: var(--bg-hover); border-color: var(--border-light); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color:#fff; }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-sm { padding:5px 10px; font-size:0.8rem; }
+.btn-danger { background: var(--red-bg); border-color: var(--red); color: var(--red); }
+.btn-success { background: var(--green-bg); border-color: var(--green); color: var(--green); }
+/* Tab Navigation */
+.tab-bar {
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+}
+.tab-btn {
+  padding: 12px 20px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: var(--transition);
+}
+.tab-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+/* Main Content */
+.main { flex:1; padding:24px; max-width:1440px; margin:0 auto; width:100%; }
+.tab-panel { display:none; }
+.tab-panel.active { display:block; }
+/* Cards */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.card-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Grid layouts */
+.grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; }
+.grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; }
+.grid-5 { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; }
+/* Metric Cards */
+.metric-card {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+.metric-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+.metric-value {
+  font-size: 1.3rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+.metric-sub {
+  font-size: 0.8rem;
+  margin-top: 4px;
+}
+.positive { color: var(--green); }
+.negative { color: var(--red); }
+/* Tables */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.data-table th {
+  text-align: left;
+  padding: 10px 12px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+}
+.data-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.83rem;
+}
+.data-table tr:hover { background: var(--bg-hover); }
+.data-table .right { text-align:right; }
+/* Ticker Header */
+.ticker-header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.ticker-symbol { font-size:2rem; font-weight:800; color:var(--accent); }
+.ticker-name { font-size:1.1rem; color:var(--text-secondary); }
+.ticker-price { font-size:2rem; font-weight:700; font-family:var(--font-mono); }
+.ticker-change { font-size:1rem; font-weight:600; font-family:var(--font-mono); }
+/* Chart containers */
+.chart-container { position:relative; width:100%; height:350px; }
+.chart-container canvas { width:100%!important; height:100%!important; }
+.chart-sm { height:250px; }
+.chart-lg { height:450px; }
+/* Range Selector */
+.range-selector { display:flex; gap:4px; margin-bottom:12px; flex-wrap:wrap; }
+.range-btn {
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: var(--transition);
+}
+.range-btn:hover { background: var(--bg-hover); }
+.range-btn.active { background: var(--accent); border-color: var(--accent); color:#fff; }
+/* Form Controls */
+.form-group { margin-bottom:14px; }
+.form-label { display:block; font-size:0.8rem; font-weight:600; color:var(--text-secondary); margin-bottom:5px; }
+.form-input,.form-select {
+  width:100%;
+  padding:8px 12px;
+  background:var(--bg-input);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  color:var(--text-primary);
+  font-size:0.9rem;
+  outline:none;
+  transition:var(--transition);
+}
+.form-input:focus,.form-select:focus { border-color:var(--accent); }
+.form-select { cursor:pointer; }
+/* Portfolio Allocation Bar */
+.alloc-bar {
+  height:8px;
+  background:var(--bg-tertiary);
+  border-radius:4px;
+  overflow:hidden;
+  margin:8px 0;
+}
+.alloc-fill {
+  height:100%;
+  border-radius:4px;
+  transition: width 0.3s ease;
+}
+/* Toast */
+.toast-container {
+  position:fixed;
+  top:70px;
+  right:20px;
+  z-index:9999;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.toast {
+  padding:12px 20px;
+  border-radius:var(--radius);
+  font-size:0.85rem;
+  font-weight:500;
+  animation:slideIn 0.3s ease;
+  min-width:280px;
+  box-shadow:var(--shadow);
+}
+.toast-success { background:#065f46; color:#34d399; border:1px solid #34d399; }
+.toast-error { background:#7f1d1d; color:#f87171; border:1px solid #f87171; }
+.toast-info { background:#1e3a5f; color:#60a5fa; border:1px solid #60a5fa; }
+@keyframes slideIn { from{transform:translateX(100%);opacity:0} to{transform:translateX(0);opacity:1} }
+/* Loading */
+.loading { display:flex; align-items:center; justify-content:center; padding:40px; color:var(--text-muted); }
+.spinner {
+  width:24px; height:24px;
+  border:3px solid var(--border);
+  border-top-color:var(--accent);
+  border-radius:50%;
+  animation:spin 0.8s linear infinite;
+  margin-right:10px;
+}
+@keyframes spin { to{transform:rotate(360deg)} }
+/* Modal */
+.modal-overlay {
+  position:fixed; inset:0;
+  background:rgba(0,0,0,0.6);
+  display:flex; align-items:center; justify-content:center;
+  z-index:1000;
+  display:none;
+}
+.modal-overlay.active { display:flex; }
+.modal {
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-radius:var(--radius-lg);
+  padding:24px;
+  min-width:400px;
+  max-width:600px;
+  max-height:80vh;
+  overflow-y:auto;
+  box-shadow:var(--shadow);
+}
+.modal-title { font-size:1.1rem; font-weight:700; margin-bottom:16px; }
+/* Correlation Heatmap */
+.heatmap-cell {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:60px; height:36px;
+  font-size:0.75rem;
+  font-weight:600;
+  font-family:var(--font-mono);
+  border:1px solid var(--bg-primary);
+}
+.heatmap-label {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:60px; height:36px;
+  font-size:0.75rem;
+  font-weight:700;
+  color:var(--accent);
+}
+/* Status Bar */
+.status-bar {
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  padding: 6px 24px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.status-dot {
+  display:inline-block;
+  width:8px; height:8px;
+  border-radius:50%;
+  margin-right:6px;
+}
+.status-dot.online { background:var(--green); }
+.status-dot.offline { background:var(--red); }
+/* Empty State */
+.empty-state {
+  text-align:center;
+  padding:60px 20px;
+  color:var(--text-muted);
+}
+.empty-state svg { width:64px; height:64px; margin-bottom:16px; opacity:0.3; }
+.empty-state h3 { font-size:1.1rem; color:var(--text-secondary); margin-bottom:8px; }
+/* Holdings table actions */
+.holdings-actions { display:flex; gap:4px; }
+/* Responsive */
+@media(max-width:1200px) {
+  .grid-4 { grid-template-columns:repeat(2,1fr); }
+  .grid-5 { grid-template-columns:repeat(3,1fr); }
+}
+@media(max-width:768px) {
+  .header { padding:0 12px; gap:10px; }
+  .main { padding:12px; }
+  .grid-2,.grid-3,.grid-4,.grid-5 { grid-template-columns:1fr; }
+  .tab-bar { padding:0 8px; }
+  .tab-btn { padding:10px 14px; font-size:0.8rem; }
+  .ticker-header { flex-direction:column; gap:8px; }
+  .modal { min-width:90vw; }
+}
+
+</style>
+</head>
+<body>
+
+<!-- Toast Container -->
+<div id="toast-container" class="toast-container"></div>
+
+<!-- Header -->
+<header class="header">
+  <div class="logo">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 5-9"/></svg>
+    Portfolio Analyzer Pro
+  </div>
+  <div class="search-container">
+    <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+    <input class="search-input" id="search-input" type="text" placeholder="Search ticker symbol (e.g. AAPL, MSFT, SPY...)">
+    <div class="search-dropdown" id="search-dropdown"></div>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-sm" onclick="PA.App.exportDb()" title="Export Database">Export DB</button>
+  </div>
+</header>
+
+<!-- Tab Bar -->
+<nav class="tab-bar">
+  <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+  <button class="tab-btn" data-tab="ticker">Ticker Analysis</button>
+  <button class="tab-btn" data-tab="portfolio">Portfolio Builder</button>
+  <button class="tab-btn" data-tab="backtest">Backtesting</button>
+  <button class="tab-btn" data-tab="compare">Asset Comparison</button>
+  <button class="tab-btn" data-tab="settings">Settings</button>
+</nav>
+
+<!-- Main Content -->
+<main class="main">
+
+  <!-- Dashboard Tab -->
+  <div class="tab-panel active" id="tab-dashboard">
+    <h2 style="margin-bottom:20px;font-size:1.3rem">Market Overview</h2>
+    <div class="card">
+      <div class="card-title">Major Indices &amp; ETFs</div>
+      <div class="grid-3" id="dash-market">
+        <div class="loading"><div class="spinner"></div>Loading market data...</div>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Watchlist</div>
+        <div id="dash-watchlist"><div style="color:var(--text-muted);padding:10px">Loading...</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Recent Lookups</div>
+        <div id="dash-recent"><div style="color:var(--text-muted);padding:10px">Loading...</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ticker Analysis Tab -->
+  <div class="tab-panel" id="tab-ticker">
+    <div id="ticker-content" style="display:none">
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <h3>Search for a Ticker</h3>
+        <p>Enter a stock symbol in the search bar above to view detailed analysis</p>
+      </div>
+    </div>
+    <div class="empty-state" id="ticker-empty">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+      <h3>Search for a Ticker</h3>
+      <p>Enter a stock symbol in the search bar above to view detailed analysis including price, beta, P/E, forward P/E, delta, gamma, alpha, market cap, volume, and yield.</p>
+    </div>
+  </div>
+
+  <!-- Portfolio Builder Tab -->
+  <div class="tab-panel" id="tab-portfolio">
+    <h2 style="margin-bottom:20px;font-size:1.3rem">Portfolio Builder</h2>
+    <div class="grid-2">
+      <div>
+        <div class="card">
+          <div class="card-title">Holdings</div>
+          <div id="portfolio-holdings"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Saved Portfolios</div>
+          <div id="saved-portfolios"></div>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <div class="card-title">Allocation</div>
+          <div class="chart-container"><canvas id="chart-allocation"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Backtesting Tab -->
+  <div class="tab-panel" id="tab-backtest">
+    <h2 style="margin-bottom:20px;font-size:1.3rem">Portfolio Backtesting</h2>
+    <div class="card">
+      <div class="card-title">Backtest Configuration</div>
+      <div class="grid-4">
+        <div class="form-group">
+          <label class="form-label">Benchmark</label>
+          <select class="form-select" id="bt-benchmark">
+            <option value="SPY">SPY - S&amp;P 500</option>
+            <option value="QQQ">QQQ - Nasdaq 100</option>
+            <option value="DIA">DIA - Dow Jones</option>
+            <option value="IWM">IWM - Russell 2000</option>
+            <option value="VTI">VTI - Total Market</option>
+            <option value="AGG">AGG - US Agg Bond</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Time Period</label>
+          <select class="form-select" id="bt-range">
+            <option value="1Y">1 Year</option>
+            <option value="3Y">3 Years</option>
+            <option value="5Y" selected>5 Years</option>
+            <option value="10Y">10 Years</option>
+            <option value="MAX">Max Available</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Initial Investment</label>
+          <input class="form-input" id="bt-initial" type="number" value="10000" min="100" step="100">
+        </div>
+        <div class="form-group" style="display:flex;align-items:end">
+          <button class="btn btn-primary" onclick="PA.Backtest.run()" style="width:100%">Run Backtest</button>
+        </div>
+      </div>
+      <div style="margin-top:8px;font-size:0.8rem;color:var(--text-muted)">
+        Uses current portfolio holdings. Make sure allocations sum to 100%.
+      </div>
+    </div>
+    <div id="backtest-results" style="display:none;margin-top:16px"></div>
+  </div>
+
+  <!-- Asset Comparison Tab -->
+  <div class="tab-panel" id="tab-compare">
+    <h2 style="margin-bottom:20px;font-size:1.3rem">Asset Comparison</h2>
+    <div class="card">
+      <div class="card-title">Compare Assets</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:end">
+        <div class="form-group" style="flex:1;margin:0">
+          <label class="form-label">Add Ticker</label>
+          <input class="form-input" id="cmp-ticker" placeholder="e.g. AAPL" style="text-transform:uppercase"
+            onkeydown="if(event.key==='Enter'){PA.Compare.addTicker(this.value);this.value=''}">
+        </div>
+        <div class="form-group" style="width:120px;margin:0">
+          <label class="form-label">Period</label>
+          <select class="form-select" id="cmp-range">
+            <option value="1Y">1 Year</option>
+            <option value="3Y">3 Years</option>
+            <option value="5Y">5 Years</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="PA.Compare.addTicker(document.getElementById('cmp-ticker').value);document.getElementById('cmp-ticker').value=''" style="height:36px">Add</button>
+        <button class="btn btn-success" onclick="PA.Compare.run()" style="height:36px">Compare</button>
+      </div>
+      <div id="compare-tags" style="display:flex;flex-wrap:wrap;gap:6px;min-height:30px"></div>
+    </div>
+    <div id="compare-results" style="display:none;margin-top:16px"></div>
+  </div>
+
+  <!-- Settings Tab -->
+  <div class="tab-panel" id="tab-settings">
+    <h2 style="margin-bottom:20px;font-size:1.3rem">Settings</h2>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Data Management</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button class="btn" onclick="PA.App.exportDb()">Export Database (.sqlite)</button>
+          <button class="btn" onclick="PA.App.clearCache()">Clear API Cache</button>
+          <button class="btn btn-danger" onclick="PA.App.clearAllData()">Reset All Data</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">About</div>
+        <div style="color:var(--text-secondary);font-size:0.9rem;line-height:1.6">
+          <p><strong>Portfolio Analyzer Pro</strong></p>
+          <p>A comprehensive portfolio analysis tool with live market data, backtesting, and risk analytics.</p>
+          <p style="margin-top:8px"><strong>Data Sources:</strong> Twelve Data (Batch 1 v1.1.2)</p>
+          <p><strong>Metrics:</strong> Beta, P/E, Forward P/E, Delta, Gamma, Alpha (Jensen's), Market Cap, Volume, Yield, Sharpe Ratio, Sortino Ratio, Max Drawdown, CAGR</p>
+          <p style="margin-top:8px;font-size:0.8rem;color:var(--text-muted)">
+            Delta = regression sensitivity to SPY. Gamma = rate of change of delta.
+            Alpha = Jensen's alpha via CAPM. All computed from historical returns.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Status Bar -->
+<footer class="status-bar">
+  <div><span id="status-dot" class="status-dot offline"></span><span id="status-text">Initializing...</span></div>
+  <div>Portfolio Analyzer Pro Batch 1 v1.1.2</div>
+</footer>
+
+<script>
+/* ============================================================
+   Portfolio Analyzer Pro - Core JavaScript
+   ============================================================ */
+const PA = window.PA = {};
+
+/* ---- Config ---- */
+PA.Config = {
+  APP_VERSION: 'Batch 1 v1.1.2',
+  TD_BASE: 'https://api.twelvedata.com',
+  DEFAULT_TWELVE_DATA_KEY: '42ec75497f5c4a50bef20661e1591daa',
+  RISK_FREE: 0.05,
+  COLORS: ['#4f8ff7','#34d399','#f87171','#fbbf24','#a78bfa','#fb923c','#22d3ee','#f472b6','#84cc16','#e879f9'],
+  RANGES: {
+    '1M':  { interval:'1day', outputsize:40, points:22 },
+    '3M':  { interval:'1day', outputsize:90, points:66 },
+    '6M':  { interval:'1day', outputsize:180, points:132 },
+    'YTD': { interval:'1day', outputsize:400, mode:'ytd' },
+    '1Y':  { interval:'1day', outputsize:300, points:252 },
+    '3Y':  { interval:'1week', outputsize:180, points:156 },
+    '5Y':  { interval:'1week', outputsize:300, points:260 },
+    '10Y': { interval:'1month', outputsize:140, points:120 },
+    'MAX': { interval:'1month', outputsize:5000 }
+  }
+};
+
+/* ---- Database ---- */
+PA.DB = {
+  db: null,
+  async init() {
+    const SQL = await initSqlJs({ locateFile: f => `https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/${f}` });
+    // Try to load from localStorage
+    const saved = localStorage.getItem('pa_db');
+    if (saved) {
+      const buf = Uint8Array.from(atob(saved), c => c.charCodeAt(0));
+      this.db = new SQL.Database(buf);
+    } else {
+      this.db = new SQL.Database();
+    }
+    this.runSchema();
+    return this.db;
+  },
+  runSchema() {
+    this.db.run(`CREATE TABLE IF NOT EXISTS securities (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT UNIQUE NOT NULL, name TEXT,
+      sector TEXT, industry TEXT, exchange TEXT, asset_type TEXT DEFAULT 'equity',
+      currency TEXT DEFAULT 'USD', created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+    this.db.run(`CREATE TABLE IF NOT EXISTS quotes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL, price REAL,
+      open_price REAL, high REAL, low REAL, close_price REAL, prev_close REAL,
+      volume INTEGER, avg_volume INTEGER, market_cap REAL, beta REAL,
+      pe_ratio REAL, fwd_pe_ratio REAL, eps REAL, fwd_eps REAL,
+      dividend_yield REAL, dividend_rate REAL, ex_dividend_date TEXT,
+      fifty_two_week_high REAL, fifty_two_week_low REAL, fifty_day_avg REAL,
+      two_hundred_day_avg REAL, shares_outstanding REAL, book_value REAL,
+      price_to_book REAL, fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+    this.db.run(`CREATE TABLE IF NOT EXISTS greeks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL,
+      alpha REAL, beta REAL, delta REAL, gamma REAL,
+      sharpe_ratio REAL, sortino_ratio REAL, treynor_ratio REAL,
+      r_squared REAL, std_dev REAL, max_drawdown REAL,
+      calc_period TEXT DEFAULT '1Y',
+      calculated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+    this.db.run(`CREATE TABLE IF NOT EXISTS price_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL,
+      date TEXT NOT NULL, open_price REAL, high REAL, low REAL,
+      close_price REAL, adj_close REAL, volume INTEGER,
+      UNIQUE(ticker, date))`);
+    this.db.run(`CREATE TABLE IF NOT EXISTS portfolios (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+      description TEXT, benchmark TEXT DEFAULT 'SPY',
+      initial_balance REAL DEFAULT 10000, start_date TEXT, end_date TEXT,
+      rebalance_frequency TEXT DEFAULT 'monthly',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+    this.db.run(`CREATE TABLE IF NOT EXISTS portfolio_holdings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio_id INTEGER NOT NULL,
+      ticker TEXT NOT NULL, allocation REAL NOT NULL, shares REAL,
+      cost_basis REAL, added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (portfolio_id) REFERENCES portfolios(id) ON DELETE CASCADE)`);
+    this.db.run(`CREATE TABLE IF NOT EXISTS watchlist (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL UNIQUE,
+      added_at DATETIME DEFAULT CURRENT_TIMESTAMP, notes TEXT)`);
+    this.db.run(`CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY, value TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+    // Seed popular tickers
+    const seeds = [
+      ['SPY','SPDR S&P 500 ETF','Index Fund','NYSE','etf'],
+      ['QQQ','Invesco QQQ Trust','Index Fund','NASDAQ','etf'],
+      ['DIA','SPDR Dow Jones ETF','Index Fund','NYSE','etf'],
+      ['IWM','iShares Russell 2000 ETF','Index Fund','NYSE','etf'],
+      ['VTI','Vanguard Total Stock Market','Index Fund','NYSE','etf'],
+      ['VOO','Vanguard S&P 500 ETF','Index Fund','NYSE','etf'],
+      ['BND','Vanguard Total Bond Market','Fixed Income','NYSE','etf'],
+      ['GLD','SPDR Gold Shares','Commodities','NYSE','etf'],
+      ['AAPL','Apple Inc.','Technology','NASDAQ','equity'],
+      ['MSFT','Microsoft Corporation','Technology','NASDAQ','equity'],
+      ['GOOGL','Alphabet Inc.','Technology','NASDAQ','equity'],
+      ['AMZN','Amazon.com Inc.','Consumer Cyclical','NASDAQ','equity'],
+      ['NVDA','NVIDIA Corporation','Technology','NASDAQ','equity'],
+      ['META','Meta Platforms Inc.','Technology','NASDAQ','equity'],
+      ['TSLA','Tesla Inc.','Consumer Cyclical','NASDAQ','equity'],
+      ['JPM','JPMorgan Chase & Co.','Financial Services','NYSE','equity'],
+      ['V','Visa Inc.','Financial Services','NYSE','equity'],
+      ['JNJ','Johnson & Johnson','Healthcare','NYSE','equity'],
+      ['WMT','Walmart Inc.','Consumer Defensive','NYSE','equity'],
+      ['XOM','Exxon Mobil Corp.','Energy','NYSE','equity'],
+      ['PG','Procter & Gamble','Consumer Defensive','NYSE','equity'],
+      ['HD','Home Depot Inc.','Consumer Cyclical','NYSE','equity'],
+      ['BAC','Bank of America','Financial Services','NYSE','equity'],
+      ['MA','Mastercard Inc.','Financial Services','NYSE','equity'],
+      ['UNH','UnitedHealth Group','Healthcare','NYSE','equity']
+    ];
+    seeds.forEach(s => {
+      this.db.run(`INSERT OR IGNORE INTO securities(ticker,name,sector,exchange,asset_type) VALUES(?,?,?,?,?)`, s);
+    });
+  },
+  exec(sql, params=[]) { return this.db.run(sql, params); },
+  selectAll(sql, params=[]) {
+    const stmt = this.db.prepare(sql);
+    if (params.length) stmt.bind(params);
+    const rows = [];
+    while (stmt.step()) rows.push(stmt.getAsObject());
+    stmt.free();
+    return rows;
+  },
+  selectOne(sql, params=[]) {
+    const rows = this.selectAll(sql, params);
+    return rows.length ? rows[0] : null;
+  },
+  save() {
+    try {
+      const data = this.db.export();
+      const b64 = btoa(String.fromCharCode(...data));
+      localStorage.setItem('pa_db', b64);
+    } catch(e) { console.warn('DB save failed:', e); }
+  },
+  exportFile() {
+    const data = this.db.export();
+    const blob = new Blob([data], {type:'application/x-sqlite3'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'portfolio_analyzer.db';
+    a.click();
+  }
+};
+
+/* ---- API (Twelve Data) ---- */
+PA.API = {
+  cache: new Map(),
+  pending: new Map(),
+  CACHE_TTL: 30 * 60 * 1000,
+  requestChain: Promise.resolve(),
+  lastRequestAt: 0,
+
+  getApiKey() {
+    const key = localStorage.getItem('pa_twelve_data_key') || PA.Config.DEFAULT_TWELVE_DATA_KEY || '';
+    return key.trim();
+  },
+
+  setApiKey(key) {
+    const cleaned = (key || '').trim();
+    if (cleaned) {
+      localStorage.setItem('pa_twelve_data_key', cleaned);
+    } else {
+      localStorage.removeItem('pa_twelve_data_key');
+    }
+  },
+
+  requireApiKey() {
+    const key = this.getApiKey();
+    if (!key) {
+      throw new Error('Missing Twelve Data API key. Add it in Settings first.');
+    }
+    return key;
+  },
+
+  async fetchJson(endpoint, params={}) {
+    const requestKey = `${endpoint}:${JSON.stringify(Object.keys(params).sort().reduce((acc, key) => {
+      acc[key] = params[key];
+      return acc;
+    }, {}))}`;
+    if (this.pending.has(requestKey)) {
+      return this.pending.get(requestKey);
+    }
+
+    const apikey = this.requireApiKey();
+    const task = this.requestChain.then(async () => {
+      const elapsed = Date.now() - this.lastRequestAt;
+      if (elapsed < 250) {
+        await new Promise(resolve => setTimeout(resolve, 250 - elapsed));
+      }
+
+      const url = new URL(`${PA.Config.TD_BASE}/${endpoint}`);
+      Object.entries({ ...params, apikey }).forEach(([k, v]) => {
+        if (v != null && v !== '') url.searchParams.set(k, v);
+      });
+
+      const resp = await fetch(url.toString(), { signal: AbortSignal.timeout(15000) });
+      this.lastRequestAt = Date.now();
+      if (!resp.ok) throw new Error(`API request failed (${resp.status})`);
+
+      const data = await resp.json();
+      if (data?.status === 'error') {
+        throw new Error(data.message || 'Twelve Data request failed.');
+      }
+      return data;
+    });
+    this.requestChain = task.catch(() => {});
+    this.pending.set(requestKey, task);
+    try {
+      return await task;
+    } finally {
+      this.pending.delete(requestKey);
+    }
+  },
+
+  getCached(key) {
+    const item = this.cache.get(key);
+    if (item && Date.now() - item.ts < this.CACHE_TTL) return item.data;
+    return null;
+  },
+
+  setCache(key, data) {
+    this.cache.set(key, { data, ts: Date.now() });
+  },
+
+  async getQuote(tickers) {
+    const symbols = [...new Set((tickers || []).map(t => String(t).toUpperCase().trim()).filter(Boolean))];
+    if (!symbols.length) return [];
+    const key = `quote:${symbols.join(',')}`;
+    const cached = this.getCached(key);
+    if (cached) return cached;
+
+    const raw = await this.fetchJson('quote', {
+      symbol: symbols.join(','),
+      interval: '1day'
+    });
+    const initial = this.normalizeQuoteBatch(raw, symbols);
+    const quoteMap = new Map(initial.map(quote => [quote.symbol, quote]));
+    const missing = symbols.filter(symbol => !quoteMap.has(symbol));
+
+    for (const symbol of missing) {
+      const fallbackRaw = await this.fetchJson('quote', { symbol, interval: '1day' });
+      const fallbackQuote = this.normalizeQuote(fallbackRaw);
+      if (fallbackQuote) {
+        quoteMap.set(symbol, fallbackQuote);
+      }
+    }
+
+    const unresolved = symbols.filter(symbol => !quoteMap.has(symbol));
+    if (unresolved.length) {
+      throw new Error(`No quote returned for ${unresolved.join(', ')} from Twelve Data.`);
+    }
+
+    const result = symbols.map(symbol => quoteMap.get(symbol)).filter(Boolean);
+    this.setCache(key, result);
+    return result;
+  },
+
+  async getQuoteSummary(ticker) {
+    const key = `summary:${String(ticker).toUpperCase().trim()}`;
+    const cached = this.getCached(key);
+    if (cached) return cached;
+    const result = {};
+    this.setCache(key, result);
+    return result;
+  },
+
+  async getHistory(ticker, rangeKey='1Y') {
+    const symbol = String(ticker).toUpperCase().trim();
+    const result = await this.getHistories([symbol], rangeKey);
+    return result[symbol] || null;
+  },
+
+  async getHistories(tickers, rangeKey='1Y') {
+    const cfg = PA.Config.RANGES[rangeKey] || PA.Config.RANGES['1Y'];
+    const symbols = [...new Set((tickers || []).map(t => String(t).toUpperCase().trim()).filter(Boolean))];
+    const results = {};
+    const missing = [];
+
+    symbols.forEach(symbol => {
+      const cached = this.getCached(`hist:${symbol}:${rangeKey}`);
+      if (cached) {
+        results[symbol] = cached;
+      } else {
+        missing.push(symbol);
+      }
+    });
+
+    if (missing.length) {
+      const raw = await this.fetchJson('time_series', {
+        symbol: missing.join(','),
+        interval: cfg.interval,
+        outputsize: cfg.outputsize,
+        order: 'ASC'
+      });
+
+      const payloads = missing.length === 1 && raw?.meta ? { [missing[0]]: raw } : raw;
+      missing.forEach(symbol => {
+        const normalized = this.normalizeHistoryPayload(symbol, payloads?.[symbol], cfg, rangeKey);
+        if (normalized) {
+          results[symbol] = normalized;
+          this.setCache(`hist:${symbol}:${rangeKey}`, normalized);
+        }
+      });
+
+      const stillMissing = missing.filter(symbol => !results[symbol]);
+      for (const symbol of stillMissing) {
+        const fallbackRaw = await this.fetchJson('time_series', {
+          symbol,
+          interval: cfg.interval,
+          outputsize: cfg.outputsize,
+          order: 'ASC'
+        });
+        const normalized = this.normalizeHistoryPayload(symbol, fallbackRaw, cfg, rangeKey);
+        if (normalized) {
+          results[symbol] = normalized;
+          this.setCache(`hist:${symbol}:${rangeKey}`, normalized);
+        }
+      }
+    }
+
+    const unresolved = symbols.filter(symbol => !results[symbol]);
+    if (unresolved.length) {
+      throw new Error(`No price history returned for ${unresolved.join(', ')} from Twelve Data.`);
+    }
+
+    return results;
+  },
+
+  async search(query) {
+    const q = String(query || '').trim();
+    if (!q) return [];
+    const key = `search:${q.toUpperCase()}`;
+    const cached = this.getCached(key);
+    if (cached) return cached;
+
+    const data = await this.fetchJson('symbol_search', { symbol: q });
+    const result = (data?.data || [])
+      .map(item => ({
+        symbol: item.symbol,
+        shortname: item.instrument_name || item.symbol,
+        longname: item.instrument_name || item.symbol,
+        exchange: item.exchange || '',
+        country: item.country || '',
+        quoteType: item.instrument_type || ''
+      }))
+      .sort((a, b) => {
+        const aExact = a.symbol === q.toUpperCase() ? 1 : 0;
+        const bExact = b.symbol === q.toUpperCase() ? 1 : 0;
+        if (aExact !== bExact) return bExact - aExact;
+        const aUs = a.country === 'United States' ? 1 : 0;
+        const bUs = b.country === 'United States' ? 1 : 0;
+        if (aUs !== bUs) return bUs - aUs;
+        return a.symbol.localeCompare(b.symbol);
+      });
+
+    this.setCache(key, result);
+    return result;
+  },
+
+  parseHistory(result) {
+    if (!result) return { dates:[], prices:[], volumes:[] };
+    return {
+      dates: result.dates || [],
+      prices: result.prices || [],
+      volumes: result.volumes || []
+    };
+  },
+
+  normalizeQuoteBatch(raw, symbols) {
+    const payload = symbols.length === 1 && raw?.symbol ? { [symbols[0]]: raw } : raw;
+    return symbols
+      .map(symbol => this.normalizeQuote(payload?.[symbol]))
+      .filter(Boolean);
+  },
+
+  normalizeQuote(raw) {
+    if (!raw?.symbol) return null;
+    const num = value => {
+      const parsed = parseFloat(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+
+    return {
+      symbol: raw.symbol,
+      shortName: raw.name || raw.symbol,
+      longName: raw.name || raw.symbol,
+      regularMarketPrice: num(raw.close),
+      regularMarketChange: num(raw.change),
+      regularMarketChangePercent: num(raw.percent_change),
+      regularMarketPreviousClose: num(raw.previous_close),
+      regularMarketOpen: num(raw.open),
+      regularMarketDayHigh: num(raw.high),
+      regularMarketDayLow: num(raw.low),
+      regularMarketVolume: parseInt(raw.volume || '0', 10),
+      averageDailyVolume3Month: parseInt(raw.average_volume || '0', 10) || null,
+      averageDailyVolume10Day: parseInt(raw.average_volume || '0', 10) || null,
+      marketCap: null,
+      trailingPE: null,
+      forwardPE: null,
+      trailingAnnualDividendYield: null,
+      dividendRate: null,
+      epsTrailingTwelveMonths: null,
+      epsForward: null,
+      priceToBook: null,
+      bookValue: null,
+      sharesOutstanding: null,
+      fiftyTwoWeekHigh: num(raw.fifty_two_week?.high),
+      fiftyTwoWeekLow: num(raw.fifty_two_week?.low),
+      fiftyDayAverage: null,
+      twoHundredDayAverage: null,
+      marketState: raw.is_market_open ? 'REGULAR' : 'CLOSED',
+      exDividendDate: null,
+      currency: raw.currency || 'USD',
+      exchange: raw.exchange || '',
+      fullExchangeName: raw.exchange || '',
+      quoteType: 'EQUITY'
+    };
+  },
+
+  normalizeHistoryPayload(symbol, raw, cfg, rangeKey) {
+    const values = raw?.values;
+    if (!Array.isArray(values) || !values.length) return null;
+
+    const entries = values
+      .slice()
+      .sort((a, b) => a.datetime.localeCompare(b.datetime))
+      .map(point => ({
+        date: point.datetime.split(' ')[0],
+        price: parseFloat(point.close),
+        volume: parseInt(point.volume || '0', 10)
+      }))
+      .filter(point => Number.isFinite(point.price));
+
+    let filtered = entries;
+    if (cfg.mode === 'ytd') {
+      const year = new Date().getFullYear().toString();
+      filtered = entries.filter(point => point.date.startsWith(year));
+    } else if (cfg.points) {
+      filtered = entries.slice(-cfg.points);
+    }
+
+    return {
+      ticker: symbol,
+      rangeKey,
+      dates: filtered.map(point => point.date),
+      prices: filtered.map(point => point.price),
+      volumes: filtered.map(point => point.volume)
+    };
+  },
+
+  averageOfTail(values, count) {
+    if (!values?.length) return null;
+    const tail = values.slice(-count).filter(value => value != null && !Number.isNaN(value));
+    if (!tail.length) return null;
+    return tail.reduce((sum, value) => sum + value, 0) / tail.length;
+  }
+};
+
+/* ---- Compute (Financial Math) ---- */
+PA.Compute = {
+  dailyReturns(prices) {
+    const r = [];
+    for (let i = 1; i < prices.length; i++) {
+      r.push(prices[i] / prices[i-1] - 1);
+    }
+    return r;
+  },
+  logReturns(prices) {
+    const r = [];
+    for (let i = 1; i < prices.length; i++) {
+      r.push(Math.log(prices[i] / prices[i-1]));
+    }
+    return r;
+  },
+  cumulativeReturns(prices) {
+    const base = prices[0];
+    return prices.map(p => p / base);
+  },
+  mean(arr) {
+    if (!arr.length) return 0;
+    return arr.reduce((s,v) => s+v, 0) / arr.length;
+  },
+  stdDev(arr) {
+    const m = this.mean(arr);
+    const variance = arr.reduce((s,v) => s + (v-m)**2, 0) / (arr.length - 1);
+    return Math.sqrt(variance);
+  },
+  annualizedReturn(prices, tradingDays=252) {
+    if (prices.length < 2) return 0;
+    const totalReturn = prices[prices.length-1] / prices[0];
+    const years = (prices.length - 1) / tradingDays;
+    return Math.pow(totalReturn, 1/years) - 1;
+  },
+  annualizedVolatility(returns, tradingDays=252) {
+    return this.stdDev(returns) * Math.sqrt(tradingDays);
+  },
+  sharpeRatio(returns, rf=PA.Config.RISK_FREE, tradingDays=252) {
+    const annRet = this.mean(returns) * tradingDays;
+    const annVol = this.annualizedVolatility(returns, tradingDays);
+    return annVol === 0 ? 0 : (annRet - rf) / annVol;
+  },
+  sortinoRatio(returns, rf=PA.Config.RISK_FREE, tradingDays=252) {
+    const annRet = this.mean(returns) * tradingDays;
+    const downside = returns.filter(r => r < 0);
+    const downDev = downside.length ? this.stdDev(downside) * Math.sqrt(tradingDays) : 0;
+    return downDev === 0 ? 0 : (annRet - rf) / downDev;
+  },
+  maxDrawdown(prices) {
+    let peak = prices[0], maxDD = 0, peakIdx = 0, ddStart = 0, ddEnd = 0;
+    for (let i = 1; i < prices.length; i++) {
+      if (prices[i] > peak) { peak = prices[i]; peakIdx = i; }
+      const dd = (peak - prices[i]) / peak;
+      if (dd > maxDD) { maxDD = dd; ddStart = peakIdx; ddEnd = i; }
+    }
+    return { maxDD, ddStart, ddEnd };
+  },
+  drawdownSeries(prices) {
+    let peak = prices[0];
+    return prices.map(p => {
+      if (p > peak) peak = p;
+      return (p - peak) / peak;
+    });
+  },
+  beta(stockReturns, marketReturns) {
+    const n = Math.min(stockReturns.length, marketReturns.length);
+    if (n < 2) return 1;
+    const sR = stockReturns.slice(0, n), mR = marketReturns.slice(0, n);
+    const mMean = this.mean(mR), sMean = this.mean(sR);
+    let cov = 0, mVar = 0;
+    for (let i = 0; i < n; i++) {
+      cov += (sR[i]-sMean)*(mR[i]-mMean);
+      mVar += (mR[i]-mMean)**2;
+    }
+    return mVar === 0 ? 1 : cov / mVar;
+  },
+  alpha(stockReturns, marketReturns, rf=PA.Config.RISK_FREE, tradingDays=252) {
+    const b = this.beta(stockReturns, marketReturns);
+    const sRet = this.mean(stockReturns) * tradingDays;
+    const mRet = this.mean(marketReturns) * tradingDays;
+    return sRet - (rf + b * (mRet - rf));
+  },
+  delta(stockPrices, marketPrices) {
+    // Regression coefficient: stock price change per unit market change
+    const sR = this.dailyReturns(stockPrices);
+    const mR = this.dailyReturns(marketPrices);
+    return this.beta(sR, mR); // Delta = regression beta
+  },
+  gamma(stockPrices, marketPrices, window=20) {
+    // Rate of change of delta over rolling windows
+    const sR = this.dailyReturns(stockPrices);
+    const mR = this.dailyReturns(marketPrices);
+    const deltas = [];
+    for (let i = window; i <= sR.length; i++) {
+      const sSub = sR.slice(i-window, i);
+      const mSub = mR.slice(i-window, i);
+      deltas.push(this.beta(sSub, mSub));
+    }
+    if (deltas.length < 2) return 0;
+    const changes = this.dailyReturns(deltas.map((d,i) => d + 2)); // offset to avoid negatives
+    return this.mean(changes);
+  },
+  correlation(a, b) {
+    const n = Math.min(a.length, b.length);
+    if (n < 2) return 0;
+    const aArr = a.slice(0,n), bArr = b.slice(0,n);
+    const aMean = this.mean(aArr), bMean = this.mean(bArr);
+    let cov=0, aVar=0, bVar=0;
+    for (let i=0; i<n; i++) {
+      cov += (aArr[i]-aMean)*(bArr[i]-bMean);
+      aVar += (aArr[i]-aMean)**2;
+      bVar += (bArr[i]-bMean)**2;
+    }
+    const denom = Math.sqrt(aVar*bVar);
+    return denom === 0 ? 0 : cov / denom;
+  },
+  rSquared(stockReturns, marketReturns) {
+    const c = this.correlation(stockReturns, marketReturns);
+    return c * c;
+  },
+  portfolioReturns(weights, returnArrays) {
+    // weights: array of decimals summing to 1
+    // returnArrays: array of arrays of daily returns (same length)
+    const n = Math.min(...returnArrays.map(r => r.length));
+    const pReturns = [];
+    for (let i = 0; i < n; i++) {
+      let dayReturn = 0;
+      for (let j = 0; j < weights.length; j++) {
+        dayReturn += weights[j] * (returnArrays[j]?.[i] || 0);
+      }
+      pReturns.push(dayReturn);
+    }
+    return pReturns;
+  },
+  growthOf(initialValue, returns) {
+    const growth = [initialValue];
+    for (const r of returns) {
+      growth.push(growth[growth.length-1] * (1 + r));
+    }
+    return growth;
+  },
+  monthlyReturns(dates, prices) {
+    const monthly = {};
+    for (let i = 0; i < dates.length; i++) {
+      const ym = dates[i].substring(0,7);
+      if (!monthly[ym]) monthly[ym] = { first: prices[i], last: prices[i] };
+      monthly[ym].last = prices[i];
+    }
+    const result = [];
+    const keys = Object.keys(monthly).sort();
+    for (let i = 1; i < keys.length; i++) {
+      result.push({
+        month: keys[i],
+        return: (monthly[keys[i]].last / monthly[keys[i-1]].last) - 1
+      });
+    }
+    return result;
+  },
+  rollingReturns(prices, window) {
+    const result = [];
+    for (let i = window; i < prices.length; i++) {
+      result.push(prices[i] / prices[i - window] - 1);
+    }
+    return result;
+  }
+};
+
+/* ---- Formatting Utilities ---- */
+PA.Fmt = {
+  currency(v, dec=2) {
+    if (v == null || isNaN(v)) return 'N/A';
+    return '$' + Number(v).toLocaleString('en-US', {minimumFractionDigits:dec, maximumFractionDigits:dec});
+  },
+  pct(v, dec=2) {
+    if (v == null || isNaN(v)) return 'N/A';
+    return (v * 100).toFixed(dec) + '%';
+  },
+  pctRaw(v, dec=2) {
+    if (v == null || isNaN(v)) return 'N/A';
+    return Number(v).toFixed(dec) + '%';
+  },
+  number(v, dec=2) {
+    if (v == null || isNaN(v)) return 'N/A';
+    return Number(v).toLocaleString('en-US', {minimumFractionDigits:dec, maximumFractionDigits:dec});
+  },
+  compact(v) {
+    if (v == null || isNaN(v)) return 'N/A';
+    const abs = Math.abs(v);
+    if (abs >= 1e12) return (v/1e12).toFixed(2) + 'T';
+    if (abs >= 1e9) return (v/1e9).toFixed(2) + 'B';
+    if (abs >= 1e6) return (v/1e6).toFixed(2) + 'M';
+    if (abs >= 1e3) return (v/1e3).toFixed(1) + 'K';
+    return v.toFixed(2);
+  },
+  ratio(v, dec=2) {
+    if (v == null || isNaN(v)) return 'N/A';
+    return Number(v).toFixed(dec);
+  },
+  colorClass(v) {
+    if (v == null || isNaN(v)) return '';
+    return v >= 0 ? 'positive' : 'negative';
+  }
+};
+
+</script>
+<script>
+/* ============================================================
+   Portfolio Analyzer Pro - Charts Module
+   ============================================================ */
+PA.Charts = {
+  instances: {},
+  destroy(id) {
+    if (this.instances[id]) { this.instances[id].destroy(); delete this.instances[id]; }
+  },
+  getCtx(id) {
+    this.destroy(id);
+    const el = document.getElementById(id);
+    if (!el) return null;
+    return el.getContext('2d');
+  },
+  priceHistory(canvasId, dates, prices, volumes, label='Price') {
+    const ctx = this.getCtx(canvasId);
+    if (!ctx) return;
+    this.instances[canvasId] = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: dates,
+        datasets: [{
+          label: label,
+          data: prices,
+          borderColor: PA.Config.COLORS[0],
+          backgroundColor: 'rgba(79,143,247,0.08)',
+          fill: true,
+          tension: 0.1,
+          pointRadius: 0,
+          pointHitRadius: 10,
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode:'index', intersect:false },
+        plugins: {
+          legend: { display:false },
+          tooltip: {
+            backgroundColor: '#1e2233',
+            titleColor: '#e8eaed',
+            bodyColor: '#e8eaed',
+            borderColor: '#2d3248',
+            borderWidth: 1,
+            callbacks: {
+              label: ctx => `${label}: $${ctx.parsed.y.toFixed(2)}`
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { color:'rgba(45,50,72,0.5)' },
+            ticks: { color:'#6b7280', maxTicksLimit:8, maxRotation:0 }
+          },
+          y: {
+            position: 'right',
+            grid: { color:'rgba(45,50,72,0.5)' },
+            ticks: { color:'#6b7280', callback: v => '$'+v.toFixed(0) }
+          }
+        }
+      }
+    });
+  },
+  multiLine(canvasId, dates, datasets, opts={}) {
+    const ctx = this.getCtx(canvasId);
+    if (!ctx) return;
+    this.instances[canvasId] = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: dates,
+        datasets: datasets.map((ds, i) => ({
+          label: ds.label,
+          data: ds.data,
+          borderColor: ds.color || PA.Config.COLORS[i % PA.Config.COLORS.length],
+          backgroundColor: 'transparent',
+          tension: 0.1,
+          pointRadius: 0,
+          pointHitRadius: 10,
+          borderWidth: 2,
+          ...ds
+        }))
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode:'index', intersect:false },
+        plugins: {
+          legend: { position:'top', labels:{color:'#9aa0a6', usePointStyle:true, pointStyle:'circle', padding:16 }},
+          tooltip: {
+            backgroundColor:'#1e2233', titleColor:'#e8eaed', bodyColor:'#e8eaed',
+            borderColor:'#2d3248', borderWidth:1,
+            callbacks: {
+              label: ctx => {
+                const fmt = opts.pct ? PA.Fmt.pct(ctx.parsed.y) : ('$'+ctx.parsed.y.toFixed(2));
+                return `${ctx.dataset.label}: ${fmt}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: { grid:{color:'rgba(45,50,72,0.5)'}, ticks:{color:'#6b7280', maxTicksLimit:8, maxRotation:0} },
+          y: {
+            position:'right',
+            grid:{color:'rgba(45,50,72,0.5)'},
+            ticks:{
+              color:'#6b7280',
+              callback: v => opts.pct ? (v*100).toFixed(0)+'%' : '$'+v.toFixed(0)
+            }
+          }
+        }
+      }
+    });
+  },
+  drawdown(canvasId, dates, ddSeries, label='Drawdown') {
+    const ctx = this.getCtx(canvasId);
+    if (!ctx) return;
+    this.instances[canvasId] = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: dates,
+        datasets: [{
+          label: label,
+          data: ddSeries,
+          borderColor: '#f87171',
+          backgroundColor: 'rgba(248,113,113,0.15)',
+          fill: true,
+          tension: 0.1,
+          pointRadius: 0,
+          borderWidth: 1.5
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend:{display:false},
+          tooltip:{
+            backgroundColor:'#1e2233', titleColor:'#e8eaed', bodyColor:'#e8eaed',
+            borderColor:'#2d3248', borderWidth:1,
+            callbacks:{ label: ctx => `Drawdown: ${(ctx.parsed.y*100).toFixed(2)}%` }
+          }
+        },
+        scales: {
+          x:{ grid:{color:'rgba(45,50,72,0.5)'}, ticks:{color:'#6b7280', maxTicksLimit:8, maxRotation:0} },
+          y:{ position:'right', grid:{color:'rgba(45,50,72,0.5)'}, ticks:{color:'#6b7280', callback:v=>(v*100).toFixed(0)+'%'} }
+        }
+      }
+    });
+  },
+  pie(canvasId, labels, values, colors) {
+    const ctx = this.getCtx(canvasId);
+    if (!ctx) return;
+    this.instances[canvasId] = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: labels,
+        datasets: [{
+          data: values,
+          backgroundColor: colors || labels.map((_, i) => PA.Config.COLORS[i % PA.Config.COLORS.length]),
+          borderColor: '#0f1117',
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '55%',
+        plugins: {
+          legend: { position:'right', labels:{color:'#9aa0a6', usePointStyle:true, pointStyle:'circle', padding:10, font:{size:12}} },
+          tooltip: {
+            backgroundColor:'#1e2233', titleColor:'#e8eaed', bodyColor:'#e8eaed',
+            callbacks:{ label: ctx => `${ctx.label}: ${ctx.parsed.toFixed(1)}%` }
+          }
+        }
+      }
+    });
+  },
+  bar(canvasId, labels, datasets) {
+    const ctx = this.getCtx(canvasId);
+    if (!ctx) return;
+    this.instances[canvasId] = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: datasets.map((ds, i) => ({
+          label: ds.label,
+          data: ds.data,
+          backgroundColor: ds.data.map(v => v >= 0 ? 'rgba(52,211,153,0.7)' : 'rgba(248,113,113,0.7)'),
+          borderColor: ds.data.map(v => v >= 0 ? '#34d399' : '#f87171'),
+          borderWidth: 1,
+          borderRadius: 3
+        }))
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend:{display: datasets.length > 1, labels:{color:'#9aa0a6'}},
+          tooltip:{
+            backgroundColor:'#1e2233', titleColor:'#e8eaed', bodyColor:'#e8eaed',
+            callbacks:{ label: ctx => `${ctx.dataset.label}: ${(ctx.parsed.y*100).toFixed(2)}%` }
+          }
+        },
+        scales: {
+          x:{grid:{display:false}, ticks:{color:'#6b7280'}},
+          y:{grid:{color:'rgba(45,50,72,0.5)'}, ticks:{color:'#6b7280', callback:v=>(v*100).toFixed(0)+'%'}}
+        }
+      }
+    });
+  },
+  scatter(canvasId, points, opts={}) {
+    const ctx = this.getCtx(canvasId);
+    if (!ctx) return;
+    this.instances[canvasId] = new Chart(ctx, {
+      type: 'scatter',
+      data: {
+        datasets: [{
+          data: points.map(p => ({x:p.x, y:p.y})),
+          backgroundColor: points.map((_, i) => PA.Config.COLORS[i % PA.Config.COLORS.length]),
+          pointRadius: 8,
+          pointHoverRadius: 10
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend:{display:false},
+          tooltip:{
+            backgroundColor:'#1e2233', titleColor:'#e8eaed', bodyColor:'#e8eaed',
+            callbacks:{
+              label: ctx => {
+                const p = points[ctx.dataIndex];
+                return `${p.label}: Risk ${(p.x*100).toFixed(1)}%, Return ${(p.y*100).toFixed(1)}%`;
+              }
+            }
+          }
+        },
+        scales: {
+          x:{title:{display:true, text:opts.xLabel||'Risk (Volatility)', color:'#9aa0a6'},
+             grid:{color:'rgba(45,50,72,0.5)'}, ticks:{color:'#6b7280', callback:v=>(v*100).toFixed(0)+'%'}},
+          y:{title:{display:true, text:opts.yLabel||'Return (CAGR)', color:'#9aa0a6'},
+             grid:{color:'rgba(45,50,72,0.5)'}, ticks:{color:'#6b7280', callback:v=>(v*100).toFixed(0)+'%'}}
+        }
+      }
+    });
+  }
+};
+
+</script>
+<script>
+/* ============================================================
+   Portfolio Analyzer Pro - Feature Modules
+   ============================================================ */
+
+/* ---- UI Utilities ---- */
+PA.UI = {
+  toast(msg, type='info') {
+    const container = document.getElementById('toast-container');
+    const el = document.createElement('div');
+    el.className = `toast toast-${type}`;
+    el.textContent = msg;
+    container.appendChild(el);
+    setTimeout(() => el.remove(), 4000);
+  },
+  showTab(name) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    const panel = document.getElementById('tab-'+name);
+    const btn = document.querySelector(`[data-tab="${name}"]`);
+    if (panel) panel.classList.add('active');
+    if (btn) btn.classList.add('active');
+  },
+  loading(el, show=true) {
+    if (typeof el === 'string') el = document.getElementById(el);
+    if (!el) return;
+    if (show) {
+      el.innerHTML = '<div class="loading"><div class="spinner"></div>Loading data...</div>';
+    }
+  },
+  debounce(fn, ms=300) {
+    let timer;
+    return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); };
+  }
+};
+
+/* ---- Ticker Analysis ---- */
+PA.Ticker = {
+  current: null,
+  currentRange: '1Y',
+
+  async lookup(ticker, options={}) {
+    ticker = ticker.toUpperCase().trim();
+    if (!ticker) return;
+    PA.UI.loading('ticker-content');
+    document.getElementById('ticker-content').style.display = 'block';
+    const emptyEl = document.getElementById('ticker-empty');
+    if (emptyEl) emptyEl.style.display = 'none';
+    try {
+      if (!options.forceLive) {
+        const cached = this.loadFreshFromDb(ticker, this.currentRange);
+        if (cached) {
+          this.current = cached;
+          this.render(true);
+          PA.UI.toast('Loaded cached data', 'info');
+          return;
+        }
+      }
+
+      const [quotes, history] = await Promise.allSettled([
+        PA.API.getQuote([ticker]),
+        PA.API.getHistory(ticker, this.currentRange)
+      ]);
+      const quote = quotes.status === 'fulfilled' ? (quotes.value[0] || null) : null;
+      const hist = history.status === 'fulfilled' ? history.value : null;
+      const failures = [quotes, history]
+        .filter(result => result.status === 'rejected')
+        .map(result => result.reason?.message)
+        .filter(Boolean);
+
+      if ((!hist || !quote) && failures.length) {
+        const cached = this.loadFromDb(ticker, this.currentRange);
+        if (cached) {
+          this.current = cached;
+          this.render(true);
+          PA.UI.toast('Loaded cached data because live API data is unavailable', 'info');
+          return;
+        }
+        throw new Error(failures[0]);
+      }
+
+      if (!hist || !quote) {
+        const cached = this.loadFromDb(ticker, this.currentRange);
+        if (cached) {
+          this.current = cached;
+          this.render(true);
+          PA.UI.toast('Loaded cached data because live API data is unavailable', 'info');
+          return;
+        }
+        document.getElementById('ticker-content').innerHTML =
+          `<div class="empty-state"><h3>Ticker "${ticker}" not found</h3><p>Please check the symbol and try again.</p></div>`;
+        return;
+      }
+
+      const hData = PA.API.parseHistory(hist);
+      this.applyDerivedStats(quote, hData);
+      this.current = { ticker, quote, hist, summary: {} };
+      this.render();
+      // Save to DB
+      this.saveToDb(ticker, quote, {}, hist);
+    } catch(e) {
+      document.getElementById('ticker-content').innerHTML =
+        `<div class="empty-state"><h3>Error loading data</h3><p>${e.message}</p><p style="margin-top:8px;font-size:0.8rem;color:var(--text-muted)">Check your Twelve Data API key in Settings, then try again.</p></div>`;
+    }
+  },
+
+  render(isCached=false) {
+    if (!this.current) return;
+    const { ticker, quote: q, hist, summary: s } = this.current;
+    const ks = s?.defaultKeyStatistics || {};
+    const sd = s?.summaryDetail || {};
+    const earnings = s?.earnings || {};
+    const company = s?.company || {};
+
+    const change = q.regularMarketChange || 0;
+    const changePct = q.regularMarketChangePercent || 0;
+    const changeClass = change >= 0 ? 'positive' : 'negative';
+    const changeSign = change >= 0 ? '+' : '';
+    const marketLabel = q.marketState === 'REGULAR'
+      ? '<span class="positive">Open</span>'
+      : q.marketState === 'UNKNOWN'
+        ? '<span>Unknown</span>'
+        : '<span class="negative">Closed</span>';
+
+    // Get parsed history
+    const hData = PA.API.parseHistory(hist);
+    this.applyDerivedStats(q, hData);
+    // Compute Greeks from history
+    if (hData.prices.length > 30) {
+      if (isCached) {
+        this.loadGreeksFromDb(ticker);
+      } else {
+        // We need SPY data for comparison
+        this.computeGreeks(ticker, hData);
+      }
+    }
+
+    // Extract values with fallbacks
+    const beta = this.v(ks.beta) ?? this.v(q.beta) ?? null;
+    const pe = this.v(sd.trailingPE) ?? this.v(q.trailingPE) ?? null;
+    const fwdPe = this.v(ks.forwardPE) ?? this.v(sd.forwardPE) ?? null;
+    const mktCap = q.marketCap ?? this.v(sd.marketCap) ?? null;
+    const volume = q.regularMarketVolume || null;
+    const yld = this.v(sd.dividendYield) ?? (q.trailingAnnualDividendYield || null);
+    const fiftyTwoWeekLow = q.fiftyTwoWeekLow ?? this.v(sd.fiftyTwoWeekLow);
+    const fiftyTwoWeekHigh = q.fiftyTwoWeekHigh ?? this.v(sd.fiftyTwoWeekHigh);
+    const fiftyDayAverage = q.fiftyDayAverage ?? this.v(sd.fiftyDayAverage);
+    const twoHundredDayAverage = q.twoHundredDayAverage ?? this.v(sd.twoHundredDayAverage);
+    const epsTtm = q.epsTrailingTwelveMonths ?? this.v(earnings.eps);
+    const bookValue = q.bookValue ?? this.v(s?.valuation?.bookValue);
+    const sharesOutstanding = q.sharesOutstanding ?? this.v(ks.sharesOutstanding);
+
+    const html = `
+      <div class="ticker-header">
+        <span class="ticker-symbol">${q.symbol || ticker}</span>
+        <span class="ticker-name">${q.shortName || q.longName || company.name || ''}</span>
+        <span style="flex:1"></span>
+        <span class="ticker-price">${PA.Fmt.currency(q.regularMarketPrice)}</span>
+        <span class="ticker-change ${changeClass}">${changeSign}${change.toFixed(2)} (${changeSign}${changePct.toFixed(2)}%)</span>
+      </div>
+      <div style="color:var(--text-muted);font-size:0.8rem;margin-bottom:20px">
+        ${q.fullExchangeName || q.exchange || ''} &middot; ${q.currency || 'USD'} &middot;
+        Market ${marketLabel}
+        ${isCached ? ' &middot; <span>Cached data</span>' : ''}
+      </div>
+
+      <div class="grid-5" id="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-label">Beta</div>
+          <div class="metric-value">${beta != null ? PA.Fmt.ratio(beta) : '<span id="metric-beta">--</span>'}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">P/E Ratio</div>
+          <div class="metric-value">${pe != null ? PA.Fmt.ratio(pe) : 'N/A'}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Forward P/E</div>
+          <div class="metric-value">${fwdPe != null ? PA.Fmt.ratio(fwdPe) : 'N/A'}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Delta</div>
+          <div class="metric-value" id="metric-delta">--</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Gamma</div>
+          <div class="metric-value" id="metric-gamma">--</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Alpha</div>
+          <div class="metric-value" id="metric-alpha">--</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Market Cap</div>
+          <div class="metric-value">${mktCap ? '$'+PA.Fmt.compact(mktCap) : 'N/A'}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Volume</div>
+          <div class="metric-value">${volume ? PA.Fmt.compact(volume) : 'N/A'}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Yield</div>
+          <div class="metric-value">${yld != null ? PA.Fmt.pct(yld) : 'N/A'}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">52W Range</div>
+          <div class="metric-value" style="font-size:0.85rem">
+            ${PA.Fmt.currency(fiftyTwoWeekLow,0)} - ${PA.Fmt.currency(fiftyTwoWeekHigh,0)}
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="card-title">Price History</div>
+        <div class="range-selector" id="ticker-ranges"></div>
+        <div class="chart-container chart-lg"><canvas id="chart-price"></canvas></div>
+      </div>
+
+      <div class="grid-2" style="margin-top:16px">
+        <div class="card">
+          <div class="card-title">Drawdown</div>
+          <div class="chart-container chart-sm"><canvas id="chart-ticker-dd"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Additional Stats</div>
+          <table class="data-table" id="ticker-stats-table"></table>
+        </div>
+      </div>
+
+      <div style="margin-top:16px;display:flex;gap:8px">
+        <button class="btn" onclick="PA.Ticker.lookup('${ticker}', { forceLive: true })">Refresh Live</button>
+        <button class="btn btn-primary" onclick="PA.Portfolio.addFromTicker()">Add to Portfolio</button>
+        <button class="btn" onclick="PA.Ticker.addToWatchlist('${ticker}')">Add to Watchlist</button>
+      </div>
+    `;
+    document.getElementById('ticker-content').innerHTML = html;
+
+    // Render range buttons
+    const rangeContainer = document.getElementById('ticker-ranges');
+    Object.keys(PA.Config.RANGES).forEach(r => {
+      const btn = document.createElement('button');
+      btn.className = 'range-btn' + (r === this.currentRange ? ' active' : '');
+      btn.textContent = r;
+      btn.onclick = () => this.changeRange(r);
+      rangeContainer.appendChild(btn);
+    });
+
+    // Render charts
+    if (hData.prices.length > 1) {
+      PA.Charts.priceHistory('chart-price', hData.dates, hData.prices, hData.volumes, ticker);
+      const dd = PA.Compute.drawdownSeries(hData.prices);
+      PA.Charts.drawdown('chart-ticker-dd', hData.dates, dd);
+    }
+
+    // Stats table
+    const statsTable = document.getElementById('ticker-stats-table');
+    const stats = [
+      ['EPS (TTM)', PA.Fmt.currency(epsTtm)],
+      ['Forward EPS', PA.Fmt.currency(q.epsForward)],
+      ['Price/Book', PA.Fmt.ratio(q.priceToBook ?? this.v(sd.priceToBook))],
+      ['Book Value', PA.Fmt.currency(bookValue)],
+      ['50-Day Avg', PA.Fmt.currency(fiftyDayAverage)],
+      ['200-Day Avg', PA.Fmt.currency(twoHundredDayAverage)],
+      ['Avg Volume', q.averageDailyVolume3Month ? PA.Fmt.compact(q.averageDailyVolume3Month || q.averageDailyVolume10Day) : 'N/A'],
+      ['Shares Out', sharesOutstanding ? PA.Fmt.compact(sharesOutstanding) : 'N/A'],
+      ['Ex-Div Date', q.exDividendDate ? this.formatDate(q.exDividendDate) : 'N/A']
+    ];
+    statsTable.innerHTML = stats.map(([k,v]) =>
+      `<tr><td style="font-family:var(--font);color:var(--text-secondary)">${k}</td><td class="right">${v}</td></tr>`
+    ).join('');
+  },
+
+  v(obj) {
+    if (obj == null) return null;
+    if (typeof obj === 'object' && 'raw' in obj) return obj.raw;
+    if (typeof obj === 'number') return obj;
+    return null;
+  },
+
+  formatDate(value) {
+    if (!value) return 'N/A';
+    if (typeof value === 'number') return new Date(value * 1000).toLocaleDateString();
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString();
+  },
+
+  async computeGreeks(ticker) {
+    try {
+      const historyMap = await PA.API.getHistories([ticker, 'SPY'], this.currentRange);
+      const stockHist = historyMap[ticker];
+      const spyHist = historyMap.SPY;
+      const stockData = PA.API.parseHistory(stockHist);
+      const spyData = PA.API.parseHistory(spyHist);
+      if (stockData.prices.length < 20 || spyData.prices.length < 20) return;
+
+      const sReturns = PA.Compute.dailyReturns(stockData.prices);
+      const mReturns = PA.Compute.dailyReturns(spyData.prices);
+
+      const b = PA.Compute.beta(sReturns, mReturns);
+      const a = PA.Compute.alpha(sReturns, mReturns);
+      const d = PA.Compute.delta(stockData.prices, spyData.prices);
+      const g = PA.Compute.gamma(stockData.prices, spyData.prices);
+
+      const setEl = (id, val, dec=4) => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.textContent = PA.Fmt.ratio(val, dec);
+          el.className = PA.Fmt.colorClass(val);
+        }
+      };
+      setEl('metric-beta', b, 2);
+      setEl('metric-delta', d, 3);
+      setEl('metric-gamma', g, 4);
+      setEl('metric-alpha', a, 4);
+
+      // Save to DB
+      PA.DB.exec(`INSERT OR REPLACE INTO greeks(ticker,alpha,beta,delta,gamma,sharpe_ratio,sortino_ratio,std_dev,max_drawdown,calc_period)
+        VALUES(?,?,?,?,?,?,?,?,?,?)`, [
+        ticker, a, b, d, g,
+        PA.Compute.sharpeRatio(sReturns),
+        PA.Compute.sortinoRatio(sReturns),
+        PA.Compute.annualizedVolatility(sReturns),
+        PA.Compute.maxDrawdown(stockData.prices).maxDD,
+        this.currentRange
+      ]);
+      PA.DB.save();
+    } catch(e) { console.warn('Greek calc failed:', e); }
+  },
+
+  loadGreeksFromDb(ticker) {
+    const greeks = PA.DB.selectOne(
+      `SELECT alpha,beta,delta,gamma FROM greeks WHERE ticker=? ORDER BY calculated_at DESC LIMIT 1`,
+      [ticker]
+    );
+    if (!greeks) return;
+    const setEl = (id, val, dec=4) => {
+      const el = document.getElementById(id);
+      if (el && val != null) {
+        el.textContent = PA.Fmt.ratio(val, dec);
+        el.className = PA.Fmt.colorClass(val);
+      }
+    };
+    setEl('metric-beta', greeks.beta, 2);
+    setEl('metric-delta', greeks.delta, 3);
+    setEl('metric-gamma', greeks.gamma, 4);
+    setEl('metric-alpha', greeks.alpha, 4);
+  },
+
+  async changeRange(range) {
+    this.currentRange = range;
+    if (this.current) {
+      let hist = null;
+      try {
+        hist = await PA.API.getHistory(this.current.ticker, range);
+      } catch(e) {
+        hist = this.loadHistoryFromDb(this.current.ticker, range);
+        if (!hist) throw e;
+        PA.UI.toast('Loaded cached history because live API data is unavailable', 'info');
+      }
+      this.current.hist = hist;
+      const hData = PA.API.parseHistory(hist);
+      this.applyDerivedStats(this.current.quote, hData);
+      // Update range buttons
+      document.querySelectorAll('#ticker-ranges .range-btn').forEach(b => {
+        b.classList.toggle('active', b.textContent === range);
+      });
+      if (hData.prices.length > 1) {
+        PA.Charts.priceHistory('chart-price', hData.dates, hData.prices, hData.volumes, this.current.ticker);
+        const dd = PA.Compute.drawdownSeries(hData.prices);
+        PA.Charts.drawdown('chart-ticker-dd', hData.dates, dd);
+      }
+    }
+  },
+
+  saveToDb(ticker, quote, summary, hist) {
+    const ks = summary?.defaultKeyStatistics || {};
+    const sd = summary?.summaryDetail || {};
+    const company = summary?.company || {};
+    const earnings = summary?.earnings || {};
+    const valuation = summary?.valuation || {};
+    const dividends = summary?.dividends || {};
+    PA.DB.exec(`INSERT OR REPLACE INTO securities(ticker,name,sector,exchange,asset_type)
+      VALUES(?,?,?,?,?)`, [
+      ticker, quote.shortName || quote.longName || company.name || '', company.sector || quote.sector || '', quote.exchange || company.exchange || '',
+      quote.quoteType === 'ETF' ? 'etf' : 'equity'
+    ]);
+    PA.DB.exec(`INSERT INTO quotes(ticker,price,open_price,high,low,close_price,prev_close,volume,avg_volume,
+      market_cap,beta,pe_ratio,fwd_pe_ratio,eps,fwd_eps,dividend_yield,fifty_two_week_high,fifty_two_week_low,
+      fifty_day_avg,two_hundred_day_avg,shares_outstanding,book_value,price_to_book)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [
+      ticker, quote.regularMarketPrice, quote.regularMarketOpen, quote.regularMarketDayHigh,
+      quote.regularMarketDayLow, quote.regularMarketPrice, quote.regularMarketPreviousClose,
+      quote.regularMarketVolume, quote.averageDailyVolume3Month, quote.marketCap ?? this.v(sd.marketCap) ?? valuation.marketCap,
+      this.v(ks.beta) ?? quote.beta, this.v(sd.trailingPE) ?? quote.trailingPE,
+      this.v(ks.forwardPE) ?? this.v(sd.forwardPE), quote.epsTrailingTwelveMonths ?? earnings.eps, quote.epsForward,
+      this.v(sd.dividendYield) ?? dividends.dividendYield, quote.fiftyTwoWeekHigh ?? this.v(sd.fiftyTwoWeekHigh), quote.fiftyTwoWeekLow ?? this.v(sd.fiftyTwoWeekLow),
+      quote.fiftyDayAverage ?? this.v(sd.fiftyDayAverage), quote.twoHundredDayAverage ?? this.v(sd.twoHundredDayAverage), quote.sharesOutstanding ?? this.v(ks.sharesOutstanding),
+      quote.bookValue ?? valuation.bookValue, quote.priceToBook ?? this.v(sd.priceToBook)
+    ]);
+    // Save price history
+    if (hist) {
+      const hData = PA.API.parseHistory(hist);
+      hData.dates.forEach((d, i) => {
+        PA.DB.exec(`INSERT OR IGNORE INTO price_history(ticker,date,close_price,adj_close,volume)
+          VALUES(?,?,?,?,?)`, [ticker, d, hData.prices[i], hData.prices[i], hData.volumes[i]]);
+      });
+    }
+    PA.DB.save();
+  },
+
+  applyDerivedStats(quote, historyData) {
+    if (!quote || !historyData) return;
+    if (!quote.fiftyDayAverage) {
+      quote.fiftyDayAverage = PA.API.averageOfTail(historyData.prices, 50);
+    }
+    if (!quote.twoHundredDayAverage) {
+      quote.twoHundredDayAverage = PA.API.averageOfTail(historyData.prices, 200);
+    }
+    if (!quote.averageDailyVolume3Month) {
+      quote.averageDailyVolume3Month = PA.API.averageOfTail(historyData.volumes, 60);
+      quote.averageDailyVolume10Day = quote.averageDailyVolume3Month;
+    }
+    if ((!quote.fiftyTwoWeekHigh || !quote.fiftyTwoWeekLow) && historyData.prices.length) {
+      const trailingYear = historyData.prices.slice(-252);
+      if (trailingYear.length) {
+        quote.fiftyTwoWeekHigh = quote.fiftyTwoWeekHigh ?? Math.max(...trailingYear);
+        quote.fiftyTwoWeekLow = quote.fiftyTwoWeekLow ?? Math.min(...trailingYear);
+      }
+    }
+  },
+
+  loadFromDb(ticker, range='1Y') {
+    const security = PA.DB.selectOne(
+      `SELECT ticker,name,sector,exchange,asset_type FROM securities WHERE ticker=?`,
+      [ticker]
+    );
+    const quoteRow = PA.DB.selectOne(
+      `SELECT * FROM quotes WHERE ticker=? ORDER BY fetched_at DESC LIMIT 1`,
+      [ticker]
+    );
+    const hist = this.loadHistoryFromDb(ticker, range);
+    if (!quoteRow || !hist) return null;
+
+    const prevClose = quoteRow.prev_close ?? quoteRow.close_price;
+    const price = quoteRow.price ?? quoteRow.close_price;
+    const change = prevClose ? price - prevClose : 0;
+    const changePct = prevClose ? ((price - prevClose) / prevClose) * 100 : 0;
+
+    return {
+      ticker,
+      quote: {
+        symbol: ticker,
+        shortName: security?.name || ticker,
+        longName: security?.name || ticker,
+        regularMarketPrice: price,
+        regularMarketChange: change,
+        regularMarketChangePercent: changePct,
+        regularMarketPreviousClose: prevClose,
+        regularMarketOpen: quoteRow.open_price,
+        regularMarketDayHigh: quoteRow.high,
+        regularMarketDayLow: quoteRow.low,
+        regularMarketVolume: quoteRow.volume,
+        averageDailyVolume3Month: quoteRow.avg_volume,
+        averageDailyVolume10Day: quoteRow.avg_volume,
+        marketCap: quoteRow.market_cap,
+        trailingPE: quoteRow.pe_ratio,
+        forwardPE: quoteRow.fwd_pe_ratio,
+        trailingAnnualDividendYield: quoteRow.dividend_yield,
+        dividendRate: quoteRow.dividend_rate,
+        epsTrailingTwelveMonths: quoteRow.eps,
+        epsForward: quoteRow.fwd_eps,
+        priceToBook: quoteRow.price_to_book,
+        bookValue: quoteRow.book_value,
+        sharesOutstanding: quoteRow.shares_outstanding,
+        fiftyTwoWeekHigh: quoteRow.fifty_two_week_high,
+        fiftyTwoWeekLow: quoteRow.fifty_two_week_low,
+        fiftyDayAverage: quoteRow.fifty_day_avg,
+        twoHundredDayAverage: quoteRow.two_hundred_day_avg,
+        exDividendDate: quoteRow.ex_dividend_date,
+        marketState: 'UNKNOWN',
+        currency: 'USD',
+        exchange: security?.exchange || '',
+        fullExchangeName: security?.exchange || '',
+        quoteType: security?.asset_type === 'etf' ? 'ETF' : 'EQUITY'
+      },
+      hist,
+      summary: {}
+    };
+  },
+
+  loadFreshFromDb(ticker, range='1Y') {
+    const quoteRow = PA.DB.selectOne(
+      `SELECT fetched_at FROM quotes WHERE ticker=? ORDER BY fetched_at DESC LIMIT 1`,
+      [ticker]
+    );
+    if (!quoteRow?.fetched_at) return null;
+    const fetchedAt = this.parseDbTimestamp(quoteRow.fetched_at);
+    if (!fetchedAt) return null;
+    if (Date.now() - fetchedAt.getTime() > PA.API.CACHE_TTL) return null;
+    return this.loadFromDb(ticker, range);
+  },
+
+  parseDbTimestamp(value) {
+    if (!value) return null;
+    const iso = String(value).includes('T')
+      ? String(value)
+      : String(value).replace(' ', 'T') + 'Z';
+    const parsed = new Date(iso);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  },
+
+  loadHistoryFromDb(ticker, range='1Y') {
+    const cfg = PA.Config.RANGES[range] || PA.Config.RANGES['1Y'];
+    const rows = PA.DB.selectAll(
+      `SELECT date, COALESCE(adj_close, close_price) AS close_price, volume
+       FROM price_history
+       WHERE ticker=?
+       ORDER BY date ASC`,
+      [ticker]
+    );
+    if (!rows.length) return null;
+    let filtered = rows;
+    if (cfg.mode === 'ytd') {
+      const year = new Date().getFullYear().toString();
+      filtered = rows.filter(row => String(row.date).startsWith(year));
+    } else if (cfg.points) {
+      filtered = rows.slice(-cfg.points);
+    }
+    if (!filtered.length) return null;
+    return {
+      ticker,
+      rangeKey: range,
+      dates: filtered.map(row => row.date),
+      prices: filtered.map(row => Number(row.close_price)),
+      volumes: filtered.map(row => Number(row.volume || 0))
+    };
+  },
+
+  addToWatchlist(ticker) {
+    PA.DB.exec(`INSERT OR IGNORE INTO watchlist(ticker) VALUES(?)`, [ticker]);
+    PA.DB.save();
+    PA.UI.toast(`${ticker} added to watchlist`, 'success');
+    PA.Dashboard.loadWatchlist();
+  }
+};
+
+/* ---- Portfolio Manager ---- */
+PA.Portfolio = {
+  holdings: [],
+  currentId: null,
+
+  init() {
+    this.loadFromDb();
+    this.render();
+  },
+
+  addHolding(ticker, allocation) {
+    ticker = ticker.toUpperCase().trim();
+    if (!ticker) return;
+    allocation = parseFloat(allocation) || 0;
+    const existing = this.holdings.find(h => h.ticker === ticker);
+    if (existing) {
+      existing.allocation = allocation;
+    } else {
+      this.holdings.push({ ticker, allocation });
+    }
+    this.render();
+  },
+
+  removeHolding(ticker) {
+    this.holdings = this.holdings.filter(h => h.ticker !== ticker);
+    this.render();
+  },
+
+  addFromTicker() {
+    if (!PA.Ticker.current) return;
+    const ticker = PA.Ticker.current.ticker;
+    const alloc = prompt(`Enter allocation % for ${ticker}:`, '10');
+    if (alloc !== null) {
+      this.addHolding(ticker, parseFloat(alloc));
+      PA.UI.showTab('portfolio');
+      PA.UI.toast(`${ticker} added to portfolio`, 'success');
+    }
+  },
+
+  getTotalAllocation() {
+    return this.holdings.reduce((s, h) => s + h.allocation, 0);
+  },
+
+  render() {
+    const container = document.getElementById('portfolio-holdings');
+    const total = this.getTotalAllocation();
+    const allocColor = total > 100 ? 'var(--red)' : total === 100 ? 'var(--green)' : 'var(--yellow)';
+
+    let html = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div>
+          <span style="font-size:0.85rem;color:var(--text-secondary)">Total Allocation:</span>
+          <span style="font-weight:700;color:${allocColor};margin-left:8px;font-family:var(--font-mono)">${total.toFixed(1)}%</span>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sm" onclick="PA.Portfolio.normalize()">Normalize to 100%</button>
+          <button class="btn btn-sm btn-primary" onclick="PA.Portfolio.saveDialog()">Save Portfolio</button>
+        </div>
+      </div>
+      <div class="alloc-bar"><div class="alloc-fill" style="width:${Math.min(total,100)}%;background:${allocColor}"></div></div>
+    `;
+
+    if (this.holdings.length === 0) {
+      html += `<div class="empty-state" style="padding:30px"><h3>No holdings yet</h3><p>Search for a ticker and add it, or use the form below.</p></div>`;
+    } else {
+      html += `<table class="data-table"><thead><tr>
+        <th>Ticker</th><th>Name</th><th class="right">Allocation %</th><th class="right">Actions</th>
+      </tr></thead><tbody>`;
+      this.holdings.forEach(h => {
+        const sec = PA.DB.selectOne(`SELECT name FROM securities WHERE ticker=?`, [h.ticker]);
+        html += `<tr>
+          <td style="color:var(--accent);font-weight:600;cursor:pointer" onclick="PA.Ticker.lookup('${h.ticker}');PA.UI.showTab('ticker')">${h.ticker}</td>
+          <td style="font-family:var(--font);color:var(--text-secondary)">${sec?.name || ''}</td>
+          <td class="right">
+            <input type="number" value="${h.allocation}" min="0" max="100" step="0.1"
+              style="width:70px;text-align:right;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);padding:4px 6px;font-family:var(--font-mono)"
+              onchange="PA.Portfolio.updateAllocation('${h.ticker}',this.value)">
+          </td>
+          <td class="right">
+            <button class="btn btn-sm btn-danger" onclick="PA.Portfolio.removeHolding('${h.ticker}')">Remove</button>
+          </td>
+        </tr>`;
+      });
+      html += `</tbody></table>`;
+    }
+
+    // Add ticker form
+    html += `
+      <div style="display:flex;gap:8px;margin-top:16px;align-items:end">
+        <div class="form-group" style="flex:1;margin:0">
+          <label class="form-label">Ticker</label>
+          <input class="form-input" id="port-add-ticker" placeholder="e.g. AAPL" style="text-transform:uppercase">
+        </div>
+        <div class="form-group" style="width:100px;margin:0">
+          <label class="form-label">Allocation %</label>
+          <input class="form-input" id="port-add-alloc" type="number" value="10" min="0" max="100" step="0.1">
+        </div>
+        <button class="btn btn-primary" onclick="PA.Portfolio.addFromForm()" style="height:36px">Add</button>
+      </div>
+    `;
+    container.innerHTML = html;
+
+    // Update pie chart
+    if (this.holdings.length > 0) {
+      PA.Charts.pie('chart-allocation',
+        this.holdings.map(h => h.ticker),
+        this.holdings.map(h => h.allocation)
+      );
+    }
+  },
+
+  addFromForm() {
+    const ticker = document.getElementById('port-add-ticker').value;
+    const alloc = document.getElementById('port-add-alloc').value;
+    if (ticker) {
+      this.addHolding(ticker, alloc);
+      document.getElementById('port-add-ticker').value = '';
+    }
+  },
+
+  updateAllocation(ticker, value) {
+    const h = this.holdings.find(h => h.ticker === ticker);
+    if (h) { h.allocation = parseFloat(value) || 0; this.render(); }
+  },
+
+  normalize() {
+    const total = this.getTotalAllocation();
+    if (total === 0) return;
+    this.holdings.forEach(h => { h.allocation = (h.allocation / total) * 100; });
+    this.render();
+  },
+
+  saveDialog() {
+    const name = prompt('Portfolio name:', 'My Portfolio');
+    if (!name) return;
+    this.save(name);
+  },
+
+  save(name) {
+    PA.DB.exec(`INSERT INTO portfolios(name, benchmark, initial_balance) VALUES(?,?,?)`,
+      [name, 'SPY', 10000]);
+    const row = PA.DB.selectOne(`SELECT last_insert_rowid() as id`);
+    const pid = row.id;
+    this.holdings.forEach(h => {
+      PA.DB.exec(`INSERT INTO portfolio_holdings(portfolio_id, ticker, allocation) VALUES(?,?,?)`,
+        [pid, h.ticker, h.allocation]);
+    });
+    this.currentId = pid;
+    PA.DB.save();
+    PA.UI.toast(`Portfolio "${name}" saved`, 'success');
+    this.loadSavedList();
+  },
+
+  loadFromDb() {
+    const saved = PA.DB.selectAll(`SELECT * FROM portfolios ORDER BY created_at DESC LIMIT 1`);
+    if (saved.length) {
+      this.currentId = saved[0].id;
+      const holdings = PA.DB.selectAll(`SELECT * FROM portfolio_holdings WHERE portfolio_id=?`, [this.currentId]);
+      this.holdings = holdings.map(h => ({ ticker: h.ticker, allocation: h.allocation }));
+    }
+  },
+
+  loadPortfolio(id) {
+    const holdings = PA.DB.selectAll(`SELECT * FROM portfolio_holdings WHERE portfolio_id=?`, [id]);
+    this.holdings = holdings.map(h => ({ ticker: h.ticker, allocation: h.allocation }));
+    this.currentId = id;
+    this.render();
+    PA.UI.toast('Portfolio loaded', 'success');
+  },
+
+  loadSavedList() {
+    const list = PA.DB.selectAll(`SELECT * FROM portfolios ORDER BY created_at DESC`);
+    const container = document.getElementById('saved-portfolios');
+    if (!container) return;
+    if (list.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-muted);padding:10px">No saved portfolios</div>';
+      return;
+    }
+    container.innerHTML = list.map(p => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+        <div>
+          <div style="font-weight:600">${p.name}</div>
+          <div style="font-size:0.75rem;color:var(--text-muted)">${p.created_at || ''}</div>
+        </div>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-sm" onclick="PA.Portfolio.loadPortfolio(${p.id})">Load</button>
+          <button class="btn btn-sm btn-danger" onclick="PA.Portfolio.deletePortfolio(${p.id})">Del</button>
+        </div>
+      </div>
+    `).join('');
+  },
+
+  deletePortfolio(id) {
+    PA.DB.exec(`DELETE FROM portfolios WHERE id=?`, [id]);
+    PA.DB.exec(`DELETE FROM portfolio_holdings WHERE portfolio_id=?`, [id]);
+    PA.DB.save();
+    this.loadSavedList();
+    PA.UI.toast('Portfolio deleted', 'info');
+  }
+};
+
+</script>
+<script>
+/* ============================================================
+   Portfolio Analyzer Pro - Backtest & Compare & Dashboard
+   ============================================================ */
+
+/* ---- Backtesting Engine ---- */
+PA.Backtest = {
+  async run() {
+    const holdings = PA.Portfolio.holdings;
+    if (holdings.length === 0) {
+      PA.UI.toast('Add holdings to portfolio first', 'error');
+      return;
+    }
+    const total = PA.Portfolio.getTotalAllocation();
+    if (total === 0) { PA.UI.toast('Set allocations first', 'error'); return; }
+
+    const resultsDiv = document.getElementById('backtest-results');
+    PA.UI.loading(resultsDiv);
+    resultsDiv.style.display = 'block';
+
+    const benchmark = document.getElementById('bt-benchmark')?.value || 'SPY';
+    const range = document.getElementById('bt-range')?.value || '5Y';
+    const initial = parseFloat(document.getElementById('bt-initial')?.value) || 10000;
+
+    try {
+      // Fetch all histories in parallel
+      const tickers = [...holdings.map(h => h.ticker), benchmark];
+      const unique = [...new Set(tickers)];
+      const histories = await PA.API.getHistories(unique, range);
+      const dataMap = {};
+      unique.forEach(t => { dataMap[t] = PA.API.parseHistory(histories[t]); });
+
+      // Find common date range
+      const allDates = unique.map(t => new Set(dataMap[t].dates));
+      let commonDates = [...allDates[0]].filter(d => allDates.every(s => s.has(d))).sort();
+      if (commonDates.length < 5) {
+        resultsDiv.innerHTML = '<div class="empty-state"><h3>Insufficient overlapping data</h3></div>';
+        return;
+      }
+
+      // Build aligned price arrays
+      const aligned = {};
+      unique.forEach(t => {
+        const dateIdx = {};
+        dataMap[t].dates.forEach((d, i) => { dateIdx[d] = i; });
+        aligned[t] = commonDates.map(d => dataMap[t].prices[dateIdx[d]]);
+      });
+
+      // Compute portfolio daily returns
+      const weights = holdings.map(h => h.allocation / total);
+      const returnArrays = holdings.map(h => PA.Compute.dailyReturns(aligned[h.ticker]));
+      const portReturns = PA.Compute.portfolioReturns(weights, returnArrays);
+      const portGrowth = PA.Compute.growthOf(initial, portReturns);
+      const bmReturns = PA.Compute.dailyReturns(aligned[benchmark]);
+      const bmGrowth = PA.Compute.growthOf(initial, bmReturns);
+
+      // Metrics
+      const portAnnRet = PA.Compute.annualizedReturn(portGrowth);
+      const portVol = PA.Compute.annualizedVolatility(portReturns);
+      const portSharpe = PA.Compute.sharpeRatio(portReturns);
+      const portSortino = PA.Compute.sortinoRatio(portReturns);
+      const portDD = PA.Compute.maxDrawdown(portGrowth);
+      const portDDSeries = PA.Compute.drawdownSeries(portGrowth);
+
+      const bmAnnRet = PA.Compute.annualizedReturn(bmGrowth);
+      const bmVol = PA.Compute.annualizedVolatility(bmReturns);
+      const bmSharpe = PA.Compute.sharpeRatio(bmReturns);
+      const bmSortino = PA.Compute.sortinoRatio(bmReturns);
+      const bmDD = PA.Compute.maxDrawdown(bmGrowth);
+      const bmDDSeries = PA.Compute.drawdownSeries(bmGrowth);
+
+      const calmar = portDD.maxDD > 0 ? portAnnRet / portDD.maxDD : 0;
+      const bmCalmar = bmDD.maxDD > 0 ? bmAnnRet / bmDD.maxDD : 0;
+
+      const finalPort = portGrowth[portGrowth.length-1];
+      const finalBm = bmGrowth[bmGrowth.length-1];
+      const totalRetPort = (finalPort/initial - 1);
+      const totalRetBm = (finalBm/initial - 1);
+
+      resultsDiv.innerHTML = `
+        <div class="card">
+          <div class="card-title">Performance Summary</div>
+          <div class="grid-2">
+            <div>
+              <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px">PORTFOLIO</div>
+              <div style="font-size:1.8rem;font-weight:700;font-family:var(--font-mono);color:var(--accent)">${PA.Fmt.currency(finalPort)}</div>
+              <div class="metric-sub ${PA.Fmt.colorClass(totalRetPort)}">${totalRetPort>=0?'+':''}${PA.Fmt.pct(totalRetPort)}</div>
+            </div>
+            <div>
+              <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px">BENCHMARK (${benchmark})</div>
+              <div style="font-size:1.8rem;font-weight:700;font-family:var(--font-mono)">${PA.Fmt.currency(finalBm)}</div>
+              <div class="metric-sub ${PA.Fmt.colorClass(totalRetBm)}">${totalRetBm>=0?'+':''}${PA.Fmt.pct(totalRetBm)}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Key Metrics</div>
+          <table class="data-table">
+            <thead><tr><th>Metric</th><th class="right">Portfolio</th><th class="right">${benchmark}</th></tr></thead>
+            <tbody>
+              <tr><td style="font-family:var(--font)">CAGR</td><td class="right ${PA.Fmt.colorClass(portAnnRet)}">${PA.Fmt.pct(portAnnRet)}</td><td class="right ${PA.Fmt.colorClass(bmAnnRet)}">${PA.Fmt.pct(bmAnnRet)}</td></tr>
+              <tr><td style="font-family:var(--font)">Volatility</td><td class="right">${PA.Fmt.pct(portVol)}</td><td class="right">${PA.Fmt.pct(bmVol)}</td></tr>
+              <tr><td style="font-family:var(--font)">Sharpe Ratio</td><td class="right">${PA.Fmt.ratio(portSharpe)}</td><td class="right">${PA.Fmt.ratio(bmSharpe)}</td></tr>
+              <tr><td style="font-family:var(--font)">Sortino Ratio</td><td class="right">${PA.Fmt.ratio(portSortino)}</td><td class="right">${PA.Fmt.ratio(bmSortino)}</td></tr>
+              <tr><td style="font-family:var(--font)">Max Drawdown</td><td class="right negative">-${PA.Fmt.pct(portDD.maxDD)}</td><td class="right negative">-${PA.Fmt.pct(bmDD.maxDD)}</td></tr>
+              <tr><td style="font-family:var(--font)">Calmar Ratio</td><td class="right">${PA.Fmt.ratio(calmar)}</td><td class="right">${PA.Fmt.ratio(bmCalmar)}</td></tr>
+              <tr><td style="font-family:var(--font)">Total Return</td><td class="right ${PA.Fmt.colorClass(totalRetPort)}">${PA.Fmt.pct(totalRetPort)}</td><td class="right ${PA.Fmt.colorClass(totalRetBm)}">${PA.Fmt.pct(totalRetBm)}</td></tr>
+              <tr><td style="font-family:var(--font)">Final Value</td><td class="right">${PA.Fmt.currency(finalPort)}</td><td class="right">${PA.Fmt.currency(finalBm)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Portfolio Growth</div>
+          <div class="chart-container chart-lg"><canvas id="chart-bt-growth"></canvas></div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title">Drawdown</div>
+            <div class="chart-container"><canvas id="chart-bt-dd"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Annual Returns</div>
+            <div class="chart-container"><canvas id="chart-bt-annual"></canvas></div>
+          </div>
+        </div>
+      `;
+
+      // Growth chart
+      const growthDates = commonDates.slice(0, portGrowth.length);
+      PA.Charts.multiLine('chart-bt-growth', growthDates, [
+        { label:'Portfolio', data:portGrowth, color:PA.Config.COLORS[0] },
+        { label:benchmark, data:bmGrowth, color:PA.Config.COLORS[2] }
+      ]);
+
+      // Drawdown chart
+      PA.Charts.multiLine('chart-bt-dd', growthDates, [
+        { label:'Portfolio', data:portDDSeries, color:'#f87171' },
+        { label:benchmark, data:bmDDSeries, color:'#fbbf24' }
+      ], { pct:true });
+
+      // Annual returns
+      const monthlyRet = PA.Compute.monthlyReturns(commonDates, portGrowth.slice(0, commonDates.length));
+      const annualMap = {};
+      monthlyRet.forEach(m => {
+        const year = m.month.substring(0,4);
+        if (!annualMap[year]) annualMap[year] = 1;
+        annualMap[year] *= (1 + m.return);
+      });
+      const years = Object.keys(annualMap).sort();
+      const annualReturns = years.map(y => annualMap[y] - 1);
+      PA.Charts.bar('chart-bt-annual', years, [{ label:'Annual Return', data:annualReturns }]);
+
+      PA.UI.toast('Backtest complete', 'success');
+    } catch(e) {
+      resultsDiv.innerHTML = `<div class="empty-state"><h3>Backtest Error</h3><p>${e.message}</p></div>`;
+    }
+  }
+};
+
+/* ---- Asset Comparison ---- */
+PA.Compare = {
+  tickers: [],
+
+  addTicker(ticker) {
+    ticker = ticker.toUpperCase().trim();
+    if (!ticker || this.tickers.includes(ticker)) return;
+    if (this.tickers.length >= 10) { PA.UI.toast('Max 10 tickers', 'error'); return; }
+    this.tickers.push(ticker);
+    this.renderTags();
+  },
+
+  removeTicker(ticker) {
+    this.tickers = this.tickers.filter(t => t !== ticker);
+    this.renderTags();
+  },
+
+  renderTags() {
+    const container = document.getElementById('compare-tags');
+    container.innerHTML = this.tickers.map(t =>
+      `<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:20px;font-size:0.85rem">
+        <span style="font-weight:600;color:var(--accent)">${t}</span>
+        <span style="cursor:pointer;color:var(--text-muted)" onclick="PA.Compare.removeTicker('${t}')">&times;</span>
+      </span>`
+    ).join(' ');
+  },
+
+  async run() {
+    if (this.tickers.length < 2) { PA.UI.toast('Add at least 2 tickers', 'error'); return; }
+    const resultsDiv = document.getElementById('compare-results');
+    PA.UI.loading(resultsDiv);
+    resultsDiv.style.display = 'block';
+
+    const range = document.getElementById('cmp-range')?.value || '1Y';
+
+    try {
+      const [quotes, histories, spyHistoryMap] = await Promise.all([
+        PA.API.getQuote(this.tickers),
+        PA.API.getHistories(this.tickers, range),
+        PA.API.getHistories(['SPY'], range)
+      ]);
+
+      const quoteMap = {};
+      (quotes || []).forEach(q => { quoteMap[q.symbol] = q; });
+
+      const dataMap = {};
+      this.tickers.forEach(t => { dataMap[t] = PA.API.parseHistory(histories[t]); });
+
+      // SPY for Greeks
+      const spyData = PA.API.parseHistory(spyHistoryMap.SPY);
+      const spyReturns = PA.Compute.dailyReturns(spyData.prices);
+
+      // Build comparison table
+      let tableHtml = `<table class="data-table"><thead><tr><th>Metric</th>`;
+      this.tickers.forEach(t => { tableHtml += `<th class="right">${t}</th>`; });
+      tableHtml += `</tr></thead><tbody>`;
+
+      const rows = [];
+      this.tickers.forEach(t => {
+        const q = quoteMap[t] || {};
+        const d = dataMap[t];
+        const returns = PA.Compute.dailyReturns(d.prices);
+        rows.push({
+          ticker: t,
+          price: q.regularMarketPrice,
+          change: q.regularMarketChangePercent,
+          beta: d.prices.length > 20 ? PA.Compute.beta(returns, spyReturns) : (q.beta || null),
+          pe: q.trailingPE,
+          fwdPe: q.forwardPE,
+          delta: d.prices.length > 20 ? PA.Compute.delta(d.prices, spyData.prices) : null,
+          gamma: d.prices.length > 20 ? PA.Compute.gamma(d.prices, spyData.prices) : null,
+          alpha: d.prices.length > 20 ? PA.Compute.alpha(returns, spyReturns) : null,
+          marketCap: q.marketCap,
+          volume: q.regularMarketVolume,
+          yield: q.trailingAnnualDividendYield,
+          cagr: PA.Compute.annualizedReturn(d.prices),
+          vol: PA.Compute.annualizedVolatility(returns),
+          sharpe: PA.Compute.sharpeRatio(returns),
+          sortino: PA.Compute.sortinoRatio(returns),
+          maxDD: PA.Compute.maxDrawdown(d.prices).maxDD
+        });
+      });
+
+      const metrics = [
+        ['Price', r => PA.Fmt.currency(r.price)],
+        ['Change %', r => `<span class="${PA.Fmt.colorClass(r.change)}">${r.change!=null?(r.change>=0?'+':'')+r.change.toFixed(2)+'%':'N/A'}</span>`],
+        ['Beta', r => PA.Fmt.ratio(r.beta)],
+        ['P/E', r => PA.Fmt.ratio(r.pe)],
+        ['Fwd P/E', r => PA.Fmt.ratio(r.fwdPe)],
+        ['Delta', r => PA.Fmt.ratio(r.delta, 3)],
+        ['Gamma', r => PA.Fmt.ratio(r.gamma, 4)],
+        ['Alpha', r => `<span class="${PA.Fmt.colorClass(r.alpha)}">${PA.Fmt.ratio(r.alpha, 4)}</span>`],
+        ['Market Cap', r => r.marketCap ? '$'+PA.Fmt.compact(r.marketCap) : 'N/A'],
+        ['Volume', r => r.volume ? PA.Fmt.compact(r.volume) : 'N/A'],
+        ['Yield', r => r.yield != null ? PA.Fmt.pct(r.yield) : 'N/A'],
+        ['CAGR', r => `<span class="${PA.Fmt.colorClass(r.cagr)}">${PA.Fmt.pct(r.cagr)}</span>`],
+        ['Volatility', r => PA.Fmt.pct(r.vol)],
+        ['Sharpe', r => PA.Fmt.ratio(r.sharpe)],
+        ['Sortino', r => PA.Fmt.ratio(r.sortino)],
+        ['Max Drawdown', r => `<span class="negative">-${PA.Fmt.pct(r.maxDD)}</span>`]
+      ];
+
+      metrics.forEach(([label, fmt]) => {
+        tableHtml += `<tr><td style="font-family:var(--font);color:var(--text-secondary)">${label}</td>`;
+        rows.forEach(r => { tableHtml += `<td class="right">${fmt(r)}</td>`; });
+        tableHtml += `</tr>`;
+      });
+      tableHtml += `</tbody></table>`;
+
+      // Normalized price chart
+      const allDates = this.tickers.map(t => new Set(dataMap[t].dates));
+      let common = [...allDates[0]].filter(d => allDates.every(s => s.has(d))).sort();
+
+      const normalizedDS = this.tickers.map((t, i) => {
+        const dateIdx = {};
+        dataMap[t].dates.forEach((d, j) => { dateIdx[d] = j; });
+        const prices = common.map(d => dataMap[t].prices[dateIdx[d]]);
+        const base = prices[0] || 1;
+        return { label: t, data: prices.map(p => (p/base)*100), color: PA.Config.COLORS[i] };
+      });
+
+      // Correlation matrix
+      const returnMap = {};
+      this.tickers.forEach(t => {
+        const dateIdx = {};
+        dataMap[t].dates.forEach((d, j) => { dateIdx[d] = j; });
+        const prices = common.map(d => dataMap[t].prices[dateIdx[d]]);
+        returnMap[t] = PA.Compute.dailyReturns(prices);
+      });
+
+      let corrHtml = '<div style="overflow-x:auto"><div style="display:inline-block"><div>';
+      corrHtml += '<span class="heatmap-label"></span>';
+      this.tickers.forEach(t => { corrHtml += `<span class="heatmap-label">${t}</span>`; });
+      corrHtml += '</div>';
+      this.tickers.forEach((t1, i) => {
+        corrHtml += `<div><span class="heatmap-label">${t1}</span>`;
+        this.tickers.forEach((t2, j) => {
+          const corr = i === j ? 1 : PA.Compute.correlation(returnMap[t1], returnMap[t2]);
+          const r = Math.round(corr * 127 + 128);
+          const b = Math.round(128 - corr * 127);
+          corrHtml += `<span class="heatmap-cell" style="background:rgb(${corr<0?b:40},${corr>0?r/2:40},${corr<0?b:40});color:#fff">${corr.toFixed(2)}</span>`;
+        });
+        corrHtml += '</div>';
+      });
+      corrHtml += '</div></div>';
+
+      // Risk/Return scatter
+      const scatterPoints = rows.map(r => ({
+        label: r.ticker, x: r.vol, y: r.cagr
+      }));
+
+      resultsDiv.innerHTML = `
+        <div class="card"><div class="card-title">Comparison Table</div>${tableHtml}</div>
+        <div class="card"><div class="card-title">Normalized Performance (Base=100)</div>
+          <div class="chart-container chart-lg"><canvas id="chart-compare-norm"></canvas></div></div>
+        <div class="grid-2">
+          <div class="card"><div class="card-title">Correlation Matrix</div>${corrHtml}</div>
+          <div class="card"><div class="card-title">Risk / Return</div>
+            <div class="chart-container"><canvas id="chart-compare-scatter"></canvas></div></div>
+        </div>
+      `;
+
+      PA.Charts.multiLine('chart-compare-norm', common, normalizedDS);
+      PA.Charts.scatter('chart-compare-scatter', scatterPoints);
+      PA.UI.toast('Comparison complete', 'success');
+    } catch(e) {
+      resultsDiv.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
+    }
+  }
+};
+
+/* ---- Dashboard ---- */
+PA.Dashboard = {
+  async init() {
+    this.loadWatchlist();
+    this.loadRecentQuotes();
+    const container = document.getElementById('dash-market');
+    if (!container) return;
+    container.innerHTML = `
+      <div style="padding:10px;color:var(--text-muted)">
+        Market overview is manual in Batch 1 v1.1.1 to conserve Twelve Data credits.
+        <div style="margin-top:10px">
+          <button class="btn btn-sm" onclick="PA.Dashboard.loadMarketOverview()">Load Market Overview</button>
+        </div>
+      </div>
+    `;
+  },
+
+  async loadMarketOverview() {
+    const container = document.getElementById('dash-market');
+    if (!container) return;
+    try {
+      const indices = ['SPY', 'QQQ', 'DIA', 'IWM', 'VTI', 'GLD'];
+      const quotes = await PA.API.getQuote(indices);
+      container.innerHTML = quotes.map(q => {
+        const change = q.regularMarketChangePercent || 0;
+        const cls = change >= 0 ? 'positive' : 'negative';
+        const sign = change >= 0 ? '+' : '';
+        return `<div class="metric-card" style="cursor:pointer" onclick="PA.Ticker.lookup('${q.symbol}');PA.UI.showTab('ticker')">
+          <div class="metric-label">${q.symbol}</div>
+          <div class="metric-value" style="font-size:1.1rem">${PA.Fmt.currency(q.regularMarketPrice)}</div>
+          <div class="metric-sub ${cls}">${sign}${change.toFixed(2)}%</div>
+        </div>`;
+      }).join('');
+    } catch (e) {
+      container.innerHTML = '<div style="color:var(--text-muted);padding:10px">Unable to load live market overview right now.</div>';
+    }
+  },
+
+  loadWatchlist() {
+    const items = PA.DB.selectAll(`SELECT w.ticker, s.name FROM watchlist w LEFT JOIN securities s ON w.ticker=s.ticker ORDER BY w.added_at DESC`);
+    const container = document.getElementById('dash-watchlist');
+    if (!container) return;
+    if (items.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-muted);padding:10px">Watchlist empty. Search and add tickers.</div>';
+      return;
+    }
+    container.innerHTML = items.map(w => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
+        <span style="color:var(--accent);font-weight:600;cursor:pointer" onclick="PA.Ticker.lookup('${w.ticker}');PA.UI.showTab('ticker')">${w.ticker}</span>
+        <span style="color:var(--text-secondary);font-size:0.85rem">${w.name||''}</span>
+        <button class="btn btn-sm" onclick="PA.DB.exec('DELETE FROM watchlist WHERE ticker=?',['${w.ticker}']);PA.DB.save();PA.Dashboard.loadWatchlist()">Remove</button>
+      </div>
+    `).join('');
+  },
+
+  loadRecentQuotes() {
+    const quotes = PA.DB.selectAll(`SELECT ticker,price,pe_ratio,market_cap,volume,fetched_at FROM quotes ORDER BY fetched_at DESC LIMIT 10`);
+    const container = document.getElementById('dash-recent');
+    if (!container) return;
+    if (quotes.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-muted);padding:10px">No recent lookups. Search for a ticker to get started.</div>';
+      return;
+    }
+    let html = `<table class="data-table"><thead><tr><th>Ticker</th><th class="right">Price</th><th class="right">P/E</th><th class="right">Mkt Cap</th><th class="right">When</th></tr></thead><tbody>`;
+    quotes.forEach(q => {
+      html += `<tr>
+        <td style="color:var(--accent);cursor:pointer;font-weight:600" onclick="PA.Ticker.lookup('${q.ticker}');PA.UI.showTab('ticker')">${q.ticker}</td>
+        <td class="right">${PA.Fmt.currency(q.price)}</td>
+        <td class="right">${PA.Fmt.ratio(q.pe_ratio)}</td>
+        <td class="right">${q.market_cap ? '$'+PA.Fmt.compact(q.market_cap) : 'N/A'}</td>
+        <td class="right" style="font-size:0.75rem;color:var(--text-muted)">${q.fetched_at||''}</td>
+      </tr>`;
+    });
+    html += `</tbody></table>`;
+    container.innerHTML = html;
+  }
+};
+
+</script>
+<script>
+/* ============================================================
+   Portfolio Analyzer Pro - Main App Controller
+   ============================================================ */
+PA.App = {
+  async init() {
+    try {
+      document.getElementById('status-text').textContent = 'Initializing database...';
+      await PA.DB.init();
+      this.injectApiSettings();
+      document.getElementById('status-text').textContent = 'Database ready';
+      document.getElementById('status-dot').className = 'status-dot online';
+
+      // Set up tab navigation
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => PA.UI.showTab(btn.dataset.tab));
+      });
+
+      // Set up search
+      const searchInput = document.getElementById('search-input');
+      const dropdown = document.getElementById('search-dropdown');
+      searchInput.addEventListener('input', PA.UI.debounce(async (e) => {
+        const q = e.target.value.trim();
+        if (q.length < 1) { dropdown.classList.remove('active'); return; }
+        try {
+          // Search DB first
+          const local = PA.DB.selectAll(`SELECT ticker,name,exchange FROM securities WHERE ticker LIKE ? OR name LIKE ? LIMIT 5`,
+            [`%${q}%`, `%${q}%`]);
+          const results = [];
+          const seen = new Set();
+          [
+            { symbol: q.toUpperCase(), shortname: 'Lookup ticker directly', exchange: 'Direct' },
+            ...local.map(l => ({symbol:l.ticker, shortname:l.name, exchange:l.exchange}))
+          ].forEach(r => {
+            if (r.symbol && !seen.has(r.symbol)) { seen.add(r.symbol); results.push(r); }
+          });
+          if (results.length === 0) { dropdown.classList.remove('active'); return; }
+          dropdown.innerHTML = results.slice(0,8).map(r => `
+            <div class="search-item" onclick="PA.App.selectTicker('${r.symbol}')">
+              <div><span class="ticker">${r.symbol}</span> <span class="name">${r.shortname}</span></div>
+              <span class="exchange">${r.exchange}</span>
+            </div>
+          `).join('');
+          dropdown.classList.add('active');
+        } catch(e) { dropdown.classList.remove('active'); }
+      }, 250));
+
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          const q = searchInput.value.trim().toUpperCase();
+          if (q) { PA.App.selectTicker(q); }
+        }
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.search-container')) dropdown.classList.remove('active');
+      });
+
+      // Initialize modules
+      PA.Portfolio.init();
+      PA.Portfolio.loadSavedList();
+      PA.Dashboard.init();
+
+      PA.UI.showTab('dashboard');
+      document.getElementById('status-text').textContent = PA.API.getApiKey()
+        ? 'Ready (Twelve Data)'
+        : 'Add Twelve Data API key in Settings';
+    } catch(e) {
+      console.error('Init failed:', e);
+      document.getElementById('status-text').textContent = 'Init error: ' + e.message;
+      document.getElementById('status-dot').className = 'status-dot offline';
+    }
+  },
+
+  selectTicker(symbol) {
+    document.getElementById('search-input').value = symbol;
+    document.getElementById('search-dropdown').classList.remove('active');
+    PA.Ticker.lookup(symbol);
+    PA.UI.showTab('ticker');
+  },
+
+  injectApiSettings() {
+    const settingsGrid = document.querySelector('#tab-settings .grid-2');
+    if (!settingsGrid || document.getElementById('td-settings-card')) return;
+    settingsGrid.insertAdjacentHTML('afterbegin', `
+      <div class="card" id="td-settings-card">
+        <div class="card-title">Twelve Data API</div>
+        <div class="form-group">
+          <label class="form-label">API Key</label>
+          <input class="form-input" id="td-api-key" type="password" placeholder="Paste your Twelve Data API key">
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
+          <button class="btn btn-primary" onclick="PA.App.saveApiKey()">Save Key</button>
+          <button class="btn" onclick="PA.App.testApiKey()">Test API</button>
+          <button class="btn" onclick="PA.App.clearApiKey()">Clear</button>
+        </div>
+        <div style="margin-top:10px;font-size:0.8rem;color:var(--text-muted)">
+          Get a free key from https://twelvedata.com/pricing
+        </div>
+        <div style="margin-top:8px;font-size:0.8rem;color:var(--text-muted)">
+          Free keys are limited to 8 credits per minute. Search suggestions use direct symbol entry only to conserve credits.
+        </div>
+      </div>
+    `);
+    const input = document.getElementById('td-api-key');
+    if (input) input.value = PA.API.getApiKey();
+  },
+
+  saveApiKey() {
+    const input = document.getElementById('td-api-key');
+    PA.API.setApiKey(input?.value || '');
+    PA.API.cache.clear();
+    document.getElementById('status-text').textContent = PA.API.getApiKey()
+      ? 'Ready (Twelve Data)'
+      : 'Add Twelve Data API key in Settings';
+    PA.UI.toast('Twelve Data API key saved', 'success');
+    PA.Dashboard.init();
+  },
+
+  async testApiKey() {
+    try {
+      const quotes = await PA.API.getQuote(['NVDA']);
+      const quote = quotes?.[0];
+      if (!quote) {
+        throw new Error('API test returned no NVDA quote data.');
+      }
+      PA.UI.toast(`API test passed: NVDA ${PA.Fmt.currency(quote.regularMarketPrice)}`, 'success');
+    } catch (e) {
+      PA.UI.toast(`API test failed: ${e.message}`, 'error');
+    }
+  },
+
+  clearApiKey() {
+    PA.API.setApiKey('');
+    PA.API.cache.clear();
+    const input = document.getElementById('td-api-key');
+    if (input) input.value = '';
+    document.getElementById('status-text').textContent = 'Add Twelve Data API key in Settings';
+    PA.UI.toast('API key cleared', 'info');
+  },
+
+  exportDb() { PA.DB.exportFile(); PA.UI.toast('Database exported', 'success'); },
+
+  clearCache() {
+    PA.API.cache.clear();
+    PA.UI.toast('Cache cleared', 'info');
+  },
+
+  clearAllData() {
+    if (confirm('Delete all saved data? This cannot be undone.')) {
+      localStorage.removeItem('pa_db');
+      localStorage.removeItem('pa_twelve_data_key');
+      localStorage.removeItem('pa_alpha_vantage_key');
+      location.reload();
+    }
+  }
+};
+
+// Boot
+document.addEventListener('DOMContentLoaded', () => PA.App.init());
+
+</script>
+</body>
+</html>
