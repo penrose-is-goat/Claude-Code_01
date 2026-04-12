@@ -89,6 +89,14 @@ start-v1.1.11.bat
 
 That opens a backend PowerShell window for you. Keep that window running while you use the site.
 
+If that wrapper says the backend did not become reachable, run this instead so you can see the real startup error in the same window:
+
+```text
+start-v1.1.11-direct.bat
+```
+
+The backend starter now checks whether `yfinance` is already installed before running `pip install`, so normal restarts should be much faster than the first install.
+
 You only need to start the backend again if:
 
 - the backend PowerShell window was closed

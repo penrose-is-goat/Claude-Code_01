@@ -55,12 +55,12 @@ What is still deferred beyond Batch 1.1.x:
 ### Recommended: VS Code + Live Server + Python Backend
 
 1. Open this folder in VS Code:
-   `C:\Users\thleg\OneDrive\Documents\New project\portfolio-analyzer-fixed`
+   `C:\Users\thleg\OneDrive\Documents\New project\portfolio-analyzer-fixed\batches\batch-1-v1.1.13`
 2. Install Python 3.11+
 3. In PowerShell, run:
 
 ```powershell
-cd "C:\Users\thleg\OneDrive\Documents\New project\portfolio-analyzer-fixed\backend"
+cd "C:\Users\thleg\OneDrive\Documents\New project\portfolio-analyzer-fixed\batches\batch-1-v1.1.13\backend"
 python -m pip install -r .\requirements.txt
 python .\server.py
 ```

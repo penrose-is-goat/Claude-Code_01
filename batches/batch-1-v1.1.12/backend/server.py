@@ -8,7 +8,7 @@ from urllib.parse import parse_qs, urlparse
 import yfinance as yf
 
 
-APP_VERSION = "Batch 1 v1.1.13"
+APP_VERSION = "Batch 1 v1.1.12"
 DEFAULT_HOST = os.environ.get("PA_BACKEND_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("PA_BACKEND_PORT", "8765"))
 
@@ -190,6 +190,8 @@ def provider_field_unit(field, source, quote_type):
         return "percent"
     if field == "oneYearReturn":
         return "ratio"
+    if field in {"ytdReturn", "threeYearAverageReturn", "fiveYearAverageReturn"}:
+        return "percent"
     if field in {"expenseRatio", "portfolioTurnover"}:
         return "percent"
     if field == "trailingAnnualDividendYield":
@@ -197,118 +199,6 @@ def provider_field_unit(field, source, quote_type):
             return "percent"
         return "ratio"
     return None
-
-
-def parse_history_date(value):
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    text = str(value).strip()
-    if not text:
-        return None
-    try:
-        return date.fromisoformat(text[:10])
-    except Exception:
-        return None
-
-
-def subtract_years(value, years):
-    try:
-        return value.replace(year=value.year - years)
-    except ValueError:
-        if value.month == 2 and value.day == 29:
-            return value.replace(year=value.year - years, month=2, day=28)
-        raise
-
-
-def adjusted_points_from_history(history):
-    dates = history.get("dates") or []
-    adjusted = history.get("adjustedPrices") or history.get("prices") or []
-    points = []
-    for idx, dt in enumerate(dates):
-        point_date = parse_history_date(dt)
-        price = to_number(adjusted[idx]) if idx < len(adjusted) else None
-        if point_date and price not in (None, 0):
-            points.append({"date": point_date, "price": price})
-    return points
-
-
-def find_anchor_point(points, target_date):
-    if not points:
-        return None
-    previous_point = None
-    next_point = None
-    for point in points:
-        point_date = point.get("date")
-        if point_date is None:
-            continue
-        if point_date <= target_date:
-            previous_point = point
-        if point_date >= target_date and next_point is None:
-            next_point = point
-    return previous_point or next_point
-
-
-def compute_trailing_total_return(history, window):
-    points = adjusted_points_from_history(history)
-    if len(points) < 2:
-        return None
-    latest = points[-1]
-    latest_date = latest["date"]
-    if window == "YTD":
-        target_date = date(latest_date.year, 1, 1)
-        min_days = 1
-    elif window == "1Y":
-        target_date = subtract_years(latest_date, 1)
-        min_days = 330
-    elif window == "3Y":
-        target_date = subtract_years(latest_date, 3)
-        min_days = 365 * 3 - 35
-    elif window == "5Y":
-        target_date = subtract_years(latest_date, 5)
-        min_days = 365 * 5 - 45
-    else:
-        return None
-    anchor = find_anchor_point(points[:-1], target_date)
-    if not anchor:
-        return None
-    day_span = (latest_date - anchor["date"]).days
-    if day_span < min_days:
-        return None
-    start_price = anchor.get("price")
-    end_price = latest.get("price")
-    if start_price in (None, 0) or end_price is None:
-        return None
-    return end_price / start_price - 1
-
-
-def build_trailing_performance(symbol):
-    try:
-        history = normalize_history(symbol, "10Y")
-    except Exception:
-        return {
-            "ytdReturn": None,
-            "oneYearReturn": None,
-            "threeYearReturn": None,
-            "fiveYearReturn": None,
-            "returnMethod": "Adjusted close trailing total return",
-            "returnSource": "yfinance history",
-            "historyRange": "10Y",
-            "asOfDate": None,
-        }
-    return {
-        "ytdReturn": compute_trailing_total_return(history, "YTD"),
-        "oneYearReturn": compute_trailing_total_return(history, "1Y"),
-        "threeYearReturn": compute_trailing_total_return(history, "3Y"),
-        "fiveYearReturn": compute_trailing_total_return(history, "5Y"),
-        "returnMethod": "Adjusted close trailing total return",
-        "returnSource": "yfinance history",
-        "historyRange": history.get("rangeKey"),
-        "asOfDate": (history.get("dates") or [None])[-1],
-    }
 
 
 def normalize_table_records(value):
@@ -612,11 +502,6 @@ def normalize_quote(symbol):
             ("info.netAssets", info.get("netAssets")),
             cast=to_number,
         ),
-        "navPrice": pick(
-            "navPrice",
-            ("info.navPrice", info.get("navPrice")),
-            cast=to_number,
-        ),
         "expenseRatio": pick(
             "expenseRatio",
             ("info.annualReportExpenseRatio", info.get("annualReportExpenseRatio")),
@@ -689,7 +574,6 @@ def build_summary_from_quote(quote):
     def wrapped(value):
         return wrap_raw(value)
 
-    performance = build_trailing_performance(quote.get("symbol"))
     fund_profile = None
     if quote.get("quoteType") == "ETF":
         raw = quote.get("providerRaw", {})
@@ -703,7 +587,6 @@ def build_summary_from_quote(quote):
                 top_holdings = [{"symbol": None, "description": str(category), "weight": None}]
         fund_profile = {
             "netAssets": quote.get("netAssets"),
-            "navPrice": quote.get("navPrice"),
             "expenseRatio": quote.get("expenseRatio"),
             "portfolioTurnover": quote.get("portfolioTurnover"),
             "dividendYield": quote.get("trailingAnnualDividendYield"),
@@ -751,20 +634,10 @@ def build_summary_from_quote(quote):
             "exDividendDate": quote.get("exDividendDate"),
         },
         "performance": {
-            "ytdReturn": performance.get("ytdReturn"),
-            "oneYearReturn": performance.get("oneYearReturn"),
-            "threeYearReturn": performance.get("threeYearReturn"),
-            "fiveYearReturn": performance.get("fiveYearReturn"),
-            "returnMethod": performance.get("returnMethod"),
-            "returnSource": performance.get("returnSource"),
-            "historyRange": performance.get("historyRange"),
-            "asOfDate": performance.get("asOfDate"),
-            "providerReported": {
-                "oneYearReturn": quote.get("oneYearReturn"),
-                "ytdReturn": quote.get("ytdReturn"),
-                "threeYearAverageReturn": quote.get("threeYearAverageReturn"),
-                "fiveYearAverageReturn": quote.get("fiveYearAverageReturn"),
-            },
+            "oneYearReturn": quote.get("oneYearReturn"),
+            "ytdReturn": quote.get("ytdReturn"),
+            "threeYearAverageReturn": quote.get("threeYearAverageReturn"),
+            "fiveYearAverageReturn": quote.get("fiveYearAverageReturn"),
         },
         "fundProfile": fund_profile,
         "providerSource": "yfinance",

@@ -27,8 +27,31 @@ if (-not $launcher) {
 
 $requirements = Join-Path $scriptDir 'requirements.txt'
 $server = Join-Path $scriptDir 'server.py'
-$pipArgs = @($launcher.Args + @('-m', 'pip', 'install', '-r', $requirements))
+$checkArgs = @($launcher.Args + @('-c', 'import yfinance; print(yfinance.__version__)'))
+$pipArgs = @($launcher.Args + @('-m', 'pip', 'install', '--disable-pip-version-check', '--no-input', '-r', $requirements))
 $serverArgs = @($launcher.Args + @($server))
 
-& $launcher.Command @pipArgs
+Write-Host "Checking Python environment..." -ForegroundColor Cyan
+$hasYFinance = $false
+try {
+  $versionOutput = & $launcher.Command @checkArgs 2>$null
+  if ($LASTEXITCODE -eq 0) {
+    $hasYFinance = $true
+    if ($versionOutput) {
+      Write-Host ("yfinance already installed: " + ($versionOutput | Select-Object -First 1)) -ForegroundColor Green
+    } else {
+      Write-Host "yfinance already installed." -ForegroundColor Green
+    }
+  }
+} catch {}
+
+if (-not $hasYFinance) {
+  Write-Host "Installing backend dependencies..." -ForegroundColor Yellow
+  & $launcher.Command @pipArgs
+  if ($LASTEXITCODE -ne 0) {
+    Write-Error "Dependency installation failed. Please review the pip output above."
+  }
+}
+
+Write-Host "Starting backend server..." -ForegroundColor Cyan
 & $launcher.Command @serverArgs

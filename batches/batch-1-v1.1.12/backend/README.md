@@ -31,7 +31,6 @@ The backend will listen on:
 - Live ticker values are returned from `yfinance` field lookups rather than browser-side calculations.
 - If a field is unavailable from the provider, the backend returns `null` and includes provider field metadata so the frontend can explain the gap instead of fabricating a value.
 - Percent-style provider fields now include unit metadata so ETF values such as expense ratio, turnover, and yield can render in the same units Yahoo/yfinance intended.
-- ETF `NAV` is passed through from `info.navPrice` when Yahoo/yfinance exposes it.
-- Displayed `YTD`, `1Y`, `3Y`, and `5Y` returns now come from adjusted-close history on the backend, because Yahoo/yfinance metadata fields like `threeYearAverageReturn` and `fiveYearAverageReturn` do not represent the same trailing total-return metric the UI is meant to show.
+- Provider return fields now include unit metadata as well, because Yahoo/yfinance mixes ratio-style and percent-point-style return values across different summary fields.
 - The health endpoint reports the backend batch version so the frontend can detect stale backend sessions after a backend update.
 - If `python` is not on PATH but `py` is, use [start-backend.ps1](C:/Users/thleg/OneDrive/Documents/New%20project/portfolio-analyzer-fixed/backend/start-backend.ps1) or [start-backend.bat](C:/Users/thleg/OneDrive/Documents/New%20project/portfolio-analyzer-fixed/backend/start-backend.bat).

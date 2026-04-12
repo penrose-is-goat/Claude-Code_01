@@ -203,7 +203,7 @@ $css
         <div style="color:var(--text-secondary);font-size:0.9rem;line-height:1.6">
           <p><strong>Portfolio Analyzer Pro</strong></p>
           <p>A comprehensive portfolio analysis tool with live market data, backtesting, and risk analytics.</p>
-          <p style="margin-top:8px"><strong>Data Sources:</strong> Local Python yfinance backend (Batch 1 v1.1.13)</p>
+          <p style="margin-top:8px"><strong>Data Sources:</strong> Local Python yfinance backend (Batch 1 v1.1.12)</p>
           <p><strong>Metrics:</strong> Provider beta, P/E, Forward P/E, Market Cap, Volume, Yield, plus computed portfolio analytics such as alpha, delta, gamma, Sharpe Ratio, Sortino Ratio, Max Drawdown, and CAGR</p>
           <p style="margin-top:8px;font-size:0.8rem;color:var(--text-muted)">
             Provider-sourced fields should match yfinance values directly. Computed metrics are labeled separately from provider facts.
@@ -217,7 +217,7 @@ $css
 <!-- Status Bar -->
 <footer class="status-bar">
   <div><span id="status-dot" class="status-dot offline"></span><span id="status-text">Initializing...</span></div>
-  <div>Portfolio Analyzer Pro Batch 1 v1.1.13</div>
+  <div>Portfolio Analyzer Pro Batch 1 v1.1.12</div>
 </footer>
 
 <script>

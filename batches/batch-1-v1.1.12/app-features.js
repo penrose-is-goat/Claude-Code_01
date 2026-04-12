@@ -175,7 +175,6 @@ PA.Ticker = {
     const fwdPe = this.v(ks.forwardPE) ?? this.v(sd.forwardPE) ?? null;
     const mktCap = q.marketCap ?? this.v(sd.marketCap) ?? null;
     const netAssets = q.netAssets ?? fund.netAssets ?? null;
-    const navPrice = q.navPrice ?? fund.navPrice ?? null;
     const expenseRatio = q.expenseRatio ?? fund.expenseRatio ?? null;
     const portfolioTurnover = q.portfolioTurnover ?? fund.portfolioTurnover ?? null;
     const volume = q.regularMarketVolume || null;
@@ -187,18 +186,15 @@ PA.Ticker = {
     const epsTtm = q.epsTrailingTwelveMonths ?? this.v(earnings.eps);
     const bookValue = q.bookValue ?? this.v(s?.valuation?.bookValue);
     const sharesOutstanding = q.sharesOutstanding ?? this.v(ks.sharesOutstanding);
-    const ytdReturn = performance.ytdReturn ?? this.calculateYtdReturn(analysisData);
-    const oneYearReturn = performance.oneYearReturn
-      ?? this.normalizeProviderReturn('oneYearReturn', q.oneYearReturn ?? null, s, q)
-      ?? this.calculateCalendarReturn(analysisData, 365, 330);
-    const threeYearReturn = performance.threeYearReturn ?? null;
-    const fiveYearReturn = performance.fiveYearReturn ?? null;
+    const providerYtdReturn = this.normalizeProviderReturn('ytdReturn', q.ytdReturn ?? performance.ytdReturn ?? null, s, q);
+    const providerOneYearReturn = this.normalizeProviderReturn('oneYearReturn', q.oneYearReturn ?? performance.oneYearReturn ?? null, s, q);
+    const providerThreeYearReturn = this.normalizeProviderReturn('threeYearAverageReturn', q.threeYearAverageReturn ?? performance.threeYearAverageReturn ?? null, s, q);
+    const providerFiveYearReturn = this.normalizeProviderReturn('fiveYearAverageReturn', q.fiveYearAverageReturn ?? performance.fiveYearAverageReturn ?? null, s, q);
     const oneDayReturn = changePct != null ? changePct / 100 : this.calculateCalendarReturn(analysisData, 1, 1);
     const oneMonthReturn = this.calculateCalendarReturn(analysisData, 30, 20);
     const threeMonthReturn = this.calculateCalendarReturn(analysisData, 91, 70);
-    const returnSource = performance.returnMethod
-      ? `${performance.returnMethod} (${performance.returnSource || 'yfinance'})`
-      : 'Adjusted close trailing total return fallback';
+    const oneYearReturn = providerOneYearReturn ?? this.calculateCalendarReturn(analysisData, 365, 300);
+    const returnSource = providerOneYearReturn != null ? 'Provider field' : 'Adjusted close history fallback';
     const yieldDisplay = yld != null ? this.formatProviderPercent('trailingAnnualDividendYield', yld, s, q) : 'N/A';
     const expenseRatioDisplay = expenseRatio != null ? this.formatProviderPercent('expenseRatio', expenseRatio, s, q, 3) : 'N/A';
     const portfolioTurnoverDisplay = portfolioTurnover != null ? this.formatProviderPercent('portfolioTurnover', portfolioTurnover, s, q) : 'N/A';
@@ -214,7 +210,6 @@ PA.Ticker = {
     const metricCards = isEtf
       ? [
           metricCard('Beta (Provider)', providerBeta != null ? PA.Fmt.ratio(providerBeta, 2) : 'N/A'),
-          metricCard('NAV', navPrice != null ? PA.Fmt.currency(navPrice) : 'N/A'),
           metricCard('Expense Ratio', expenseRatioDisplay),
           metricCard('Net Assets', netAssets ? '$' + PA.Fmt.compact(netAssets) : 'N/A'),
           metricCard('Yield', yieldDisplay),
@@ -248,7 +243,7 @@ PA.Ticker = {
         ${isCached ? ' &middot; <span>Cached data</span>' : ''}
       </div>
       <div style="color:var(--text-muted);font-size:0.78rem;margin:-8px 0 16px">
-        Displayed price move, beta, yield, expense ratio, turnover, and NAV use provider-owned fields. Return windows use the backend's adjusted-close trailing total return path so 1Y, 3Y, and 5Y stay on one consistent definition.
+        Displayed price move and beta use provider fields. Provider-owned percent fields use yfinance unit metadata. Return stats prefer provider return fields when available and otherwise fall back to adjusted-close history.
       </div>
 
       <div class="grid-5" id="metrics-grid">${metricCards}</div>
@@ -304,12 +299,11 @@ PA.Ticker = {
           ['1M Return', oneMonthReturn != null ? PA.Fmt.pct(oneMonthReturn) : 'N/A'],
           ['3M Return', threeMonthReturn != null ? PA.Fmt.pct(threeMonthReturn) : 'N/A'],
           ['1Y Return', oneYearReturn != null ? PA.Fmt.pct(oneYearReturn) : 'N/A'],
-          ['YTD Return', ytdReturn != null ? PA.Fmt.pct(ytdReturn) : 'N/A'],
-          ['3Y Return', threeYearReturn != null ? PA.Fmt.pct(threeYearReturn) : 'N/A'],
-          ['5Y Return', fiveYearReturn != null ? PA.Fmt.pct(fiveYearReturn) : 'N/A'],
+          ['YTD Return', providerYtdReturn != null ? PA.Fmt.pct(providerYtdReturn) : 'N/A'],
+          ['3Y Avg Return', providerThreeYearReturn != null ? PA.Fmt.pct(providerThreeYearReturn) : 'N/A'],
+          ['5Y Avg Return', providerFiveYearReturn != null ? PA.Fmt.pct(providerFiveYearReturn) : 'N/A'],
           ['Return Source', returnSource],
           ['Provider Beta', providerBeta != null ? PA.Fmt.ratio(providerBeta) : 'N/A'],
-          ['NAV', navPrice != null ? PA.Fmt.currency(navPrice) : 'N/A'],
           ['Net Assets', netAssets ? '$' + PA.Fmt.compact(netAssets) : 'N/A'],
           ['Expense Ratio', expenseRatioDisplay],
           ['Portfolio Turnover', portfolioTurnoverDisplay],
@@ -329,9 +323,7 @@ PA.Ticker = {
           ['1M Return', oneMonthReturn != null ? PA.Fmt.pct(oneMonthReturn) : 'N/A'],
           ['3M Return', threeMonthReturn != null ? PA.Fmt.pct(threeMonthReturn) : 'N/A'],
           ['1Y Return', oneYearReturn != null ? PA.Fmt.pct(oneYearReturn) : 'N/A'],
-          ['YTD Return', ytdReturn != null ? PA.Fmt.pct(ytdReturn) : 'N/A'],
-          ['3Y Return', threeYearReturn != null ? PA.Fmt.pct(threeYearReturn) : 'N/A'],
-          ['5Y Return', fiveYearReturn != null ? PA.Fmt.pct(fiveYearReturn) : 'N/A'],
+          ['YTD Return', providerYtdReturn != null ? PA.Fmt.pct(providerYtdReturn) : 'N/A'],
           ['Return Source', returnSource],
           ['Provider Beta', providerBeta != null ? PA.Fmt.ratio(providerBeta) : 'N/A'],
           ['EPS (TTM)', PA.Fmt.currency(epsTtm)],
@@ -384,46 +376,10 @@ PA.Ticker = {
     const meta = this.providerFieldMeta(summary, quote, field);
     if (meta.unit === 'percent') return value / 100;
     if (meta.unit === 'ratio') return value;
-    if (field === 'ytdReturn' && Math.abs(value) > 1) {
+    if (['ytdReturn', 'threeYearAverageReturn', 'fiveYearAverageReturn'].includes(field) && Math.abs(value) > 1) {
       return value / 100;
     }
     return value;
-  },
-
-  calculateYtdReturn(historyData) {
-    const dates = historyData?.dates || [];
-    const adjusted = historyData?.adjustedPrices?.length === dates.length
-      ? historyData.adjustedPrices
-      : historyData?.prices || [];
-    if (!Array.isArray(dates) || !Array.isArray(adjusted) || dates.length < 2) return null;
-    const latestIndex = dates.length - 1;
-    const latestDate = new Date(`${dates[latestIndex]}T00:00:00`);
-    if (Number.isNaN(latestDate.getTime())) return null;
-    const yearStart = new Date(latestDate.getFullYear(), 0, 1);
-    let anchorIndex = -1;
-    for (let i = latestIndex - 1; i >= 0; i--) {
-      const pointDate = new Date(`${dates[i]}T00:00:00`);
-      if (Number.isNaN(pointDate.getTime())) continue;
-      if (pointDate <= yearStart) {
-        anchorIndex = i;
-        break;
-      }
-    }
-    if (anchorIndex === -1) {
-      for (let i = 0; i < latestIndex; i++) {
-        const pointDate = new Date(`${dates[i]}T00:00:00`);
-        if (Number.isNaN(pointDate.getTime())) continue;
-        if (pointDate >= yearStart) {
-          anchorIndex = i;
-          break;
-        }
-      }
-    }
-    if (anchorIndex === -1) return null;
-    const start = adjusted[anchorIndex];
-    const end = adjusted[latestIndex];
-    if (!Number.isFinite(start) || !Number.isFinite(end) || start === 0) return null;
-    return end / start - 1;
   },
 
   calculateCalendarReturn(historyData, days, minDays=days) {
@@ -614,8 +570,8 @@ PA.Ticker = {
     PA.DB.exec(`INSERT INTO quotes(ticker,price,open_price,high,low,close_price,prev_close,volume,avg_volume,
       market_cap,beta,pe_ratio,fwd_pe_ratio,eps,fwd_eps,dividend_yield,dividend_rate,ex_dividend_date,
       fifty_two_week_high,fifty_two_week_low,fifty_day_avg,two_hundred_day_avg,shares_outstanding,book_value,price_to_book,
-      nav_price,net_assets,expense_ratio,portfolio_turnover,inception_date,leveraged)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [
+      net_assets,expense_ratio,portfolio_turnover,inception_date,leveraged)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [
       ticker, quote.regularMarketPrice, quote.regularMarketOpen, quote.regularMarketDayHigh,
       quote.regularMarketDayLow, quote.regularMarketPrice, quote.regularMarketPreviousClose,
       quote.regularMarketVolume, quote.averageDailyVolume3Month, quote.marketCap ?? this.v(sd.marketCap) ?? valuation.marketCap,
@@ -624,7 +580,7 @@ PA.Ticker = {
       this.v(sd.dividendYield) ?? dividends.dividendYield, quote.dividendRate ?? dividends.dividendPerShare, quote.exDividendDate ?? dividends.exDividendDate,
       quote.fiftyTwoWeekHigh ?? this.v(sd.fiftyTwoWeekHigh), quote.fiftyTwoWeekLow ?? this.v(sd.fiftyTwoWeekLow),
       quote.fiftyDayAverage ?? this.v(sd.fiftyDayAverage), quote.twoHundredDayAverage ?? this.v(sd.twoHundredDayAverage), quote.sharesOutstanding ?? this.v(ks.sharesOutstanding),
-      quote.bookValue ?? valuation.bookValue, quote.priceToBook ?? this.v(sd.priceToBook), quote.navPrice ?? fund.navPrice,
+      quote.bookValue ?? valuation.bookValue, quote.priceToBook ?? this.v(sd.priceToBook),
       quote.netAssets ?? fund.netAssets, quote.expenseRatio ?? fund.expenseRatio, quote.portfolioTurnover ?? fund.portfolioTurnover,
       quote.inceptionDate ?? fund.inceptionDate, quote.leveraged ?? fund.leveraged
     ]);
@@ -640,7 +596,7 @@ PA.Ticker = {
           hData.highs?.[i],
           hData.lows?.[i],
           hData.prices[i],
-          hData.adjustedPrices?.[i] ?? hData.prices[i],
+          hData.prices[i],
           hData.volumes[i]
         ]);
       });
@@ -705,7 +661,6 @@ PA.Ticker = {
         epsTrailingTwelveMonths: quoteRow.eps,
         epsForward: quoteRow.fwd_eps,
         priceToBook: quoteRow.price_to_book,
-        navPrice: quoteRow.nav_price,
         bookValue: quoteRow.book_value,
         sharesOutstanding: quoteRow.shares_outstanding,
         fiftyTwoWeekHigh: quoteRow.fifty_two_week_high,
@@ -792,7 +747,6 @@ PA.Ticker = {
       fundProfile: security?.asset_type === 'etf'
         ? {
             netAssets: quoteRow?.net_assets ?? null,
-            navPrice: quoteRow?.nav_price ?? null,
             expenseRatio: quoteRow?.expense_ratio ?? null,
             portfolioTurnover: quoteRow?.portfolio_turnover ?? null,
             dividendYield: quoteRow?.dividend_yield ?? null,

@@ -5,7 +5,7 @@ const PA = window.PA = {};
 
 /* ---- Config ---- */
 PA.Config = {
-  APP_VERSION: 'Batch 1 v1.1.13',
+  APP_VERSION: 'Batch 1 v1.1.12',
   DEFAULT_BACKEND_URL: 'http://127.0.0.1:8765/api',
   RISK_FREE: 0.05,
   COLORS: ['#4f8ff7','#34d399','#f87171','#fbbf24','#a78bfa','#fb923c','#22d3ee','#f472b6','#84cc16','#e879f9'],
@@ -52,7 +52,7 @@ PA.DB = {
       dividend_yield REAL, dividend_rate REAL, ex_dividend_date TEXT,
       fifty_two_week_high REAL, fifty_two_week_low REAL, fifty_day_avg REAL,
       two_hundred_day_avg REAL, shares_outstanding REAL, book_value REAL,
-      price_to_book REAL, nav_price REAL, fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+      price_to_book REAL, fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
     this.db.run(`CREATE TABLE IF NOT EXISTS greeks (
       id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL,
       alpha REAL, beta REAL, delta REAL, gamma REAL,
@@ -115,7 +115,6 @@ PA.DB = {
       this.db.run(`INSERT OR IGNORE INTO securities(ticker,name,sector,exchange,asset_type) VALUES(?,?,?,?,?)`, s);
     });
     this.ensureColumn('quotes', 'net_assets', 'REAL');
-    this.ensureColumn('quotes', 'nav_price', 'REAL');
     this.ensureColumn('quotes', 'expense_ratio', 'REAL');
     this.ensureColumn('quotes', 'portfolio_turnover', 'REAL');
     this.ensureColumn('quotes', 'inception_date', 'TEXT');
@@ -860,7 +859,6 @@ PA.API = {
     quote.twoHundredDayAverage = quote.twoHundredDayAverage ?? this.summaryValue(sd.twoHundredDayAverage) ?? null;
     quote.exDividendDate = quote.exDividendDate ?? dividends.exDividendDate ?? null;
     quote.netAssets = quote.netAssets ?? fund.netAssets ?? null;
-    quote.navPrice = quote.navPrice ?? fund.navPrice ?? null;
     quote.expenseRatio = quote.expenseRatio ?? fund.expenseRatio ?? null;
     quote.portfolioTurnover = quote.portfolioTurnover ?? fund.portfolioTurnover ?? null;
     quote.inceptionDate = quote.inceptionDate ?? fund.inceptionDate ?? null;

@@ -1,14 +1,17 @@
-$ErrorActionPreference = 'Stop'
+#!/usr/bin/env bash
+set -euo pipefail
 
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$css = Get-Content -LiteralPath (Join-Path $scriptDir 'styles.css') -Raw
-$jsCore = Get-Content -LiteralPath (Join-Path $scriptDir 'app-core.js') -Raw
-$jsCharts = Get-Content -LiteralPath (Join-Path $scriptDir 'app-charts.js') -Raw
-$jsFeatures = Get-Content -LiteralPath (Join-Path $scriptDir 'app-features.js') -Raw
-$jsBacktest = Get-Content -LiteralPath (Join-Path $scriptDir 'app-backtest.js') -Raw
-$jsMain = Get-Content -LiteralPath (Join-Path $scriptDir 'app-main.js') -Raw
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-$html = @"
+# Assemble all parts into index.html
+CSS=$(cat "$SCRIPT_DIR/styles.css")
+JS_CORE=$(cat "$SCRIPT_DIR/app-core.js")
+JS_CHARTS=$(cat "$SCRIPT_DIR/app-charts.js")
+JS_FEATURES=$(cat "$SCRIPT_DIR/app-features.js")
+JS_BACKTEST=$(cat "$SCRIPT_DIR/app-backtest.js")
+JS_MAIN=$(cat "$SCRIPT_DIR/app-main.js")
+
+cat > "$SCRIPT_DIR/index.html" << HTMLEOF
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -20,7 +23,7 @@ $html = @"
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
 <style>
-$css
+${CSS}
 </style>
 </head>
 <body>
@@ -203,7 +206,7 @@ $css
         <div style="color:var(--text-secondary);font-size:0.9rem;line-height:1.6">
           <p><strong>Portfolio Analyzer Pro</strong></p>
           <p>A comprehensive portfolio analysis tool with live market data, backtesting, and risk analytics.</p>
-          <p style="margin-top:8px"><strong>Data Sources:</strong> Local Python yfinance backend (Batch 1 v1.1.13)</p>
+          <p style="margin-top:8px"><strong>Data Sources:</strong> Local Python yfinance backend (Batch 1 v1.1.12)</p>
           <p><strong>Metrics:</strong> Provider beta, P/E, Forward P/E, Market Cap, Volume, Yield, plus computed portfolio analytics such as alpha, delta, gamma, Sharpe Ratio, Sortino Ratio, Max Drawdown, and CAGR</p>
           <p style="margin-top:8px;font-size:0.8rem;color:var(--text-muted)">
             Provider-sourced fields should match yfinance values directly. Computed metrics are labeled separately from provider facts.
@@ -217,29 +220,26 @@ $css
 <!-- Status Bar -->
 <footer class="status-bar">
   <div><span id="status-dot" class="status-dot offline"></span><span id="status-text">Initializing...</span></div>
-  <div>Portfolio Analyzer Pro Batch 1 v1.1.13</div>
+  <div>Portfolio Analyzer Pro Batch 1 v1.1.12</div>
 </footer>
 
 <script>
-$jsCore
+${JS_CORE}
 </script>
 <script>
-$jsCharts
+${JS_CHARTS}
 </script>
 <script>
-$jsFeatures
+${JS_FEATURES}
 </script>
 <script>
-$jsBacktest
+${JS_BACKTEST}
 </script>
 <script>
-$jsMain
+${JS_MAIN}
 </script>
 </body>
 </html>
-"@
-
-$target = Join-Path $scriptDir 'index.html'
-Set-Content -LiteralPath $target -Value $html -Encoding UTF8
-Write-Host "index.html assembled successfully"
-Get-Item -LiteralPath $target | Select-Object FullName, Length, LastWriteTime
+HTMLEOF
+echo "index.html assembled successfully"
+wc -l "$SCRIPT_DIR/index.html"

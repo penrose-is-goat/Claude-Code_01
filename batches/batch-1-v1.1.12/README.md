@@ -4,7 +4,7 @@ Portfolio-style analysis site inspired by Portfolio Visualizer, packaged as a br
 
 This workspace is now organized by batches. The current stable target is:
 
-- `Batch 1 v1.1.13`
+- `Batch 1 v1.1.12`
 - Provider: local Python `yfinance` backend
 - Goal: live-first provider-exact ticker data from a backend instead of browser-side API stitching or cache-first behavior
 
@@ -25,16 +25,16 @@ This workspace is now organized by batches. The current stable target is:
 
 ## Current Status
 
-What Batch 1 v1.1.13 is meant to handle well:
+What Batch 1 v1.1.12 is meant to handle well:
 
 - Live ticker lookup
 - Price charts across multiple ranges
 - Live ticker fundamentals sourced from `yfinance`
 - ETF profile data sourced from `yfinance`
 - Provider percent-field unit metadata so ETF yield / expense ratio / turnover render correctly
-- ETF `NAV` sourced from `yfinance` when Yahoo exposes `navPrice`
 - Provider beta shown separately from computed analytics
-- Displayed `YTD`, `1Y`, `3Y`, and `5Y` returns computed from the backend's adjusted-close history path so the return windows use one consistent total-return definition
+- Provider-return mapping for `1Y`, `YTD`, `3Y`, and `5Y` where Yahoo/yfinance exposes them
+- Trailing return labels that fall back to adjusted-close history only when a provider return field is unavailable
 - Live-first fetches that do not rely on cached DB values when the user requests current data
 - Portfolio builder and saved allocations
 - Backtesting against benchmark tickers
@@ -78,13 +78,13 @@ python .\server.py
 From the project root, you can also run:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\start-v1.1.13.ps1
+powershell -ExecutionPolicy Bypass -File .\start-v1.1.12.ps1
 ```
 
 Or just double-click:
 
 ```text
-start-v1.1.13.bat
+start-v1.1.12.bat
 ```
 
 That opens a backend PowerShell window for you. Keep that window running while you use the site.
@@ -130,21 +130,19 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 
 ## Provider Notes
 
-Batch 1 v1.1.13 uses a local `yfinance` backend for:
+Batch 1 v1.1.12 uses a local `yfinance` backend for:
 
 - Quotes
 - Historical price series
 - Search
 - Stock fundamentals
 - ETF profile data
-- ETF NAV
 - Provider field source metadata
 - Provider field unit metadata for percent-style ETF fields
 - Fund holdings and sector-weighting normalization
 - Backend health/version metadata so the frontend can detect stale backend sessions
-- Trailing `YTD`, `1Y`, `3Y`, and `5Y` total returns computed from adjusted-close history when the direct Yahoo metadata fields do not represent the same public metric
 
-The frontend still computes portfolio analytics in other parts of the app, but the ticker page is now biased toward provider-owned fields first. One important nuance: Yahoo/yfinance metadata such as `threeYearAverageReturn` and `fiveYearAverageReturn` does not match the public trailing `3Y`/`5Y` total-return figure users expect, so Batch `1.1.13` stops displaying those raw average-return fields as if they were trailing total returns.
+The frontend still computes portfolio analytics in other parts of the app, but the ticker page is now biased toward provider-owned fields first. Trailing return labels only fall back to adjusted-close history when Yahoo/yfinance does not expose a direct return field.
 
 ## Testing Checklist
 
@@ -156,18 +154,16 @@ Use this list before moving to Batch 2:
 4. Backtest runs on at least `1Y` and `3Y`
 5. Compare works for 2-4 symbols
 6. Settings `Test Backend` button passes
-7. Footer shows `Batch 1 v1.1.13`
+7. Footer shows `Batch 1 v1.1.12`
 8. Settings diagnostics show the same backend version as the frontend batch
 9. ETF top sectors / top holdings do not show `N/A` when Yahoo/yfinance returns them
-10. ETF `NAV` is populated when Yahoo/yfinance exposes `navPrice`
 
-## v1.1.13 Fixes
+## v1.1.12 Fixes
 
-- Diagnosed that Yahoo/yfinance `threeYearAverageReturn` and `fiveYearAverageReturn` are not the same metric as trailing `3Y` and `5Y` total return, which is why those values kept looking wrong
-- Moved displayed `YTD`, `1Y`, `3Y`, and `5Y` return windows onto a single backend path that computes trailing total return from adjusted-close history
-- Added ETF `NAV` support from the provider `navPrice` field
-- Expanded diagnostics so Settings shows the displayed return source in addition to field/unit metadata
-- Updated the local DB schema so cached ETF records can store `NAV` and adjusted close correctly
+- Fixed mixed-unit provider return handling so fields like `ytdReturn`, `threeYearAverageReturn`, and `fiveYearAverageReturn` normalize correctly before display
+- Kept `oneYearReturn`/`52WeekChange` as a ratio field instead of incorrectly treating it like a percent-point field
+- Expanded diagnostics to show the provider field source/unit for `YTD` and `1Y` return fields
+- Added `start-v1.1.12.ps1` and `start-v1.1.12.bat` helper launchers alongside the existing backend starters
 
 ## Batch Plan
 

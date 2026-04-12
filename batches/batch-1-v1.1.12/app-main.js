@@ -115,7 +115,7 @@ PA.App = {
           Provider fields should match yfinance values directly. Computed metrics such as alpha, delta, and gamma remain labeled as analysis outputs rather than provider facts.
         </div>
         <div style="margin-top:8px;font-size:0.8rem;color:var(--text-muted)">
-          Quick start: run <code>backend\\start-backend.ps1</code> or <code>start-v1.1.13.ps1</code> from PowerShell, then keep that terminal window open.
+          Quick start: run <code>backend\\start-backend.ps1</code> or <code>start-v1.1.12.ps1</code> from PowerShell, then keep that terminal window open.
         </div>
         <div style="margin-top:12px;padding:12px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius)">
           <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px">Diagnostics</div>
@@ -166,12 +166,10 @@ PA.App = {
       <div><strong>Error Scope:</strong> ${PA.UI.escapeHtml(endpoint)}</div>
       <div><strong>Current Ticker:</strong> ${PA.UI.escapeHtml(current?.ticker || 'None')}</div>
       <div><strong>Yield Field:</strong> ${PA.UI.escapeHtml(pctFieldMeta('trailingAnnualDividendYield'))}</div>
-      <div><strong>NAV Field:</strong> ${PA.UI.escapeHtml(pctFieldMeta('navPrice'))}</div>
       <div><strong>Expense Ratio Field:</strong> ${PA.UI.escapeHtml(pctFieldMeta('expenseRatio'))}</div>
       <div><strong>Turnover Field:</strong> ${PA.UI.escapeHtml(pctFieldMeta('portfolioTurnover'))}</div>
       <div><strong>YTD Return Field:</strong> ${PA.UI.escapeHtml(pctFieldMeta('ytdReturn'))}</div>
       <div><strong>1Y Return Field:</strong> ${PA.UI.escapeHtml(pctFieldMeta('oneYearReturn'))}</div>
-      <div><strong>Displayed Return Source:</strong> ${PA.UI.escapeHtml(currentSummary?.performance?.returnMethod ? `${currentSummary.performance.returnMethod} (${currentSummary.performance.returnSource || 'yfinance'})` : 'N/A')}</div>
     `;
   },
 
