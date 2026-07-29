@@ -193,12 +193,12 @@ ${CSS}
       <div class="card-title">API Key (Required for Live Data)</div>
       <div id="api-key-status" style="margin-bottom:12px"></div>
       <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:12px;line-height:1.5">
-        This app uses <strong>Financial Modeling Prep (FMP)</strong> for live stock data.
+        This app uses <strong>Finnhub</strong> for live stock data (CORS-friendly, works directly in browser).
         Get a <strong>free API key</strong> (no credit card required):
       </p>
       <ol style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:16px;padding-left:20px;line-height:1.8">
-        <li>Go to <a href="https://financialmodelingprep.com/developer/docs/" target="_blank" style="color:var(--accent);text-decoration:underline">financialmodelingprep.com/developer/docs</a></li>
-        <li>Click <strong>"Get Free API Key"</strong> and create an account</li>
+        <li>Go to <a href="https://finnhub.io/register" target="_blank" style="color:var(--accent);text-decoration:underline">finnhub.io/register</a></li>
+        <li>Create a free account (email + password)</li>
         <li>Copy your API key from the dashboard</li>
         <li>Paste it below and click Save</li>
       </ol>
@@ -210,7 +210,7 @@ ${CSS}
         <button class="btn btn-primary" onclick="PA.App.saveApiKey()" style="height:36px">Save Key</button>
       </div>
       <p style="color:var(--text-muted);font-size:0.75rem;margin-top:8px">
-        Free tier: 250 requests/day. Your key is stored locally in your browser only.
+        Free tier: 60 calls/minute. Your key is stored locally in your browser only.
       </p>
     </div>
 
@@ -228,7 +228,7 @@ ${CSS}
         <div style="color:var(--text-secondary);font-size:0.9rem;line-height:1.6">
           <p><strong>Portfolio Analyzer Pro</strong></p>
           <p>A comprehensive portfolio analysis tool with live market data, backtesting, and risk analytics.</p>
-          <p style="margin-top:8px"><strong>Data Sources:</strong> Financial Modeling Prep API (live) / Built-in sample data (demo)</p>
+          <p style="margin-top:8px"><strong>Data Sources:</strong> Finnhub API (live) / Built-in sample data (demo)</p>
           <p><strong>Metrics:</strong> Beta, P/E, Forward P/E, Delta, Gamma, Alpha (Jensen's), Market Cap, Volume, Yield, Sharpe, Sortino, Max Drawdown, CAGR</p>
           <p style="margin-top:8px;font-size:0.8rem;color:var(--text-muted)">
             Delta = regression sensitivity to SPY. Gamma = rate of change of delta.

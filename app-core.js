@@ -5,19 +5,19 @@ const PA = window.PA = {};
 
 /* ---- Config ---- */
 PA.Config = {
-  FMP_BASE: 'https://financialmodelingprep.com/api/v3',
-  FMP_KEY: '', // Set via settings
+  FINNHUB_BASE: 'https://finnhub.io/api/v1',
+  API_KEY: '',
   RISK_FREE: 0.05,
   COLORS: ['#4f8ff7','#34d399','#f87171','#fbbf24','#a78bfa','#fb923c','#22d3ee','#f472b6','#84cc16','#e879f9'],
   RANGE_DAYS: { '1M':30, '3M':90, '6M':180, 'YTD':0, '1Y':365, '3Y':1095, '5Y':1825, '10Y':3650, 'MAX':9999 },
   getApiKey() {
-    if (this.FMP_KEY) return this.FMP_KEY;
-    try { const s = localStorage.getItem('pa_fmp_key'); if (s) { this.FMP_KEY = s; return s; } } catch(e){}
+    if (this.API_KEY) return this.API_KEY;
+    try { const s = localStorage.getItem('pa_api_key'); if (s) { this.API_KEY = s; return s; } } catch(e){}
     return '';
   },
   setApiKey(key) {
-    this.FMP_KEY = key;
-    try { localStorage.setItem('pa_fmp_key', key); } catch(e){}
+    this.API_KEY = key;
+    try { localStorage.setItem('pa_api_key', key); } catch(e){}
   }
 };
 
@@ -26,7 +26,6 @@ PA.DB = {
   db: null,
   async init() {
     const SQL = await initSqlJs({ locateFile: f => `https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/${f}` });
-    // Try to load from localStorage
     const saved = localStorage.getItem('pa_db');
     if (saved) {
       const buf = Uint8Array.from(atob(saved), c => c.charCodeAt(0));
@@ -82,7 +81,6 @@ PA.DB = {
     this.db.run(`CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY, value TEXT,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
-    // Seed popular tickers
     const seeds = [
       ['SPY','SPDR S&P 500 ETF','Index Fund','NYSE','etf'],
       ['QQQ','Invesco QQQ Trust','Index Fund','NASDAQ','etf'],
@@ -108,7 +106,10 @@ PA.DB = {
       ['HD','Home Depot Inc.','Consumer Cyclical','NYSE','equity'],
       ['BAC','Bank of America','Financial Services','NYSE','equity'],
       ['MA','Mastercard Inc.','Financial Services','NYSE','equity'],
-      ['UNH','UnitedHealth Group','Healthcare','NYSE','equity']
+      ['UNH','UnitedHealth Group','Healthcare','NYSE','equity'],
+      ['AGG','iShares Core US Agg Bond','Fixed Income','NYSE','etf'],
+      ['VNQ','Vanguard Real Estate ETF','Real Estate','NYSE','etf'],
+      ['TLT','iShares 20+ Year Treasury','Fixed Income','NYSE','etf']
     ];
     seeds.forEach(s => {
       this.db.run(`INSERT OR IGNORE INTO securities(ticker,name,sector,exchange,asset_type) VALUES(?,?,?,?,?)`, s);
@@ -144,7 +145,7 @@ PA.DB = {
   }
 };
 
-/* ---- API (Financial Modeling Prep + Sample Data Fallback) ---- */
+/* ---- API (Finnhub - CORS-friendly, 60 calls/min free) ---- */
 PA.API = {
   cache: new Map(),
   CACHE_TTL: 120000,
@@ -154,195 +155,176 @@ PA.API = {
     return null;
   },
   setCache(key, data) { this.cache.set(key, { data, ts: Date.now() }); },
-
   hasApiKey() { return !!PA.Config.getApiKey(); },
 
-  async fmpFetch(endpoint) {
+  async finnhubFetch(endpoint) {
     const key = PA.Config.getApiKey();
     if (!key) throw new Error('NO_API_KEY');
-    const url = `${PA.Config.FMP_BASE}${endpoint}${endpoint.includes('?') ? '&' : '?'}apikey=${key}`;
+    const sep = endpoint.includes('?') ? '&' : '?';
+    const url = PA.Config.FINNHUB_BASE + endpoint + sep + 'token=' + key;
     const resp = await fetch(url, { signal: AbortSignal.timeout(15000) });
     if (resp.status === 401 || resp.status === 403) throw new Error('INVALID_API_KEY');
     if (resp.status === 429) throw new Error('RATE_LIMITED');
-    if (!resp.ok) throw new Error(`API error: ${resp.status}`);
+    if (!resp.ok) throw new Error('API error: ' + resp.status);
     return await resp.json();
   },
 
-  // Get quote for one or more tickers (FMP returns array)
   async getQuote(tickers) {
-    const tickerStr = tickers.join(',');
-    const key = 'quote:' + tickerStr;
-    let cached = this.getCached(key);
-    if (cached) return cached;
-    if (!this.hasApiKey()) return tickers.map(t => PA.SampleData.getQuote(t)).filter(Boolean);
-    try {
-      const data = await this.fmpFetch(`/quote/${tickerStr}`);
-      const result = Array.isArray(data) ? data : [];
-      // Normalize FMP fields to our standard format
-      const normalized = result.map(q => ({
-        symbol: q.symbol,
-        shortName: q.name,
-        longName: q.name,
-        exchange: q.exchange,
-        currency: 'USD',
-        marketState: q.marketCap ? 'REGULAR' : 'CLOSED',
-        regularMarketPrice: q.price,
-        regularMarketChange: q.change,
-        regularMarketChangePercent: q.changesPercentage,
-        regularMarketVolume: q.volume,
-        regularMarketOpen: q.open,
-        regularMarketDayHigh: q.dayHigh,
-        regularMarketDayLow: q.dayLow,
-        regularMarketPreviousClose: q.previousClose,
-        marketCap: q.marketCap,
-        beta: q.beta || null,
-        trailingPE: q.pe,
-        forwardPE: q.forwardPE || null,
-        epsTrailingTwelveMonths: q.eps,
-        epsForward: null,
-        trailingAnnualDividendYield: q.dividendYield ? q.dividendYield / 100 : null,
-        fiftyTwoWeekHigh: q.yearHigh,
-        fiftyTwoWeekLow: q.yearLow,
-        fiftyDayAverage: q.priceAvg50,
-        twoHundredDayAverage: q.priceAvg200,
-        sharesOutstanding: q.sharesOutstanding,
-        bookValue: null,
-        priceToBook: null,
-        averageDailyVolume3Month: q.avgVolume
-      }));
-      this.setCache(key, normalized);
-      return normalized;
-    } catch(e) {
-      if (e.message === 'NO_API_KEY') return tickers.map(t => PA.SampleData.getQuote(t)).filter(Boolean);
-      throw e;
-    }
+    // Finnhub only supports single-ticker quotes, so fetch in parallel
+    const results = await Promise.all(tickers.map(async (ticker) => {
+      const cacheKey = 'quote:' + ticker;
+      let cached = this.getCached(cacheKey);
+      if (cached) return cached;
+
+      if (!this.hasApiKey()) {
+        return PA.SampleData.getQuote(ticker);
+      }
+
+      try {
+        // Fetch quote, profile, and metrics in parallel
+        const [quote, profile, metrics] = await Promise.all([
+          this.finnhubFetch('/quote?symbol=' + ticker),
+          this.finnhubFetch('/stock/profile2?symbol=' + ticker).catch(() => null),
+          this.finnhubFetch('/stock/metric?symbol=' + ticker + '&metric=all').catch(() => null)
+        ]);
+
+        if (!quote || quote.c === 0) return null;
+
+        const m = metrics?.metric || {};
+        const normalized = {
+          symbol: ticker,
+          shortName: profile?.name || ticker,
+          longName: profile?.name || '',
+          exchange: profile?.exchange || '',
+          currency: profile?.currency || 'USD',
+          marketState: 'REGULAR',
+          regularMarketPrice: quote.c,
+          regularMarketChange: quote.d || 0,
+          regularMarketChangePercent: quote.dp || 0,
+          regularMarketVolume: m.tenDayAverageTradingVolume ? Math.round(m.tenDayAverageTradingVolume * 1e6) : null,
+          regularMarketOpen: quote.o,
+          regularMarketDayHigh: quote.h,
+          regularMarketDayLow: quote.l,
+          regularMarketPreviousClose: quote.pc,
+          marketCap: profile?.marketCapitalization ? profile.marketCapitalization * 1e6 : null,
+          beta: m.beta || null,
+          trailingPE: m.peBasicExclExtraTTM || m.peExclExtraTTM || null,
+          forwardPE: m.forwardPE || m.peExclExtraAnnual || null,
+          epsTrailingTwelveMonths: m.epsBasicExclExtraItemsTTM || null,
+          epsForward: m.epsEstimateNextQuarter || null,
+          trailingAnnualDividendYield: m.dividendYieldIndicatedAnnual ? m.dividendYieldIndicatedAnnual / 100 : null,
+          fiftyTwoWeekHigh: m['52WeekHigh'] || quote.h,
+          fiftyTwoWeekLow: m['52WeekLow'] || quote.l,
+          fiftyDayAverage: m['10DayAverageTradingVolume'] || null,
+          twoHundredDayAverage: null,
+          sharesOutstanding: profile?.shareOutstanding ? profile.shareOutstanding * 1e6 : null,
+          bookValue: m.bookValuePerShareQuarterly || null,
+          priceToBook: m.pbQuarterly || null,
+          averageDailyVolume3Month: m.threeMonthAverageTradingVolume ? Math.round(m.threeMonthAverageTradingVolume * 1e6) : null,
+          _isSampleData: false
+        };
+        this.setCache(cacheKey, normalized);
+        return normalized;
+      } catch(e) {
+        if (e.message === 'NO_API_KEY') return PA.SampleData.getQuote(ticker);
+        throw e;
+      }
+    }));
+    return results.filter(Boolean);
   },
 
-  // Get detailed profile/stats
-  async getProfile(ticker) {
-    const key = 'profile:' + ticker;
-    let cached = this.getCached(key);
-    if (cached) return cached;
-    if (!this.hasApiKey()) return null;
-    try {
-      const data = await this.fmpFetch(`/profile/${ticker}`);
-      const result = Array.isArray(data) && data[0] ? data[0] : null;
-      if (result) this.setCache(key, result);
-      return result;
-    } catch(e) { return null; }
-  },
-
-  // Get key metrics (P/E, fwd P/E, book value, etc)
-  async getKeyMetrics(ticker) {
-    const key = 'metrics:' + ticker;
-    let cached = this.getCached(key);
-    if (cached) return cached;
-    if (!this.hasApiKey()) return null;
-    try {
-      const data = await this.fmpFetch(`/key-metrics-ttm/${ticker}`);
-      const result = Array.isArray(data) && data[0] ? data[0] : null;
-      if (result) this.setCache(key, result);
-      return result;
-    } catch(e) { return null; }
-  },
-
-  // Get historical prices
-  async getHistory(ticker, rangeKey='1Y') {
-    const cacheKey = `hist:${ticker}:${rangeKey}`;
+  async getHistory(ticker, rangeKey) {
+    rangeKey = rangeKey || '1Y';
+    const cacheKey = 'hist:' + ticker + ':' + rangeKey;
     let cached = this.getCached(cacheKey);
     if (cached) return cached;
+
     if (!this.hasApiKey()) {
-      const sample = PA.SampleData.getHistory(ticker, rangeKey);
-      if (sample) return sample;
-      return { dates:[], prices:[], volumes:[] };
+      return PA.SampleData.getHistory(ticker, rangeKey) || { dates:[], prices:[], volumes:[] };
     }
+
     try {
-      const days = PA.Config.RANGE_DAYS[rangeKey] || 365;
-      let endpoint;
+      const now = Math.floor(Date.now() / 1000);
+      let days = PA.Config.RANGE_DAYS[rangeKey] || 365;
       if (rangeKey === 'YTD') {
-        const yr = new Date().getFullYear();
-        endpoint = `/historical-price-full/${ticker}?from=${yr}-01-01`;
-      } else if (days > 1825) {
-        endpoint = `/historical-price-full/${ticker}`;
-      } else {
-        const to = new Date();
-        const from = new Date(to);
-        from.setDate(from.getDate() - days);
-        endpoint = `/historical-price-full/${ticker}?from=${from.toISOString().split('T')[0]}&to=${to.toISOString().split('T')[0]}`;
+        days = Math.floor((Date.now() - new Date(new Date().getFullYear(),0,1).getTime()) / 86400000);
       }
-      const data = await this.fmpFetch(endpoint);
-      const historical = data?.historical || [];
-      // FMP returns newest first, reverse to oldest first
-      const sorted = historical.slice().reverse();
+      const from = now - days * 86400;
+      // Use daily resolution for up to 1Y, weekly for longer
+      const res = days <= 365 ? 'D' : 'W';
+      const data = await this.finnhubFetch(
+        '/stock/candle?symbol=' + ticker + '&resolution=' + res + '&from=' + from + '&to=' + now
+      );
+      if (!data || data.s === 'no_data' || !data.c) {
+        return PA.SampleData.getHistory(ticker, rangeKey) || { dates:[], prices:[], volumes:[] };
+      }
       const result = {
-        dates: sorted.map(d => d.date),
-        prices: sorted.map(d => d.adjClose ?? d.close),
-        volumes: sorted.map(d => d.volume || 0)
+        dates: data.t.map(t => new Date(t * 1000).toISOString().split('T')[0]),
+        prices: data.c.map(p => Math.round(p * 100) / 100),
+        volumes: data.v || data.t.map(() => 0)
       };
       this.setCache(cacheKey, result);
       return result;
     } catch(e) {
       if (e.message === 'NO_API_KEY') {
-        const sample = PA.SampleData.getHistory(ticker, rangeKey);
-        return sample || { dates:[], prices:[], volumes:[] };
+        return PA.SampleData.getHistory(ticker, rangeKey) || { dates:[], prices:[], volumes:[] };
       }
       throw e;
     }
   },
 
-  // Search tickers
   async search(query) {
     if (!query || query.length < 1) return [];
     const key = 'search:' + query;
     let cached = this.getCached(key);
     if (cached) return cached;
-    // Always search local DB first
+
+    // Always search local DB
     const local = PA.DB.selectAll(
-      `SELECT ticker, name, exchange FROM securities WHERE ticker LIKE ? OR name LIKE ? LIMIT 8`,
-      [`%${query}%`, `%${query}%`]
+      'SELECT ticker, name, exchange FROM securities WHERE ticker LIKE ? OR name LIKE ? LIMIT 8',
+      ['%' + query + '%', '%' + query + '%']
     ).map(r => ({ symbol: r.ticker, shortname: r.name, exchange: r.exchange }));
+
     if (!this.hasApiKey()) { this.setCache(key, local); return local; }
+
     try {
-      const data = await this.fmpFetch(`/search?query=${encodeURIComponent(query)}&limit=8`);
-      const remote = (Array.isArray(data) ? data : []).map(r => ({
-        symbol: r.symbol, shortname: r.name, exchange: r.exchangeShortName || r.exchange || ''
-      }));
-      // Merge local + remote, deduplicate
+      const data = await this.finnhubFetch('/search?q=' + encodeURIComponent(query));
+      const remote = (data?.result || [])
+        .filter(r => r.type === 'Common Stock' || r.type === 'ETP' || r.type === 'ETF' || !r.type)
+        .map(r => ({ symbol: r.symbol, shortname: r.description || '', exchange: r.exchange || '' }));
       const seen = new Set();
       const merged = [];
       [...local, ...remote].forEach(r => {
-        if (r.symbol && !seen.has(r.symbol)) { seen.add(r.symbol); merged.push(r); }
+        if (r.symbol && !seen.has(r.symbol) && !r.symbol.includes('.')) {
+          seen.add(r.symbol);
+          merged.push(r);
+        }
       });
       this.setCache(key, merged);
       return merged;
     } catch(e) { return local; }
   },
 
-  // Legacy compat - parseHistory now just returns the data as-is since getHistory already normalizes
   parseHistory(result) {
     if (!result) return { dates:[], prices:[], volumes:[] };
-    // Already in {dates, prices, volumes} format from getHistory
     if (result.dates) return result;
-    // Legacy Yahoo format fallback
     return { dates:[], prices:[], volumes:[] };
   }
 };
 
 /* ---- Sample Data (works without any API key) ---- */
 PA.SampleData = {
-  // Generate realistic price history using geometric brownian motion
-  _generatePrices(basePrice, annualReturn, annualVol, days) {
+  _generatePrices(basePrice, annualReturn, annualVol, days, seed) {
     const dt = 1/252;
     const drift = (annualReturn - 0.5*annualVol*annualVol)*dt;
     const diffusion = annualVol*Math.sqrt(dt);
     const prices = [basePrice];
-    // Use seeded pseudo-random for consistency
-    let seed = basePrice * 1000;
-    const rand = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
-    const boxMuller = () => { const u1=rand(), u2=rand(); return Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2); };
+    let s = Math.abs(seed) || 42;
+    const rand = () => { s = (s * 16807 + 7) % 2147483647; return (s - 1) / 2147483646; };
+    const boxMuller = () => { const u1 = Math.max(rand(), 0.0001), u2 = rand(); return Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2); };
     for (let i = 1; i < days; i++) {
       const prev = prices[i-1];
-      prices.push(prev * Math.exp(drift + diffusion * boxMuller()));
+      prices.push(Math.max(prev * Math.exp(drift + diffusion * boxMuller()), 0.01));
     }
     return prices.map(p => Math.round(p * 100) / 100);
   },
@@ -354,48 +336,51 @@ PA.SampleData = {
     for (let i = 0; i < days; i++) {
       d.setDate(d.getDate() + 1);
       const dow = d.getDay();
-      if (dow === 0 || dow === 6) continue; // skip weekends
+      if (dow === 0 || dow === 6) continue;
       dates.push(d.toISOString().split('T')[0]);
     }
     return dates;
   },
 
   _stockProfiles: {
-    SPY:  { price:585, ret:0.10, vol:0.15, name:'SPDR S&P 500 ETF', beta:1.00, pe:23.5, fwdPe:21.2, cap:540e9, volume:75e6, yield:0.013, sector:'Index Fund', exchange:'NYSE' },
-    QQQ:  { price:510, ret:0.15, vol:0.20, name:'Invesco QQQ Trust', beta:1.15, pe:31.2, fwdPe:27.8, cap:250e9, volume:45e6, yield:0.006, sector:'Index Fund', exchange:'NASDAQ' },
-    DIA:  { price:425, ret:0.08, vol:0.14, name:'SPDR Dow Jones ETF', beta:0.95, pe:20.1, fwdPe:18.5, cap:35e9, volume:3.5e6, yield:0.017, sector:'Index Fund', exchange:'NYSE' },
-    IWM:  { price:225, ret:0.07, vol:0.22, name:'iShares Russell 2000', beta:1.20, pe:26.8, fwdPe:22.1, cap:65e9, volume:25e6, yield:0.012, sector:'Index Fund', exchange:'NYSE' },
-    VTI:  { price:290, ret:0.10, vol:0.15, name:'Vanguard Total Stock Market', beta:1.00, pe:24.1, fwdPe:21.5, cap:420e9, volume:4e6, yield:0.013, sector:'Index Fund', exchange:'NYSE' },
-    VOO:  { price:540, ret:0.10, vol:0.15, name:'Vanguard S&P 500 ETF', beta:1.00, pe:23.5, fwdPe:21.2, cap:500e9, volume:5e6, yield:0.013, sector:'Index Fund', exchange:'NYSE' },
-    BND:  { price:72,  ret:0.03, vol:0.05, name:'Vanguard Total Bond Market', beta:0.05, pe:null, fwdPe:null, cap:110e9, volume:7e6, yield:0.035, sector:'Fixed Income', exchange:'NYSE' },
-    GLD:  { price:285, ret:0.08, vol:0.14, name:'SPDR Gold Shares', beta:0.05, pe:null, fwdPe:null, cap:75e9, volume:8e6, yield:0, sector:'Commodities', exchange:'NYSE' },
-    TLT:  { price:92,  ret:0.02, vol:0.16, name:'iShares 20+ Year Treasury', beta:-0.30, pe:null, fwdPe:null, cap:55e9, volume:20e6, yield:0.038, sector:'Fixed Income', exchange:'NYSE' },
-    AAPL: { price:235, ret:0.15, vol:0.25, name:'Apple Inc.', beta:1.21, pe:33.5, fwdPe:30.2, cap:3.6e12, volume:55e6, yield:0.005, sector:'Technology', exchange:'NASDAQ' },
-    MSFT: { price:455, ret:0.18, vol:0.24, name:'Microsoft Corporation', beta:0.90, pe:37.2, fwdPe:32.1, cap:3.4e12, volume:22e6, yield:0.007, sector:'Technology', exchange:'NASDAQ' },
-    GOOGL:{ price:185, ret:0.14, vol:0.26, name:'Alphabet Inc.', beta:1.08, pe:25.8, fwdPe:22.5, cap:2.3e12, volume:25e6, yield:0.005, sector:'Technology', exchange:'NASDAQ' },
-    AMZN: { price:225, ret:0.20, vol:0.30, name:'Amazon.com Inc.', beta:1.15, pe:62.5, fwdPe:38.2, cap:2.3e12, volume:40e6, yield:0, sector:'Consumer Cyclical', exchange:'NASDAQ' },
-    NVDA: { price:140, ret:0.35, vol:0.50, name:'NVIDIA Corporation', beta:1.65, pe:65.3, fwdPe:32.5, cap:3.4e12, volume:250e6, yield:0.0003, sector:'Technology', exchange:'NASDAQ' },
-    META: { price:620, ret:0.22, vol:0.35, name:'Meta Platforms Inc.', beta:1.25, pe:28.5, fwdPe:23.8, cap:1.6e12, volume:15e6, yield:0.003, sector:'Technology', exchange:'NASDAQ' },
-    TSLA: { price:350, ret:0.25, vol:0.55, name:'Tesla Inc.', beta:2.05, pe:95.2, fwdPe:65.0, cap:1.1e12, volume:90e6, yield:0, sector:'Consumer Cyclical', exchange:'NASDAQ' },
-    JPM:  { price:255, ret:0.12, vol:0.22, name:'JPMorgan Chase & Co.', beta:1.10, pe:12.5, fwdPe:11.8, cap:735e9, volume:9e6, yield:0.021, sector:'Financial Services', exchange:'NYSE' },
-    V:    { price:320, ret:0.14, vol:0.20, name:'Visa Inc.', beta:0.95, pe:32.1, fwdPe:27.5, cap:620e9, volume:6e6, yield:0.007, sector:'Financial Services', exchange:'NYSE' },
-    JNJ:  { price:160, ret:0.06, vol:0.15, name:'Johnson & Johnson', beta:0.55, pe:22.8, fwdPe:15.2, cap:385e9, volume:7e6, yield:0.031, sector:'Healthcare', exchange:'NYSE' },
-    WMT:  { price:95,  ret:0.10, vol:0.18, name:'Walmart Inc.', beta:0.52, pe:37.5, fwdPe:30.2, cap:640e9, volume:8e6, yield:0.010, sector:'Consumer Defensive', exchange:'NYSE' },
-    XOM:  { price:112, ret:0.08, vol:0.25, name:'Exxon Mobil Corp.', beta:0.80, pe:14.2, fwdPe:13.5, cap:500e9, volume:14e6, yield:0.033, sector:'Energy', exchange:'NYSE' },
-    PG:   { price:170, ret:0.07, vol:0.14, name:'Procter & Gamble', beta:0.42, pe:28.5, fwdPe:24.2, cap:400e9, volume:6e6, yield:0.024, sector:'Consumer Defensive', exchange:'NYSE' },
-    HD:   { price:410, ret:0.12, vol:0.22, name:'Home Depot Inc.', beta:1.05, pe:26.3, fwdPe:23.8, cap:400e9, volume:4e6, yield:0.023, sector:'Consumer Cyclical', exchange:'NYSE' },
-    BAC:  { price:45,  ret:0.10, vol:0.28, name:'Bank of America', beta:1.35, pe:13.2, fwdPe:11.5, cap:355e9, volume:35e6, yield:0.024, sector:'Financial Services', exchange:'NYSE' },
-    MA:   { price:535, ret:0.15, vol:0.21, name:'Mastercard Inc.', beta:1.08, pe:38.5, fwdPe:31.2, cap:500e9, volume:3e6, yield:0.005, sector:'Financial Services', exchange:'NYSE' },
-    UNH:  { price:520, ret:0.14, vol:0.22, name:'UnitedHealth Group', beta:0.65, pe:32.1, fwdPe:18.5, cap:480e9, volume:3.5e6, yield:0.015, sector:'Healthcare', exchange:'NYSE' },
-    AGG:  { price:100, ret:0.025, vol:0.04, name:'iShares Core US Agg Bond', beta:0.03, pe:null, fwdPe:null, cap:95e9, volume:6e6, yield:0.033, sector:'Fixed Income', exchange:'NYSE' },
-    VNQ:  { price:88,  ret:0.06, vol:0.20, name:'Vanguard Real Estate ETF', beta:0.85, pe:35.2, fwdPe:30.0, cap:35e9, volume:4e6, yield:0.038, sector:'Real Estate', exchange:'NYSE' }
+    SPY:  { price:585.50, ret:0.10, vol:0.15, name:'SPDR S&P 500 ETF Trust', beta:1.00, pe:23.5, fwdPe:21.2, cap:540e9, volume:75000000, yield:0.013, exchange:'NYSE ARCA', seed:100 },
+    QQQ:  { price:512.30, ret:0.15, vol:0.20, name:'Invesco QQQ Trust', beta:1.15, pe:31.2, fwdPe:27.8, cap:250e9, volume:45000000, yield:0.006, exchange:'NASDAQ', seed:200 },
+    DIA:  { price:425.80, ret:0.08, vol:0.14, name:'SPDR Dow Jones Industrial Average ETF', beta:0.95, pe:20.1, fwdPe:18.5, cap:35e9, volume:3500000, yield:0.017, exchange:'NYSE ARCA', seed:300 },
+    IWM:  { price:224.70, ret:0.07, vol:0.22, name:'iShares Russell 2000 ETF', beta:1.20, pe:26.8, fwdPe:22.1, cap:65e9, volume:25000000, yield:0.012, exchange:'NYSE ARCA', seed:400 },
+    VTI:  { price:290.15, ret:0.10, vol:0.15, name:'Vanguard Total Stock Market ETF', beta:1.00, pe:24.1, fwdPe:21.5, cap:420e9, volume:4000000, yield:0.013, exchange:'NYSE ARCA', seed:500 },
+    VOO:  { price:538.20, ret:0.10, vol:0.15, name:'Vanguard S&P 500 ETF', beta:1.00, pe:23.5, fwdPe:21.2, cap:500e9, volume:5000000, yield:0.013, exchange:'NYSE ARCA', seed:600 },
+    BND:  { price:72.45,  ret:0.03, vol:0.05, name:'Vanguard Total Bond Market ETF', beta:0.05, pe:null, fwdPe:null, cap:110e9, volume:7000000, yield:0.035, exchange:'NYSE ARCA', seed:700 },
+    GLD:  { price:285.60, ret:0.08, vol:0.14, name:'SPDR Gold Shares', beta:0.05, pe:null, fwdPe:null, cap:75e9, volume:8000000, yield:0, exchange:'NYSE ARCA', seed:800 },
+    TLT:  { price:91.80,  ret:0.02, vol:0.16, name:'iShares 20+ Year Treasury Bond ETF', beta:-0.30, pe:null, fwdPe:null, cap:55e9, volume:20000000, yield:0.038, exchange:'NYSE ARCA', seed:850 },
+    AGG:  { price:100.25, ret:0.025, vol:0.04, name:'iShares Core US Aggregate Bond ETF', beta:0.03, pe:null, fwdPe:null, cap:95e9, volume:6000000, yield:0.033, exchange:'NYSE ARCA', seed:860 },
+    VNQ:  { price:87.90,  ret:0.06, vol:0.20, name:'Vanguard Real Estate ETF', beta:0.85, pe:35.2, fwdPe:30.0, cap:35e9, volume:4000000, yield:0.038, exchange:'NYSE ARCA', seed:870 },
+    AAPL: { price:234.82, ret:0.15, vol:0.25, name:'Apple Inc.', beta:1.21, pe:33.5, fwdPe:30.2, cap:3600e9, volume:55000000, yield:0.005, exchange:'NASDAQ', seed:1000 },
+    MSFT: { price:454.27, ret:0.18, vol:0.24, name:'Microsoft Corporation', beta:0.90, pe:37.2, fwdPe:32.1, cap:3380e9, volume:22000000, yield:0.007, exchange:'NASDAQ', seed:2000 },
+    GOOGL:{ price:186.45, ret:0.14, vol:0.26, name:'Alphabet Inc.', beta:1.08, pe:25.8, fwdPe:22.5, cap:2300e9, volume:25000000, yield:0.005, exchange:'NASDAQ', seed:3000 },
+    AMZN: { price:224.92, ret:0.20, vol:0.30, name:'Amazon.com Inc.', beta:1.15, pe:62.5, fwdPe:38.2, cap:2350e9, volume:40000000, yield:0, exchange:'NASDAQ', seed:4000 },
+    NVDA: { price:140.14, ret:0.35, vol:0.50, name:'NVIDIA Corporation', beta:1.65, pe:65.3, fwdPe:32.5, cap:3440e9, volume:250000000, yield:0.0003, exchange:'NASDAQ', seed:5000 },
+    META: { price:618.73, ret:0.22, vol:0.35, name:'Meta Platforms Inc.', beta:1.25, pe:28.5, fwdPe:23.8, cap:1570e9, volume:15000000, yield:0.003, exchange:'NASDAQ', seed:6000 },
+    TSLA: { price:352.60, ret:0.25, vol:0.55, name:'Tesla Inc.', beta:2.05, pe:95.2, fwdPe:65.0, cap:1130e9, volume:90000000, yield:0, exchange:'NASDAQ', seed:7000 },
+    JPM:  { price:254.80, ret:0.12, vol:0.22, name:'JPMorgan Chase & Co.', beta:1.10, pe:12.5, fwdPe:11.8, cap:735e9, volume:9000000, yield:0.021, exchange:'NYSE', seed:8000 },
+    V:    { price:318.45, ret:0.14, vol:0.20, name:'Visa Inc.', beta:0.95, pe:32.1, fwdPe:27.5, cap:620e9, volume:6000000, yield:0.007, exchange:'NYSE', seed:9000 },
+    JNJ:  { price:158.32, ret:0.06, vol:0.15, name:'Johnson & Johnson', beta:0.55, pe:22.8, fwdPe:15.2, cap:385e9, volume:7000000, yield:0.031, exchange:'NYSE', seed:10000 },
+    WMT:  { price:94.85,  ret:0.10, vol:0.18, name:'Walmart Inc.', beta:0.52, pe:37.5, fwdPe:30.2, cap:640e9, volume:8000000, yield:0.010, exchange:'NYSE', seed:11000 },
+    XOM:  { price:111.70, ret:0.08, vol:0.25, name:'Exxon Mobil Corporation', beta:0.80, pe:14.2, fwdPe:13.5, cap:500e9, volume:14000000, yield:0.033, exchange:'NYSE', seed:12000 },
+    PG:   { price:169.52, ret:0.07, vol:0.14, name:'Procter & Gamble Co.', beta:0.42, pe:28.5, fwdPe:24.2, cap:400e9, volume:6000000, yield:0.024, exchange:'NYSE', seed:13000 },
+    HD:   { price:408.35, ret:0.12, vol:0.22, name:'The Home Depot Inc.', beta:1.05, pe:26.3, fwdPe:23.8, cap:400e9, volume:4000000, yield:0.023, exchange:'NYSE', seed:14000 },
+    BAC:  { price:44.92,  ret:0.10, vol:0.28, name:'Bank of America Corp.', beta:1.35, pe:13.2, fwdPe:11.5, cap:355e9, volume:35000000, yield:0.024, exchange:'NYSE', seed:15000 },
+    MA:   { price:533.18, ret:0.15, vol:0.21, name:'Mastercard Inc.', beta:1.08, pe:38.5, fwdPe:31.2, cap:500e9, volume:3000000, yield:0.005, exchange:'NYSE', seed:16000 },
+    UNH:  { price:518.40, ret:0.14, vol:0.22, name:'UnitedHealth Group Inc.', beta:0.65, pe:32.1, fwdPe:18.5, cap:480e9, volume:3500000, yield:0.015, exchange:'NYSE', seed:17000 }
   },
 
   getQuote(ticker) {
     const p = this._stockProfiles[ticker.toUpperCase()];
     if (!p) return null;
-    const change = Math.round((Math.random() - 0.48) * p.price * 0.03 * 100) / 100;
-    const changePct = (change / p.price) * 100;
+    // Use deterministic "daily change" based on date so it doesn't jump on every call
+    const dayNum = Math.floor(Date.now() / 86400000);
+    const hashVal = ((dayNum * 31 + p.seed) % 200 - 100) / 10000;
+    const change = Math.round(p.price * hashVal * 100) / 100;
+    const changePct = Math.round(hashVal * 10000) / 100;
     return {
       symbol: ticker.toUpperCase(),
       shortName: p.name,
@@ -407,22 +392,22 @@ PA.SampleData = {
       regularMarketChange: change,
       regularMarketChangePercent: changePct,
       regularMarketVolume: p.volume,
-      regularMarketOpen: p.price - change * 0.3,
-      regularMarketDayHigh: p.price + Math.abs(change) * 0.5,
-      regularMarketDayLow: p.price - Math.abs(change) * 0.5,
-      regularMarketPreviousClose: p.price - change,
+      regularMarketOpen: Math.round((p.price - change * 0.3) * 100) / 100,
+      regularMarketDayHigh: Math.round((p.price + Math.abs(change) * 0.5) * 100) / 100,
+      regularMarketDayLow: Math.round((p.price - Math.abs(change) * 0.5) * 100) / 100,
+      regularMarketPreviousClose: Math.round((p.price - change) * 100) / 100,
       marketCap: p.cap,
       beta: p.beta,
       trailingPE: p.pe,
       forwardPE: p.fwdPe,
-      epsTrailingTwelveMonths: p.pe ? p.price / p.pe : null,
-      epsForward: p.fwdPe ? p.price / p.fwdPe : null,
+      epsTrailingTwelveMonths: p.pe ? Math.round(p.price / p.pe * 100) / 100 : null,
+      epsForward: p.fwdPe ? Math.round(p.price / p.fwdPe * 100) / 100 : null,
       trailingAnnualDividendYield: p.yield,
       fiftyTwoWeekHigh: Math.round(p.price * 1.25 * 100) / 100,
       fiftyTwoWeekLow: Math.round(p.price * 0.78 * 100) / 100,
       fiftyDayAverage: Math.round(p.price * 0.98 * 100) / 100,
       twoHundredDayAverage: Math.round(p.price * 0.93 * 100) / 100,
-      sharesOutstanding: p.cap / p.price,
+      sharesOutstanding: Math.round(p.cap / p.price),
       bookValue: null,
       priceToBook: null,
       averageDailyVolume3Month: p.volume,
@@ -430,17 +415,24 @@ PA.SampleData = {
     };
   },
 
-  getHistory(ticker, rangeKey='1Y') {
+  getHistory(ticker, rangeKey) {
+    rangeKey = rangeKey || '1Y';
     const p = this._stockProfiles[ticker.toUpperCase()];
     if (!p) return null;
     const rangeDays = PA.Config.RANGE_DAYS[rangeKey] || 365;
-    const actualDays = rangeKey === 'YTD' ? Math.floor((new Date() - new Date(new Date().getFullYear(),0,1)) / 86400000) : Math.min(rangeDays, 2600);
+    const actualDays = rangeKey === 'YTD'
+      ? Math.floor((Date.now() - new Date(new Date().getFullYear(),0,1).getTime()) / 86400000)
+      : Math.min(rangeDays, 2600);
     const dates = this._generateDates(actualDays);
-    const prices = this._generatePrices(p.price * 0.75, p.ret, p.vol, dates.length);
-    // Scale so last price ~ current price
-    const scale = p.price / prices[prices.length - 1];
+    const startPrice = p.price * Math.exp(-p.ret * (actualDays / 365));
+    const prices = this._generatePrices(startPrice, p.ret, p.vol, dates.length, p.seed + rangeDays);
+    // Scale so last price matches current
+    const scale = p.price / (prices[prices.length - 1] || 1);
     const scaledPrices = prices.map(px => Math.round(px * scale * 100) / 100);
-    const volumes = dates.map(() => Math.round(p.volume * (0.7 + Math.random() * 0.6)));
+    const volumes = dates.map((_, i) => {
+      const base = p.volume * (0.7 + 0.3 * Math.sin(i * 0.1 + p.seed));
+      return Math.round(base);
+    });
     return { dates, prices: scaledPrices, volumes };
   }
 };
@@ -470,25 +462,33 @@ PA.Compute = {
     return arr.reduce((s,v) => s+v, 0) / arr.length;
   },
   stdDev(arr) {
+    if (arr.length < 2) return 0;
     const m = this.mean(arr);
     const variance = arr.reduce((s,v) => s + (v-m)**2, 0) / (arr.length - 1);
     return Math.sqrt(variance);
   },
-  annualizedReturn(prices, tradingDays=252) {
+  annualizedReturn(prices, tradingDays) {
+    tradingDays = tradingDays || 252;
     if (prices.length < 2) return 0;
     const totalReturn = prices[prices.length-1] / prices[0];
     const years = (prices.length - 1) / tradingDays;
+    if (years <= 0) return 0;
     return Math.pow(totalReturn, 1/years) - 1;
   },
-  annualizedVolatility(returns, tradingDays=252) {
+  annualizedVolatility(returns, tradingDays) {
+    tradingDays = tradingDays || 252;
     return this.stdDev(returns) * Math.sqrt(tradingDays);
   },
-  sharpeRatio(returns, rf=PA.Config.RISK_FREE, tradingDays=252) {
+  sharpeRatio(returns, rf, tradingDays) {
+    rf = rf || PA.Config.RISK_FREE;
+    tradingDays = tradingDays || 252;
     const annRet = this.mean(returns) * tradingDays;
     const annVol = this.annualizedVolatility(returns, tradingDays);
     return annVol === 0 ? 0 : (annRet - rf) / annVol;
   },
-  sortinoRatio(returns, rf=PA.Config.RISK_FREE, tradingDays=252) {
+  sortinoRatio(returns, rf, tradingDays) {
+    rf = rf || PA.Config.RISK_FREE;
+    tradingDays = tradingDays || 252;
     const annRet = this.mean(returns) * tradingDays;
     const downside = returns.filter(r => r < 0);
     const downDev = downside.length ? this.stdDev(downside) * Math.sqrt(tradingDays) : 0;
@@ -501,7 +501,7 @@ PA.Compute = {
       const dd = (peak - prices[i]) / peak;
       if (dd > maxDD) { maxDD = dd; ddStart = peakIdx; ddEnd = i; }
     }
-    return { maxDD, ddStart, ddEnd };
+    return { maxDD: maxDD, ddStart: ddStart, ddEnd: ddEnd };
   },
   drawdownSeries(prices) {
     let peak = prices[0];
@@ -522,20 +522,21 @@ PA.Compute = {
     }
     return mVar === 0 ? 1 : cov / mVar;
   },
-  alpha(stockReturns, marketReturns, rf=PA.Config.RISK_FREE, tradingDays=252) {
+  alpha(stockReturns, marketReturns, rf, tradingDays) {
+    rf = rf || PA.Config.RISK_FREE;
+    tradingDays = tradingDays || 252;
     const b = this.beta(stockReturns, marketReturns);
     const sRet = this.mean(stockReturns) * tradingDays;
     const mRet = this.mean(marketReturns) * tradingDays;
     return sRet - (rf + b * (mRet - rf));
   },
   delta(stockPrices, marketPrices) {
-    // Regression coefficient: stock price change per unit market change
     const sR = this.dailyReturns(stockPrices);
     const mR = this.dailyReturns(marketPrices);
-    return this.beta(sR, mR); // Delta = regression beta
+    return this.beta(sR, mR);
   },
-  gamma(stockPrices, marketPrices, window=20) {
-    // Rate of change of delta over rolling windows
+  gamma(stockPrices, marketPrices, window) {
+    window = window || 20;
     const sR = this.dailyReturns(stockPrices);
     const mR = this.dailyReturns(marketPrices);
     const deltas = [];
@@ -545,7 +546,7 @@ PA.Compute = {
       deltas.push(this.beta(sSub, mSub));
     }
     if (deltas.length < 2) return 0;
-    const changes = this.dailyReturns(deltas.map((d,i) => d + 2)); // offset to avoid negatives
+    const changes = this.dailyReturns(deltas.map(function(d) { return d + 2; }));
     return this.mean(changes);
   },
   correlation(a, b) {
@@ -567,14 +568,12 @@ PA.Compute = {
     return c * c;
   },
   portfolioReturns(weights, returnArrays) {
-    // weights: array of decimals summing to 1
-    // returnArrays: array of arrays of daily returns (same length)
-    const n = Math.min(...returnArrays.map(r => r.length));
+    const n = Math.min.apply(null, returnArrays.map(function(r) { return r.length; }));
     const pReturns = [];
     for (let i = 0; i < n; i++) {
       let dayReturn = 0;
       for (let j = 0; j < weights.length; j++) {
-        dayReturn += weights[j] * (returnArrays[j]?.[i] || 0);
+        dayReturn += weights[j] * (returnArrays[j][i] || 0);
       }
       pReturns.push(dayReturn);
     }
@@ -582,8 +581,8 @@ PA.Compute = {
   },
   growthOf(initialValue, returns) {
     const growth = [initialValue];
-    for (const r of returns) {
-      growth.push(growth[growth.length-1] * (1 + r));
+    for (let i = 0; i < returns.length; i++) {
+      growth.push(growth[growth.length-1] * (1 + returns[i]));
     }
     return growth;
   },
@@ -597,10 +596,7 @@ PA.Compute = {
     const result = [];
     const keys = Object.keys(monthly).sort();
     for (let i = 1; i < keys.length; i++) {
-      result.push({
-        month: keys[i],
-        return: (monthly[keys[i]].last / monthly[keys[i-1]].last) - 1
-      });
+      result.push({ month: keys[i], return: (monthly[keys[i]].last / monthly[keys[i-1]].last) - 1 });
     }
     return result;
   },
@@ -615,19 +611,23 @@ PA.Compute = {
 
 /* ---- Formatting Utilities ---- */
 PA.Fmt = {
-  currency(v, dec=2) {
+  currency(v, dec) {
+    dec = dec != null ? dec : 2;
     if (v == null || isNaN(v)) return 'N/A';
     return '$' + Number(v).toLocaleString('en-US', {minimumFractionDigits:dec, maximumFractionDigits:dec});
   },
-  pct(v, dec=2) {
+  pct(v, dec) {
+    dec = dec != null ? dec : 2;
     if (v == null || isNaN(v)) return 'N/A';
     return (v * 100).toFixed(dec) + '%';
   },
-  pctRaw(v, dec=2) {
+  pctRaw(v, dec) {
+    dec = dec != null ? dec : 2;
     if (v == null || isNaN(v)) return 'N/A';
     return Number(v).toFixed(dec) + '%';
   },
-  number(v, dec=2) {
+  number(v, dec) {
+    dec = dec != null ? dec : 2;
     if (v == null || isNaN(v)) return 'N/A';
     return Number(v).toLocaleString('en-US', {minimumFractionDigits:dec, maximumFractionDigits:dec});
   },
@@ -640,7 +640,8 @@ PA.Fmt = {
     if (abs >= 1e3) return (v/1e3).toFixed(1) + 'K';
     return v.toFixed(2);
   },
-  ratio(v, dec=2) {
+  ratio(v, dec) {
+    dec = dec != null ? dec : 2;
     if (v == null || isNaN(v)) return 'N/A';
     return Number(v).toFixed(dec);
   },

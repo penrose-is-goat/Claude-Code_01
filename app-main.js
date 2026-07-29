@@ -52,7 +52,7 @@ PA.App = {
       this.updateApiKeyDisplay();
 
       // Show data mode in status bar
-      const mode = PA.API.hasApiKey() ? 'Live Data (FMP)' : 'Demo Mode';
+      const mode = PA.API.hasApiKey() ? 'Live Data (Finnhub)' : 'Demo Mode';
       document.getElementById('status-text').textContent = 'Ready - ' + mode;
 
       PA.UI.showTab('dashboard');
@@ -80,7 +80,7 @@ PA.App = {
   clearAllData() {
     if (confirm('Delete all saved data? This cannot be undone.')) {
       localStorage.removeItem('pa_db');
-      localStorage.removeItem('pa_fmp_key');
+      localStorage.removeItem('pa_api_key');
       location.reload();
     }
   },
@@ -93,7 +93,7 @@ PA.App = {
       PA.API.cache.clear();
       PA.UI.toast('API key saved! You now have access to live data for any ticker.', 'success');
       this.updateApiKeyDisplay();
-      document.getElementById('status-text').textContent = 'Ready - Live Data (FMP)';
+      document.getElementById('status-text').textContent = 'Ready - Live Data (Finnhub)';
     } else {
       PA.UI.toast('Please enter an API key', 'error');
     }
@@ -101,7 +101,7 @@ PA.App = {
 
   removeApiKey() {
     PA.Config.FMP_KEY = '';
-    localStorage.removeItem('pa_fmp_key');
+    localStorage.removeItem('pa_api_key');
     PA.API.cache.clear();
     PA.UI.toast('API key removed. Using demo data.', 'info');
     this.updateApiKeyDisplay();

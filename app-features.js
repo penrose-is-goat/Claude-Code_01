@@ -67,8 +67,8 @@ PA.Ticker = {
       this.saveToDb(ticker, quote, hist);
     } catch(e) {
       let msg = e.message;
-      if (msg === 'INVALID_API_KEY') msg = 'Invalid API key. Please check your key in Settings.';
-      else if (msg === 'RATE_LIMITED') msg = 'API rate limit reached. Free tier allows 250 requests/day. Try again later.';
+      if (msg === 'INVALID_API_KEY') msg = 'Invalid API key. Get a free key at finnhub.io/register and enter it in Settings.';
+      else if (msg === 'RATE_LIMITED') msg = 'API rate limit reached (60 calls/min on free tier). Wait a moment and try again.';
       document.getElementById('ticker-content').innerHTML =
         '<div class="empty-state"><h3>Error loading data</h3><p>' + msg + '</p></div>';
     }

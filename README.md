@@ -56,12 +56,12 @@ The app works in **two modes**:
 | Mode | How | What You Get |
 |------|-----|-------------|
 | **Demo Mode** | Just open `index.html` - no setup needed | 28 popular tickers (AAPL, NVDA, SPY, etc.) with simulated prices and real fundamental metrics |
-| **Live Mode** | Add a free API key in Settings | Any ticker worldwide, real-time prices from Financial Modeling Prep (250 requests/day free) |
+| **Live Mode** | Add a free API key in Settings | Any ticker worldwide, real-time prices from Finnhub (60 calls/minute free) |
 
 ### Getting a Free API Key (for Live Mode)
 
-1. Go to [financialmodelingprep.com/developer/docs](https://financialmodelingprep.com/developer/docs/)
-2. Click **"Get Free API Key"** (no credit card needed)
+1. Go to [finnhub.io/register](https://finnhub.io/register)
+2. Create a free account (no credit card needed)
 3. Copy your key, open the app, go to **Settings** tab
 4. Paste it and click **Save Key**
 
@@ -244,7 +244,7 @@ bash build.sh
 | **Vanilla JavaScript** | No frameworks - runs anywhere, zero build step |
 | **[sql.js](https://github.com/sql-js/sql.js/)** | SQLite compiled to WebAssembly, runs in-browser |
 | **[Chart.js](https://www.chartjs.org/)** | Interactive, responsive charts |
-| **[Financial Modeling Prep](https://financialmodelingprep.com/)** | Live stock quotes, historical prices, fundamentals (free API key) |
+| **[Finnhub](https://finnhub.io/)** | Live stock quotes, historical prices, fundamentals (free API key, CORS-friendly) |
 | **Built-in Sample Data** | 28 popular tickers with realistic simulated data for demo mode |
 | **localStorage** | Automatic database persistence between sessions |
 
@@ -306,8 +306,8 @@ Type any stock symbol (e.g., `AAPL`, `MSFT`, `SPY`) in the search bar and press 
 | Issue | Solution |
 |-------|----------|
 | "Ticker not found" in demo mode | Only 28 popular tickers work without an API key. Add a free key in Settings for any ticker. |
-| "Invalid API key" | Double-check your FMP key in Settings. Get a new one at [financialmodelingprep.com](https://financialmodelingprep.com/developer/docs/) |
-| "Rate limited" | Free FMP tier allows 250 requests/day. Wait until tomorrow or upgrade your key. |
+| "Invalid API key" | Double-check your key in Settings. Get a new one at [finnhub.io/register](https://finnhub.io/register) |
+| "Rate limited" | Free Finnhub tier allows 60 calls/minute. Wait a moment and try again. |
 | Charts not loading | Ensure you have internet access (Chart.js and sql.js load from CDN) |
 | Data looks stale | Click Settings > Clear API Cache, then re-search the ticker |
 | Database lost on refresh | The app auto-saves to localStorage. If localStorage is full, export the DB file first. |
