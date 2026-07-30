@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fed Rate Tracker - Demo</title>
+<style>
+:root {
+  --bg-primary:#0f1117; --bg-secondary:#1a1d27; --bg-tertiary:#242836;
+  --bg-card:#1e2233; --bg-input:#2a2e3f; --border:#2d3248;
+  --text-primary:#e8eaed; --text-secondary:#9aa0a6; --text-muted:#6b7280;
+  --accent:#4f8ff7; --green:#34d399; --red:#f87171; --yellow:#fbbf24;
+  --radius:8px; --radius-lg:12px;
+  --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-mono:'JetBrains Mono','Fira Code',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font);background:var(--bg-primary);color:var(--text-primary);padding:24px;max-width:1100px;margin:0 auto}
+h1{font-size:1.4rem;margin-bottom:4px;color:var(--accent)}
+.sub{color:var(--text-muted);font-size:0.85rem;margin-bottom:20px}
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:16px}
+.card-title{font-size:1rem;font-weight:600;margin-bottom:14px}
+.summary-strip{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.stat{background:var(--bg-tertiary);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;flex:1;min-width:200px}
+.stat-label{font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px}
+.stat-value{font-size:1.35rem;font-weight:700;font-family:var(--font-mono)}
+.meetings{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+.meeting-card{background:var(--bg-tertiary);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+.meeting-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+.meeting-date{font-weight:700;font-size:1.02rem}
+.meeting-days{color:var(--text-muted);font-size:0.75rem}
+.meeting-exp{font-size:0.8rem;color:var(--text-secondary);margin-bottom:12px}
+.bucket{margin-bottom:10px}
+.bucket-row{display:flex;justify-content:space-between;font-size:0.82rem;font-family:var(--font-mono);margin-bottom:4px}
+.bar-track{height:10px;background:var(--bg-input);border-radius:5px;overflow:hidden}
+.bar-fill{height:100%;border-radius:5px;transition:width 0.5s ease}
+.cut .bar-fill{background:var(--green)}
+.hold .bar-fill{background:var(--accent)}
+.hike .bar-fill{background:var(--red)}
+.tag{font-size:0.68rem;padding:1px 8px;border-radius:10px;font-weight:700;vertical-align:middle;margin-left:6px}
+.tag-cut{background:rgba(52,211,153,0.15);color:var(--green)}
+.tag-hold{background:rgba(79,143,247,0.15);color:var(--accent)}
+.tag-hike{background:rgba(248,113,113,0.15);color:var(--red)}
+table{width:100%;border-collapse:collapse;font-size:0.85rem}
+th{text-align:left;padding:8px 10px;background:var(--bg-tertiary);color:var(--text-secondary);font-size:0.72rem;text-transform:uppercase;border-bottom:1px solid var(--border)}
+td{padding:8px 10px;border-bottom:1px solid var(--border);font-family:var(--font-mono)}
+input[type=number]{width:90px;background:var(--bg-input);border:1px solid var(--border);border-radius:5px;color:var(--text-primary);padding:5px 8px;font-family:var(--font-mono);font-size:0.85rem;text-align:right}
+input[type=number]:focus{border-color:var(--accent);outline:none}
+.note{color:var(--text-muted);font-size:0.75rem;margin-top:10px;line-height:1.5}
+.btn{padding:7px 16px;border-radius:var(--radius);border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:0.85rem;font-weight:500;cursor:pointer;font-family:var(--font)}
+</style>
+</head>
+<body>
+<h1>Fed Rate Tracker</h1>
+<div class="sub">FOMC rate-change probabilities implied by 30-Day Fed Fund futures (CME FedWatch methodology) &mdash; standalone demo</div>
+
+<div class="summary-strip" id="summary"></div>
+
+<div class="card">
+  <div class="card-title">Upcoming FOMC Meetings</div>
+  <div class="meetings" id="meetings"></div>
+  <div class="note" id="data-note"></div>
+</div>
+
+<div class="card">
+  <div class="card-title">Futures Prices (editable &mdash; probabilities recompute live)</div>
+  <table>
+    <thead><tr><th>FOMC Decision Date</th><th>ZQ Contract Month</th><th>Futures Price</th><th>Implied Avg Rate</th></tr></thead>
+    <tbody id="price-rows"></tbody>
+  </table>
+  <div style="margin-top:12px;display:flex;gap:10px;align-items:center">
+    <label style="font-size:0.82rem;color:var(--text-secondary)">Current target range midpoint:
+      <input type="number" id="cur-mid" step="0.125" value="4.375" style="margin-left:6px">
+    </label>
+    <button class="btn" onclick="render()">Recompute</button>
+  </div>
+  <div class="note">
+    Methodology: implied avg rate = 100 &minus; futures price. For meeting months the month is split
+    at the decision date and solved for the post-meeting rate; that rate is mapped linearly onto the
+    two nearest 25bp target ranges. Same approach as CME FedWatch and Investing.com's Fed Rate Monitor.
+  </div>
+</div>
+
+<script>
+// ---- Demo data: FOMC decision dates + illustrative ZQ futures prices ----
+// Update prices from cmegroup.com quotes for ZQ (30-Day Fed Funds) contracts.
+const DATA_AS_OF = '2026-07-29';
+const state = {
+  currentRateMid: 4.375, // 4.25-4.50% target range
+  meetings: [
+    { date: '2026-09-16', contract: 'ZQU6 (Sep)', futuresPrice: 95.72 },
+    { date: '2026-10-28', contract: 'ZQV6 (Oct)', futuresPrice: 95.85 },
+    { date: '2026-12-09', contract: 'ZQZ6 (Dec)', futuresPrice: 96.05 }
+  ]
+};
+
+function fedProbabilities(cfg) {
+  const results = [];
+  let rateStart = cfg.currentRateMid;
+  for (const m of cfg.meetings) {
+    const d = new Date(m.date + 'T12:00:00Z');
+    const N = new Date(d.getUTCFullYear(), d.getUTCMonth() + 1, 0).getDate();
+    const dBefore = d.getUTCDate();
+    const dAfter = N - dBefore;
+    const impliedAvg = 100 - m.futuresPrice;
+    let rateEnd;
+    if (dAfter === 0) rateEnd = impliedAvg;
+    else rateEnd = (N * impliedAvg - dBefore * rateStart) / dAfter;
+    const k = Math.floor((rateEnd - cfg.currentRateMid) / 0.25 + 1e-9);
+    const lower = cfg.currentRateMid + k * 0.25;
+    const upper = lower + 0.25;
+    const pUpper = Math.min(Math.max((rateEnd - lower) / 0.25, 0), 1);
+    results.push({
+      date: m.date, expectedRate: rateEnd, impliedAvg: impliedAvg,
+      buckets: [
+        { level: upper, prob: pUpper },
+        { level: lower, prob: 1 - pUpper }
+      ],
+      changeFromCurrent: rateEnd - cfg.currentRateMid
+    });
+    rateStart = rateEnd;
+  }
+  return results;
+}
+
+function rangeLabel(mid) {
+  return (mid - 0.125).toFixed(2) + '–' + (mid + 0.125).toFixed(2) + '%';
+}
+function moveClass(level, cur) {
+  if (Math.abs(level - cur) < 1e-9) return 'hold';
+  return level < cur ? 'cut' : 'hike';
+}
+function moveTag(level, cur) {
+  const diffBp = Math.round((level - cur) * 100);
+  if (diffBp === 0) return '<span class="tag tag-hold">HOLD</span>';
+  if (diffBp < 0) return '<span class="tag tag-cut">CUT ' + Math.abs(diffBp) + 'bp</span>';
+  return '<span class="tag tag-hike">HIKE +' + diffBp + 'bp</span>';
+}
+function daysUntil(dateStr) {
+  return Math.max(0, Math.ceil((new Date(dateStr) - new Date()) / 86400000));
+}
+
+function render() {
+  state.currentRateMid = parseFloat(document.getElementById('cur-mid').value) || 4.375;
+  document.querySelectorAll('[data-price-idx]').forEach(inp => {
+    state.meetings[+inp.dataset.priceIdx].futuresPrice = parseFloat(inp.value) || 0;
+  });
+
+  const results = fedProbabilities(state);
+
+  // Summary strip
+  const next = results[0];
+  const topBucket = next.buckets.slice().sort((a,b) => b.prob - a.prob)[0];
+  const diffBp = Math.round((topBucket.level - state.currentRateMid) * 100);
+  const action = diffBp === 0 ? 'hold' : (diffBp < 0 ? Math.abs(diffBp) + 'bp cut' : diffBp + 'bp hike');
+  document.getElementById('summary').innerHTML =
+    '<div class="stat"><div class="stat-label">Current Target Range</div><div class="stat-value">' + rangeLabel(state.currentRateMid) + '</div></div>' +
+    '<div class="stat"><div class="stat-label">Next FOMC Meeting</div><div class="stat-value">' + next.date + '</div><div style="color:var(--text-muted);font-size:0.75rem;margin-top:4px">' + daysUntil(next.date) + ' days away</div></div>' +
+    '<div class="stat"><div class="stat-label">Market Consensus</div><div class="stat-value">' + (topBucket.prob*100).toFixed(1) + '%</div><div style="color:var(--text-muted);font-size:0.75rem;margin-top:4px">probability of ' + action + '</div></div>';
+
+  // Meeting cards
+  document.getElementById('meetings').innerHTML = results.map(r => {
+    const bars = r.buckets.map(b =>
+      '<div class="bucket ' + moveClass(b.level, state.currentRateMid) + '">' +
+        '<div class="bucket-row"><span>' + rangeLabel(b.level) + moveTag(b.level, state.currentRateMid) + '</span><span>' + (b.prob*100).toFixed(1) + '%</span></div>' +
+        '<div class="bar-track"><div class="bar-fill" style="width:' + (b.prob*100).toFixed(1) + '%"></div></div>' +
+      '</div>'
+    ).join('');
+    const chg = Math.round(r.changeFromCurrent * 100);
+    return '<div class="meeting-card">' +
+      '<div class="meeting-head"><span class="meeting-date">FOMC ' + r.date + '</span><span class="meeting-days">' + daysUntil(r.date) + 'd</span></div>' +
+      '<div class="meeting-exp">Expected rate after meeting: <strong>' + r.expectedRate.toFixed(3) + '%</strong> (' + (chg >= 0 ? '+' : '') + chg + 'bp vs today)</div>' +
+      bars + '</div>';
+  }).join('');
+
+  // Price table
+  document.getElementById('price-rows').innerHTML = state.meetings.map((m, i) =>
+    '<tr><td>' + m.date + '</td><td>' + m.contract + '</td>' +
+    '<td><input type="number" step="0.005" value="' + m.futuresPrice.toFixed(3) + '" data-price-idx="' + i + '" onchange="render()"></td>' +
+    '<td>' + (100 - m.futuresPrice).toFixed(3) + '%</td></tr>'
+  ).join('');
+
+  document.getElementById('data-note').textContent =
+    'Based on 30-Day Fed Fund futures (ZQ) prices as of ' + DATA_AS_OF + ' (illustrative demo data - edit prices below with live quotes from cmegroup.com).';
+}
+
+render();
+</script>
+</body>
+</html>
