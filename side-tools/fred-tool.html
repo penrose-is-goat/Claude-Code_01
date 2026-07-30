@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FRED Tool - Natural Language Economic Charts</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg-primary:#0f1117; --bg-secondary:#1a1d27; --bg-tertiary:#242836;
+  --bg-card:#1e2233; --bg-input:#2a2e3f; --border:#2d3248; --border-light:#3d4258;
+  --text-primary:#e8eaed; --text-secondary:#9aa0a6; --text-muted:#6b7280;
+  --accent:#4f8ff7; --green:#34d399; --red:#f87171; --yellow:#fbbf24;
+  --radius:8px; --radius-lg:12px;
+  --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-mono:'JetBrains Mono','Fira Code',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font);background:var(--bg-primary);color:var(--text-primary);padding:24px;max-width:1200px;margin:0 auto}
+h1{font-size:1.4rem;margin-bottom:4px;color:var(--accent)}
+.sub{color:var(--text-muted);font-size:0.85rem;margin-bottom:20px}
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:16px}
+.search-row{display:flex;gap:10px}
+.query-input{flex:1;padding:12px 16px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-size:0.95rem;outline:none}
+.query-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,143,247,0.15)}
+.btn{padding:10px 22px;border-radius:var(--radius);border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:0.9rem;font-weight:600;cursor:pointer;font-family:var(--font)}
+.btn:hover{background:#3a7be0}
+.btn-sm{padding:4px 10px;font-size:0.75rem;font-weight:500}
+.btn-ghost{background:transparent;border-color:var(--border);color:var(--text-secondary)}
+.btn-ghost:hover{background:var(--bg-tertiary);color:var(--text-primary)}
+.examples{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.chip{padding:5px 12px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:16px;font-size:0.75rem;color:var(--text-secondary);cursor:pointer}
+.chip:hover{border-color:var(--accent);color:var(--accent)}
+.series-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;min-height:10px}
+.series-chip{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:var(--radius);font-size:0.8rem}
+.dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.axis-toggle{cursor:pointer;font-family:var(--font-mono);font-size:0.7rem;font-weight:700;padding:2px 7px;border-radius:4px;background:var(--bg-input);color:var(--accent);border:1px solid var(--border)}
+.axis-toggle:hover{border-color:var(--accent)}
+.remove-x{cursor:pointer;color:var(--text-muted);font-size:1rem;line-height:1}
+.remove-x:hover{color:var(--red)}
+.controls{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-bottom:14px;padding:12px;background:var(--bg-tertiary);border-radius:var(--radius)}
+.range-btn{padding:4px 12px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);font-size:0.8rem;cursor:pointer;font-family:var(--font)}
+.range-btn:hover{background:var(--bg-hover,#2f3447)}
+.range-btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.controls label{font-size:0.78rem;color:var(--text-secondary);display:inline-flex;align-items:center;gap:5px;cursor:pointer}
+.controls input[type=date]{background:var(--bg-input);border:1px solid var(--border);border-radius:5px;color:var(--text-primary);padding:4px 8px;font-size:0.78rem;font-family:var(--font)}
+.chart-wrap{position:relative;height:480px}
+.chart-wrap canvas{width:100%!important;height:100%!important}
+.footnote{color:var(--text-muted);font-size:0.72rem;margin-top:12px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px}
+.mode-live{color:var(--green);font-weight:600}
+.mode-demo{color:var(--yellow);font-weight:600}
+.status{font-size:0.8rem;color:var(--text-muted);padding:6px 0}
+.err{color:var(--red)}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:768px){.search-row{flex-direction:column}.chart-wrap{height:360px}}
+</style>
+</head>
+<body>
+<h1>FRED Tool</h1>
+<div class="sub">Type what you want to see &mdash; charts populate from FRED (Federal Reserve Economic Data), then play with axes, scales and time.</div>
+
+<div class="card">
+  <div class="search-row">
+    <input class="query-input" id="query" placeholder='e.g. "show me the 10yr treasury yield, the s&amp;p 500 and the federal funds rate for the last 10 years"'>
+    <button class="btn" id="go" onclick="FT.run()">Chart It</button>
+  </div>
+  <div class="examples" id="examples"></div>
+  <div class="status" id="status"></div>
+</div>
+
+<div class="card" id="chart-card" style="display:none">
+  <div class="series-chips" id="chips"></div>
+  <div class="controls">
+    <span id="range-btns"></span>
+    <label>From <input type="date" id="d-start" onchange="FT.customRange()"></label>
+    <label>To <input type="date" id="d-end" onchange="FT.customRange()"></label>
+    <label><input type="checkbox" id="opt-norm" onchange="FT.redraw()"> Normalize (=100)</label>
+    <label><input type="checkbox" id="opt-logl" onchange="FT.redraw()"> Log left</label>
+    <label><input type="checkbox" id="opt-logr" onchange="FT.redraw()"> Log right</label>
+    <label><input type="checkbox" id="opt-rec" onchange="FT.toggleRecessions()"> Recession shading</label>
+  </div>
+  <div class="chart-wrap"><canvas id="chart"></canvas></div>
+  <div class="footnote">
+    <span>Source: FRED&reg;, Federal Reserve Bank of St. Louis &mdash; fred.stlouisfed.org</span>
+    <span id="mode-label"></span>
+  </div>
+</div>
+
+<script>
+'use strict';
+const FT = {};
+
+/* ================= Series dictionary ================= */
+FT.DICT = [
+  { id:'DGS10', name:'10-Year Treasury Yield', units:'pct', aliases:['10 year treasury','10-year treasury','10yr treasury','10yr','10 yr','10-year yield','ten year treasury'] },
+  { id:'DGS2', name:'2-Year Treasury Yield', units:'pct', aliases:['2 year treasury','2-year treasury','2yr treasury','2yr','two year treasury'] },
+  { id:'DGS30', name:'30-Year Treasury Yield', units:'pct', aliases:['30 year treasury','30-year treasury','30yr treasury'] },
+  { id:'DGS3MO', name:'3-Month Treasury Yield', units:'pct', aliases:['3 month treasury','3-month treasury','t-bill','tbill'] },
+  { id:'DFF', name:'Federal Funds Rate', units:'pct', aliases:['federal funds','fed funds','fedfunds','policy rate'] },
+  { id:'T10Y2Y', name:'10Y-2Y Treasury Spread', units:'pct', aliases:['yield curve','10-2 spread','2s10s','10y-2y'] },
+  { id:'MORTGAGE30US', name:'30-Year Mortgage Rate', units:'pct', aliases:['mortgage rate','30 year mortgage','mortgage'] },
+  { id:'UNRATE', name:'Unemployment Rate', units:'pct', aliases:['unemployment'] },
+  { id:'CPIAUCSL', name:'Inflation Rate (CPI YoY)', units:'pct', transform:'yoy', aliases:['inflation rate','inflation'] },
+  { id:'CPIAUCSL', name:'CPI Index', units:'index', aliases:['cpi index','consumer price index','cpi'] },
+  { id:'PCEPILFE', name:'Core PCE Inflation (YoY)', units:'pct', transform:'yoy', aliases:['core pce','pce inflation'] },
+  { id:'BAMLH0A0HYM2', name:'High Yield Spread', units:'pct', aliases:['high yield spread','credit spread','hy spread'] },
+  { id:'DPRIME', name:'Prime Rate', units:'pct', aliases:['prime rate'] },
+  { id:'SP500', name:'S&P 500', units:'level', aliases:['s&p 500','s&p500','sp500','s and p','s&p'] },
+  { id:'NASDAQCOM', name:'NASDAQ Composite', units:'level', aliases:['nasdaq'] },
+  { id:'DJIA', name:'Dow Jones Industrial Avg', units:'level', aliases:['dow jones','djia','dow'] },
+  { id:'VIXCLS', name:'VIX', units:'level', aliases:['vix','volatility index'] },
+  { id:'GDP', name:'GDP (nominal, $B)', units:'usd_b', aliases:['nominal gdp','gdp'] },
+  { id:'GDPC1', name:'Real GDP ($B 2017)', units:'usd_b', aliases:['real gdp'] },
+  { id:'M2SL', name:'M2 Money Supply ($B)', units:'usd_b', aliases:['m2','money supply'] },
+  { id:'WALCL', name:'Fed Balance Sheet ($M)', units:'usd_m', aliases:['fed balance sheet','balance sheet','walcl'] },
+  { id:'PAYEMS', name:'Nonfarm Payrolls (thous.)', units:'level', aliases:['nonfarm payrolls','payrolls','employment'] },
+  { id:'HOUST', name:'Housing Starts (thous.)', units:'level', aliases:['housing starts'] },
+  { id:'RSAFS', name:'Retail Sales ($M)', units:'usd_m', aliases:['retail sales'] },
+  { id:'INDPRO', name:'Industrial Production', units:'index', aliases:['industrial production'] },
+  { id:'UMCSENT', name:'Consumer Sentiment', units:'index', aliases:['consumer sentiment','michigan sentiment'] },
+  { id:'CSUSHPINSA', name:'Case-Shiller Home Price Index', units:'index', aliases:['case-shiller','case shiller','home price index','home prices'] },
+  { id:'MSPUS', name:'Median Home Sale Price ($)', units:'usd', aliases:['median home price','median house price'] },
+  { id:'DCOILWTICO', name:'WTI Crude Oil ($)', units:'usd', aliases:['wti','crude oil','oil price','oil'] },
+  { id:'DTWEXBGS', name:'US Dollar Index', units:'index', aliases:['dollar index','dxy'] },
+  { id:'DEXUSEU', name:'USD per Euro', units:'level', aliases:['eur/usd','euro','eurusd'] },
+  { id:'CBBTCUSD', name:'Bitcoin ($)', units:'usd', aliases:['bitcoin','btc'] }
+];
+FT.RECESSION_ID = 'USREC';
+FT.COLORS = ['#4f8ff7','#34d399','#f87171','#fbbf24','#a78bfa','#fb923c','#22d3ee','#f472b6','#84cc16','#e879f9'];
+
+/* ================= Query parsing ================= */
+FT.parseQuery = function(q) {
+  const lq = ' ' + q.toLowerCase().replace(/[.,;!?]/g, ' ') + ' ';
+  const matches = [];
+  const usedIds = new Set();
+  for (const s of FT.DICT) {
+    let bestPos = -1;
+    for (const a of s.aliases) {
+      const pos = lq.indexOf(a);
+      if (pos >= 0 && (bestPos < 0 || pos < bestPos)) bestPos = pos;
+    }
+    const key = s.id + (s.transform || '');
+    if (bestPos >= 0 && !usedIds.has(key)) {
+      // avoid double-matching same span: "cpi" inside "cpi index" handled by
+      // preferring the earlier, longer alias entries (dict order)
+      usedIds.add(key);
+      matches.push({ series: s, pos: bestPos });
+    }
+  }
+  // de-dupe same FRED id with/without transform: keep first in query order
+  matches.sort((a, b) => a.pos - b.pos);
+  const seen = new Set(); const out = [];
+  for (const m of matches) {
+    if (!seen.has(m.series.id + '|' + (m.series.transform || ''))) {
+      seen.add(m.series.id + '|' + (m.series.transform || ''));
+      out.push(m.series);
+    }
+  }
+  return { series: out.slice(0, 8), range: FT.parseTime(lq) };
+};
+
+FT.parseTime = function(lq) {
+  const today = new Date();
+  const iso = d => d.toISOString().split('T')[0];
+  let m;
+  if ((m = lq.match(/(?:last|past)\s+(\d+)\s*(?:years?|yrs?|y)\b/)) || (m = lq.match(/(\d+)\s*(?:years?|yrs?)\b/))) {
+    const d = new Date(today); d.setFullYear(d.getFullYear() - parseInt(m[1]));
+    return { start: iso(d), end: iso(today) };
+  }
+  if ((m = lq.match(/(?:last|past)\s+(\d+)\s*(?:months?|mos?)\b/))) {
+    const d = new Date(today); d.setMonth(d.getMonth() - parseInt(m[1]));
+    return { start: iso(d), end: iso(today) };
+  }
+  if ((m = lq.match(/from\s+(\d{4})\s+(?:to|through|until|-)\s+(\d{4})/)) || (m = lq.match(/between\s+(\d{4})\s+and\s+(\d{4})/)) || (m = lq.match(/\b(\d{4})\s*-\s*(\d{4})\b/))) {
+    return { start: m[1] + '-01-01', end: m[2] + '-12-31' };
+  }
+  if ((m = lq.match(/since\s+(\d{4})/))) return { start: m[1] + '-01-01', end: iso(today) };
+  if (lq.includes(' ytd')) return { start: today.getFullYear() + '-01-01', end: iso(today) };
+  if (lq.match(/\b(max|all time|entire history|all history)\b/)) return { start: '1900-01-01', end: iso(today) };
+  const d = new Date(today); d.setFullYear(d.getFullYear() - 10);
+  return { start: iso(d), end: iso(today) };
+};
+
+/* ================= Data layer ================= */
+FT.cache = new Map();
+FT.demoMode = false;
+
+FT.fetchSeries = async function(id, start, end) {
+  const key = id + ':' + start + ':' + end;
+  if (FT.cache.has(key)) return FT.cache.get(key);
+  let obs = null, demo = false;
+  // 1) libhack FRED proxy (CORS-enabled, built for frontends)
+  try {
+    const u = 'https://fred.libhack.so/v0/observations?series_id=' + id +
+      '&observation_start=' + start + '&observation_end=' + end;
+    const r = await fetch(u, { signal: AbortSignal.timeout(15000) });
+    if (r.ok) {
+      const j = await r.json();
+      const arr = Array.isArray(j) ? j : (j.observations || []);
+      obs = arr.map(o => ({ date: o.date, value: o.value === '.' || o.value == null ? null : +o.value }))
+               .filter(o => o.value != null && !isNaN(o.value));
+      if (!obs.length) obs = null;
+    }
+  } catch (e) {}
+  // 2) fredgraph.csv through generic CORS proxies
+  if (!obs) {
+    const csvUrl = 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + id + '&cosd=' + start + '&coed=' + end;
+    for (const wrap of [
+      u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+      u => 'https://corsproxy.io/?' + encodeURIComponent(u)
+    ]) {
+      try {
+        const r = await fetch(wrap(csvUrl), { signal: AbortSignal.timeout(15000) });
+        if (!r.ok) continue;
+        const text = await r.text();
+        const parsed = FT.parseCsv(text, id);
+        if (parsed && parsed.length) { obs = parsed; break; }
+      } catch (e) {}
+    }
+  }
+  // 3) deterministic demo data
+  if (!obs) { obs = FT.demoSeries(id, start, end); demo = true; }
+  if (demo) FT.demoMode = true;
+  FT.cache.set(key, obs);
+  return obs;
+};
+
+FT.parseCsv = function(text, id) {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return null;
+  const header = lines[0].split(',');
+  const dateIdx = 0;
+  let valIdx = header.findIndex(h => h.trim().toUpperCase() === id.toUpperCase());
+  if (valIdx < 0) valIdx = 1;
+  const out = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',');
+    const v = cols[valIdx];
+    if (v == null || v.trim() === '.' || v.trim() === '') continue;
+    const num = parseFloat(v);
+    if (!isNaN(num)) out.push({ date: cols[dateIdx], value: num });
+  }
+  return out;
+};
+
+/* YoY percent-change transform (for monthly series like CPI) */
+FT.yoy = function(obs) {
+  const byDate = new Map(obs.map(o => [o.date.substring(0, 7), o.value]));
+  const out = [];
+  for (const o of obs) {
+    const ym = o.date.substring(0, 7);
+    const prior = (parseInt(ym.substring(0, 4)) - 1) + ym.substring(4);
+    const pv = byDate.get(prior);
+    if (pv != null && pv !== 0) out.push({ date: o.date, value: (o.value / pv - 1) * 100 });
+  }
+  return out;
+};
+
+/* Demo data generator - labeled, deterministic */
+FT.DEMO_PROFILES = {
+  DGS10:{s:2.2,e:4.3,v:0.25}, DGS2:{s:1.2,e:4.0,v:0.3}, DGS30:{s:2.9,e:4.6,v:0.2}, DGS3MO:{s:0.5,e:4.3,v:0.3},
+  DFF:{s:0.4,e:4.33,v:0.15}, T10Y2Y:{s:1.0,e:0.3,v:0.3}, MORTGAGE30US:{s:3.9,e:6.8,v:0.3}, UNRATE:{s:4.9,e:4.1,v:0.4},
+  CPIAUCSL:{s:238,e:322,v:2}, PCEPILFE:{s:110,e:127,v:0.8}, BAMLH0A0HYM2:{s:5.5,e:3.1,v:0.6}, DPRIME:{s:3.5,e:7.5,v:0.2},
+  SP500:{s:2100,e:6300,v:60}, NASDAQCOM:{s:5000,e:20800,v:250}, DJIA:{s:17800,e:44900,v:400}, VIXCLS:{s:14,e:16,v:4},
+  GDP:{s:18200,e:30300,v:120}, GDPC1:{s:19000,e:23500,v:90}, M2SL:{s:12800,e:21200,v:90}, WALCL:{s:4450000,e:6700000,v:40000},
+  PAYEMS:{s:144000,e:159500,v:300}, HOUST:{s:1170,e:1360,v:60}, RSAFS:{s:450000,e:720000,v:5000}, INDPRO:{s:99,e:104,v:0.8},
+  UMCSENT:{s:92,e:68,v:4}, CSUSHPINSA:{s:180,e:325,v:2}, MSPUS:{s:300000,e:420000,v:5000},
+  DCOILWTICO:{s:45,e:78,v:4}, DTWEXBGS:{s:110,e:121,v:1.2}, DEXUSEU:{s:1.11,e:1.09,v:0.02}, CBBTCUSD:{s:600,e:110000,v:3000},
+  USREC:null
+};
+FT.demoSeries = function(id, start, end) {
+  if (id === FT.RECESSION_ID) {
+    // Known recessions in window: 2020-02..2020-04
+    return [{ date:'2020-02-01', value:1 }, { date:'2020-03-01', value:1 }, { date:'2020-04-01', value:1 }];
+  }
+  const p = FT.DEMO_PROFILES[id] || { s:100, e:120, v:2 };
+  const t0 = new Date(start) < new Date('2015-01-01') ? new Date('2015-01-01') : new Date(start);
+  const t1 = new Date(end);
+  const months = Math.max(2, (t1.getFullYear() - t0.getFullYear()) * 12 + (t1.getMonth() - t0.getMonth()));
+  let seed = id.split('').reduce((a, c) => a + c.charCodeAt(0), 0) * 7919;
+  const rand = () => { seed = (seed * 16807 + 11) % 2147483647; return (seed - 1) / 2147483646 - 0.5; };
+  const out = [];
+  for (let i = 0; i <= months; i++) {
+    const d = new Date(t0); d.setMonth(d.getMonth() + i);
+    const frac = i / months;
+    const trend = p.s + (p.e - p.s) * frac;
+    out.push({ date: d.toISOString().split('T')[0], value: Math.max(0.01, +(trend + rand() * p.v).toFixed(3)) });
+  }
+  out[out.length - 1].value = p.e; // pin endpoint
+  return out;
+};
+
+/* ================= Alignment / chart data ================= */
+FT.forwardFill = function(seriesList) {
+  const dateSet = new Set();
+  seriesList.forEach(s => s.obs.forEach(o => dateSet.add(o.date)));
+  const dates = [...dateSet].sort();
+  const rows = seriesList.map(s => {
+    const map = new Map(s.obs.map(o => [o.date, o.value]));
+    let last = null;
+    return dates.map(d => { const v = map.get(d); if (v != null) last = v; return last; });
+  });
+  return { dates, rows };
+};
+
+/* ================= State + rendering ================= */
+FT.state = { series: [], range: null, recBands: null, chart: null, lastData: null };
+FT.RANGE_PRESETS = { '1Y':1, '5Y':5, '10Y':10, '25Y':25, 'MAX':0 };
+
+FT.run = async function() {
+  const q = document.getElementById('query').value.trim();
+  if (!q) return;
+  const parsed = FT.parseQuery(q);
+  if (!parsed.series.length) {
+    FT.setStatus('No known series matched. Try keywords like: 10yr treasury, s&p 500, fed funds, unemployment, inflation, cpi, gdp, m2, vix, mortgage rate, oil, bitcoin...', true);
+    return;
+  }
+  FT.state.series = parsed.series.map((s, i) => ({ def: s, color: FT.COLORS[i % FT.COLORS.length], axis: null, obs: null }));
+  FT.state.range = parsed.range;
+  await FT.load();
+};
+
+FT.load = async function() {
+  FT.demoMode = false;
+  const r = FT.state.range;
+  FT.setStatus('<span class="spinner"></span>Fetching ' + FT.state.series.map(s => s.def.id).join(', ') + ' from FRED...');
+  document.getElementById('go').disabled = true;
+  try {
+    await Promise.all(FT.state.series.map(async s => {
+      let obs = await FT.fetchSeries(s.def.id, r.start, r.end);
+      if (s.def.transform === 'yoy') {
+        // need 1 extra year of history for YoY at window start
+        const pre = new Date(r.start); pre.setFullYear(pre.getFullYear() - 1);
+        obs = await FT.fetchSeries(s.def.id, pre.toISOString().split('T')[0], r.end);
+        obs = FT.yoy(obs).filter(o => o.date >= r.start);
+      }
+      s.obs = obs;
+    }));
+    FT.assignAxes();
+    document.getElementById('chart-card').style.display = 'block';
+    document.getElementById('d-start').value = r.start;
+    document.getElementById('d-end').value = r.end;
+    if (document.getElementById('opt-rec').checked) await FT.loadRecessions();
+    FT.redraw();
+    FT.setStatus('');
+  } catch (e) {
+    FT.setStatus('Error: ' + e.message, true);
+  } finally {
+    document.getElementById('go').disabled = false;
+  }
+};
+
+FT.assignAxes = function() {
+  const unitGroups = [...new Set(FT.state.series.map(s => s.def.units))];
+  const leftUnit = unitGroups[0];
+  FT.state.series.forEach(s => { if (s.axis == null) s.axis = s.def.units === leftUnit ? 'yL' : 'yR'; });
+};
+
+FT.loadRecessions = async function() {
+  if (FT.state.recBands) return;
+  const r = FT.state.range;
+  const obs = await FT.fetchSeries(FT.RECESSION_ID, r.start, r.end);
+  const bands = []; let cur = null;
+  for (const o of obs) {
+    if (o.value >= 1) { if (!cur) cur = { start: o.date, end: o.date }; else cur.end = o.date; }
+    else if (cur) { bands.push(cur); cur = null; }
+  }
+  if (cur) bands.push(cur);
+  FT.state.recBands = bands;
+};
+
+FT.toggleRecessions = async function() {
+  if (document.getElementById('opt-rec').checked) {
+    FT.setStatus('<span class="spinner"></span>Loading recession data (USREC)...');
+    await FT.loadRecessions();
+    FT.setStatus('');
+  }
+  FT.redraw();
+};
+
+FT.recessionPlugin = {
+  id: 'recessions',
+  beforeDatasetsDraw(chart) {
+    if (!document.getElementById('opt-rec').checked || !FT.state.recBands) return;
+    const xs = chart.scales.x, area = chart.chartArea, ctx = chart.ctx;
+    if (!xs || !area) return;
+    const labels = chart.data.labels;
+    ctx.save();
+    ctx.fillStyle = 'rgba(154,160,166,0.14)';
+    for (const b of FT.state.recBands) {
+      let i0 = labels.findIndex(d => d >= b.start);
+      let i1 = labels.findIndex(d => d > b.end);
+      if (i0 < 0) continue;
+      if (i1 < 0) i1 = labels.length - 1;
+      const x0 = xs.getPixelForValue(i0), x1 = xs.getPixelForValue(Math.max(i1, i0 + 1));
+      ctx.fillRect(x0, area.top, x1 - x0, area.bottom - area.top);
+    }
+    ctx.restore();
+  }
+};
+
+FT.redraw = function() {
+  const norm = document.getElementById('opt-norm').checked;
+  const { dates, rows } = FT.forwardFill(FT.state.series);
+  FT.state.lastData = { dates, rows };
+  const datasets = FT.state.series.map((s, i) => {
+    let data = rows[i];
+    if (norm) {
+      const base = data.find(v => v != null);
+      data = data.map(v => (v == null || base == null || base === 0) ? null : (v / base) * 100);
+    }
+    return {
+      label: s.def.name + (s.def.transform === 'yoy' ? '' : '') + ' [' + s.def.id + ']',
+      data, borderColor: s.color, backgroundColor: 'transparent',
+      borderWidth: 2, pointRadius: 0, pointHitRadius: 8, tension: 0.1, spanGaps: true,
+      yAxisID: norm ? 'yL' : s.axis
+    };
+  });
+  const usesR = !norm && FT.state.series.some(s => s.axis === 'yR');
+  const logL = document.getElementById('opt-logl').checked;
+  const logR = document.getElementById('opt-logr').checked;
+  if (FT.state.chart) FT.state.chart.destroy();
+  FT.state.chart = new Chart(document.getElementById('chart').getContext('2d'), {
+    type: 'line',
+    data: { labels: dates, datasets },
+    plugins: [FT.recessionPlugin],
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { color: '#9aa0a6', usePointStyle: true, pointStyle: 'circle', padding: 14, font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#1e2233', titleColor: '#e8eaed', bodyColor: '#e8eaed',
+          borderColor: '#2d3248', borderWidth: 1,
+          callbacks: { label: c => c.dataset.label.replace(/\s\[\w+\]$/, '') + ': ' + (c.parsed.y == null ? 'n/a' : (+c.parsed.y).toLocaleString('en-US', { maximumFractionDigits: 2 })) }
+        }
+      },
+      scales: {
+        x: { grid: { color: 'rgba(45,50,72,0.5)' }, ticks: { color: '#6b7280', maxTicksLimit: 10, maxRotation: 0 } },
+        yL: {
+          position: 'left', type: logL ? 'logarithmic' : 'linear',
+          grid: { color: 'rgba(45,50,72,0.5)' },
+          ticks: { color: '#6b7280', callback: v => (+v).toLocaleString('en-US', { maximumFractionDigits: 2 }) },
+          title: { display: true, text: norm ? 'Indexed (start = 100)' : FT.axisTitle('yL'), color: '#9aa0a6', font: { size: 11 } }
+        },
+        yR: {
+          position: 'right', display: usesR, type: logR ? 'logarithmic' : 'linear',
+          grid: { drawOnChartArea: false },
+          ticks: { color: '#6b7280', callback: v => (+v).toLocaleString('en-US', { maximumFractionDigits: 2 }) },
+          title: { display: usesR, text: FT.axisTitle('yR'), color: '#9aa0a6', font: { size: 11 } }
+        }
+      }
+    }
+  });
+  FT.renderChips();
+  FT.renderRangeBtns();
+  const label = document.getElementById('mode-label');
+  label.innerHTML = FT.demoMode
+    ? '<span class="mode-demo">DEMO DATA (FRED unreachable - offline sample)</span>'
+    : '<span class="mode-live">LIVE FRED DATA</span> &middot; refreshed ' + new Date().toLocaleTimeString();
+};
+
+FT.UNIT_LABEL = { pct: 'Percent', level: 'Level', index: 'Index', usd: 'US $', usd_b: 'Billions $', usd_m: 'Millions $' };
+FT.axisTitle = function(axis) {
+  const units = [...new Set(FT.state.series.filter(s => s.axis === axis).map(s => FT.UNIT_LABEL[s.def.units] || s.def.units))];
+  return units.join(' / ');
+};
+
+FT.renderChips = function() {
+  document.getElementById('chips').innerHTML = FT.state.series.map((s, i) =>
+    '<span class="series-chip"><span class="dot" style="background:' + s.color + '"></span>' +
+    s.def.name + ' <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.7rem">' + s.def.id + '</span>' +
+    '<span class="axis-toggle" title="Toggle left/right axis" onclick="FT.flipAxis(' + i + ')">' + (s.axis === 'yL' ? 'L' : 'R') + '</span>' +
+    '<span class="remove-x" onclick="FT.removeSeries(' + i + ')">&times;</span></span>'
+  ).join('');
+};
+
+FT.flipAxis = function(i) {
+  FT.state.series[i].axis = FT.state.series[i].axis === 'yL' ? 'yR' : 'yL';
+  FT.redraw();
+};
+FT.removeSeries = function(i) {
+  FT.state.series.splice(i, 1);
+  if (!FT.state.series.length) { document.getElementById('chart-card').style.display = 'none'; return; }
+  FT.redraw();
+};
+
+FT.renderRangeBtns = function() {
+  const cont = document.getElementById('range-btns');
+  cont.innerHTML = Object.keys(FT.RANGE_PRESETS).map(k =>
+    '<button class="range-btn" onclick="FT.preset(\'' + k + '\')">' + k + '</button>'
+  ).join(' ');
+};
+FT.preset = async function(k) {
+  const today = new Date(); const iso = d => d.toISOString().split('T')[0];
+  const yrs = FT.RANGE_PRESETS[k];
+  const start = yrs === 0 ? '1900-01-01' : (() => { const d = new Date(today); d.setFullYear(d.getFullYear() - yrs); return iso(d); })();
+  FT.state.range = { start, end: iso(today) };
+  FT.state.recBands = null;
+  await FT.load();
+};
+FT.customRange = async function() {
+  const s = document.getElementById('d-start').value, e = document.getElementById('d-end').value;
+  if (!s || !e || s >= e) return;
+  FT.state.range = { start: s, end: e };
+  FT.state.recBands = null;
+  await FT.load();
+};
+
+FT.setStatus = function(html, isErr) {
+  const el = document.getElementById('status');
+  el.innerHTML = html || '';
+  el.className = 'status' + (isErr ? ' err' : '');
+};
+
+/* ================= Examples + boot ================= */
+FT.EXAMPLES = [
+  'show me the 10yr treasury yield, the s&p 500 and the federal funds rate for the last 10 years',
+  'unemployment and inflation since 2000',
+  'mortgage rate vs 10 year treasury last 5 years',
+  'm2 money supply and cpi from 2010 to 2024',
+  's&p 500 and bitcoin last 5 years',
+  'yield curve and vix since 2006'
+];
+document.getElementById('examples').innerHTML = FT.EXAMPLES.map(e =>
+  '<span class="chip" onclick="document.getElementById(\'query\').value=this.textContent;FT.run()">' + e + '</span>'
+).join('');
+document.getElementById('query').addEventListener('keydown', e => { if (e.key === 'Enter') FT.run(); });
+</script>
+</body>
+</html>
