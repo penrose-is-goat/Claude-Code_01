@@ -79,6 +79,7 @@ input[type=number]:focus,select:focus{border-color:var(--accent);outline:none}
 <h1>Fed Rate Tracker</h1>
 <div class="sub">FOMC target-rate probabilities implied by 30-Day Fed Fund futures &mdash; CME FedWatch methodology</div>
 
+<div id="example-banner"></div>
 <div class="summary" id="summary"></div>
 
 <div class="card">
@@ -138,17 +139,23 @@ const APP = {};
 /* ================= Data ================= */
 /* NO market data ships with this tool. Every price starts empty and must be
    entered from live CME quotes. The tool computes; it never invents inputs. */
+/* EXAMPLE_INPUTS: illustrative numbers so the interface renders and can be
+   evaluated. These are NOT market quotes and are not calibrated to any
+   published source. The UI labels them as an example until the user
+   replaces them. */
+APP.EXAMPLE = { mid: 3.625, prices: [96.44, 96.52, 96.60, 96.66, 96.70, 96.74, 96.78] };
+APP.usingExample = true;
 APP.state = {
-  currentRateMid: null,
+  currentRateMid: APP.EXAMPLE.mid,
   selected: 0,
   contracts: [
-    { ym: '2026-09', label: 'ZQU6 (Sep 26)', price: null },
-    { ym: '2026-10', label: 'ZQV6 (Oct 26)', price: null },
-    { ym: '2026-11', label: 'ZQX6 (Nov 26)', price: null },
-    { ym: '2026-12', label: 'ZQZ6 (Dec 26)', price: null },
-    { ym: '2027-01', label: 'ZQF7 (Jan 27)', price: null },
-    { ym: '2027-02', label: 'ZQG7 (Feb 27)', price: null },
-    { ym: '2027-03', label: 'ZQH7 (Mar 27)', price: null }
+    { ym: '2026-09', label: 'ZQU6 (Sep 26)', price: APP.EXAMPLE.prices[0] },
+    { ym: '2026-10', label: 'ZQV6 (Oct 26)', price: APP.EXAMPLE.prices[1] },
+    { ym: '2026-11', label: 'ZQX6 (Nov 26)', price: APP.EXAMPLE.prices[2] },
+    { ym: '2026-12', label: 'ZQZ6 (Dec 26)', price: APP.EXAMPLE.prices[3] },
+    { ym: '2027-01', label: 'ZQF7 (Jan 27)', price: APP.EXAMPLE.prices[4] },
+    { ym: '2027-02', label: 'ZQG7 (Feb 27)', price: APP.EXAMPLE.prices[5] },
+    { ym: '2027-03', label: 'ZQH7 (Mar 27)', price: APP.EXAMPLE.prices[6] }
   ],
   meetings: [
     { date: '2026-09-16', label: 'Sep 16, 2026', tentative: false },
@@ -256,9 +263,9 @@ APP.render = function() {
   if (!APP.state.currentRateMid || !results.length) {
     document.getElementById('summary').innerHTML =
       '<div class="stat" style="grid-column:1/-1;border-color:var(--yellow)">' +
-      '<div class="stat-label" style="color:var(--yellow)">Setup required &mdash; this tool ships with NO market data</div>' +
+      '<div class="stat-label" style="color:var(--yellow)">Enter your data</div>' +
       '<div style="font-size:0.85rem;color:var(--text-secondary);line-height:1.7;margin-top:6px">' +
-      '1. Open CME&apos;s free 30-Day Fed Funds (ZQ) quotes page.<br>' +
+      'Inputs cleared. To compute probabilities:<br>1. Open CME&apos;s 30-Day Fed Funds (ZQ) quotes page.<br>' +
       '2. Select your <strong>current target range</strong> in the Inputs card below.<br>' +
       '3. Enter the <strong>ZQ price for each contract month</strong>.<br>' +
       'Probabilities compute instantly from your inputs via the FedWatch methodology &mdash; verify the result against CME&apos;s page. Inputs save in your browser.</div></div>';
@@ -340,6 +347,16 @@ APP.render = function() {
         '<td class="right"><input type="number" step="0.005" placeholder="e.g. 96.44" value="' + (c.price != null ? c.price.toFixed(4) : '') + '" data-price-idx="' + i + '"></td>' +
         '<td class="right">' + (c.price != null ? (100 - c.price).toFixed(3) + '%' : '&mdash;') + '</td></tr>';
     }).join('') + '</tbody>';
+  APP.usingExample = APP.state.currentRateMid === APP.EXAMPLE.mid &&
+    APP.state.contracts.every((c, i) => c.price === APP.EXAMPLE.prices[i]);
+  document.getElementById('example-banner').innerHTML = APP.usingExample
+    ? '<div style="background:rgba(251,191,36,0.12);border:1px solid var(--yellow);border-radius:var(--radius-lg);padding:12px 16px;margin-bottom:16px;font-size:0.85rem;color:var(--yellow);line-height:1.6">' +
+      '<strong>&#9888; WORKED EXAMPLE &mdash; these are made-up inputs, not market data.</strong><br>' +
+      '<span style="color:var(--text-secondary)">They exist so you can see the interface work. Nothing here is calibrated to CME or any published source. ' +
+      'Replace the prices in the Inputs card below with live ZQ quotes and this banner disappears. ' +
+      '<button class="range-btn2" data-action="clear" style="margin-left:8px">Clear the example</button></span></div>'
+    : '<div style="background:rgba(52,211,153,0.1);border:1px solid var(--green);border-radius:var(--radius-lg);padding:10px 16px;margin-bottom:16px;font-size:0.83rem;color:var(--green)">' +
+      '<strong>Your inputs</strong> <span style="color:var(--text-secondary)">&mdash; every number below is computed from the prices you entered.</span></div>';
   APP.renderView(results);
   document.getElementById('dates-table').innerHTML =
     '<thead><tr><th>Meeting</th><th>Decision date</th><th style="font-family:var(--font)">Status</th></tr></thead><tbody>' +
@@ -349,7 +366,7 @@ APP.render = function() {
       '<td style="font-family:var(--font);color:var(--text-muted);font-size:0.78rem">' + (m.tentative ? 'tentative &mdash; confirm on the Fed calendar' : 'published') + '</td></tr>'
     ).join('') + '</tbody>';
   document.getElementById('asof-note').innerHTML =
-    'Everything above is computed from the prices YOU entered - nothing is pre-loaded, estimated, or fabricated. Verification: with the same prices and target range CME uses, the per-meeting distributions should match the FedWatch page to within rounding. * = tentative meeting date.';
+    (APP.usingExample ? '<strong style="color:var(--yellow)">These outputs come from the worked example, not from market data.</strong> ' : '') + 'The engine applies the CME FedWatch methodology to whatever prices are in the table above. Verification: enter the same prices and target range CME uses, and the per-meeting distributions should match the FedWatch page to within rounding. * = tentative meeting date, confirm on federalreserve.gov.';
 };
 
 APP.persist = function() {
@@ -460,6 +477,12 @@ document.addEventListener('click', function(e) {
   if (el.dataset.action === 'select') APP.select(+el.dataset.idx);
   else if (el.dataset.action === 'view') APP.setView(el.dataset.view);
   else if (el.dataset.action === 'snap') APP.saveSnap();
+  else if (el.dataset.action === 'clear') {
+    APP.state.currentRateMid = null;
+    APP.state.contracts.forEach(c => { c.price = null; });
+    const sel = document.getElementById('cur-range'); if (sel) sel.value = '';
+    APP.persist(); APP.render();
+  }
 });
 document.addEventListener('change', function(e) {
   if (e.target.id === 'cur-range' || e.target.hasAttribute('data-price-idx') || e.target.hasAttribute('data-date-idx')) APP.render();

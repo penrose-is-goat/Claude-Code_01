@@ -172,11 +172,13 @@ FT.DICT = [
   { id:'RRPONTSYD', name:'Reverse Repo ($B)', units:'usd_b', aliases:['reverse repo','rrp'] },
   { id:'TOTRESNS', name:'Bank Reserves ($B)', units:'usd_b', aliases:['bank reserves','reserves'] },
   /* --- Markets --- */
-  { id:'SP500', name:'S&P 500', units:'level', aliases:['sp 500','sp500','s and p 500','s and p','spx'] },
+  { id:'SP500', name:'S&P 500', units:'level', aliases:['sp 500','sp500','s and p 500','s and p','spx'],
+    note:'FRED only redistributes the last 10 years of S&P 500 values (licensing). For long history use Shiller\'s monthly series back to 1871: econ.yale.edu/~shiller/data.htm' },
   { id:'NASDAQCOM', name:'NASDAQ Composite', units:'level', aliases:['nasdaq','nasdaq composite'] },
   { id:'NASDAQ100', name:'NASDAQ 100', units:'level', aliases:['nasdaq 100','ndx'] },
   { id:'DJIA', name:'Dow Jones Industrial Avg', units:'level', aliases:['dow jones','djia','dow'] },
-  { id:'WILL5000IND', name:'Wilshire 5000 Total Market Index', units:'level', aliases:['wilshire 5000','wilshire','total market index','wilshire index'] },
+  { id:'WILL5000IND', name:'Wilshire 5000 Total Market Index', units:'level', aliases:['wilshire 5000','wilshire','total market index','wilshire index'],
+    note:'FRED discontinued this series in early 2024 (starts 1970-12-31). For a continuing total-market proxy use VTI or the FT Wilshire 5000 (wilshireindexes.com). For pre-1970 US equity history, Robert Shiller\'s monthly series goes back to 1871: econ.yale.edu/~shiller/data.htm' },
   { id:'VIXCLS', name:'VIX', units:'level', aliases:['vix','volatility index','fear index'] },
   { id:'CBBTCUSD', name:'Bitcoin ($)', units:'usd', aliases:['bitcoin','btc'] },
   { id:'CBETHUSD', name:'Ethereum ($)', units:'usd', aliases:['ethereum','eth','ether'] },
@@ -539,7 +541,8 @@ FT.load = async function() {
     const missing = FT.state.series.filter(x => !x.obs || !x.obs.length);
     if (missing.length === FT.state.series.length) {
       document.getElementById('chart-card').style.display = 'none';
-      FT.setStatus('Could not reach FRED for ' + missing.map(x => x.def.id).join(', ') +
+      const notes2 = missing.filter(x => x.def.note).map(x => '<br><strong>' + x.def.id + ':</strong> ' + x.def.note).join('');
+      FT.setStatus('Could not reach FRED for ' + missing.map(x => x.def.id).join(', ') + notes2 +
         '. This page has no network access (hosted previews block it) and this tool does not invent substitute data. ' +
         'Use <strong>Import real FRED data</strong> above: fred.stlouisfed.org &rarr; your series &rarr; Download &rarr; CSV &rarr; paste it in.', true);
       return;
@@ -756,10 +759,8 @@ FT.redraw = function() {
   FT.renderChips();
   FT.renderRangeBtns();
   try { FT.drawChart(); } catch (err) { FT.setStatus('Chart render error: ' + err.message, true); }
-  const banner = document.getElementById('data-banner');
   const label = document.getElementById('mode-label');
   const imported = FT.state.series.filter(s => s.src === 'live').length;
-  banner.innerHTML = '';
   label.innerHTML = '<span class="mode-live">REAL DATA</span> &middot; ' + imported + ' series from FRED' +
     (FT.state.series.length > imported ? ' (+' + (FT.state.series.length - imported) + ' fetched live)' : '');
 };
@@ -771,6 +772,10 @@ FT.axisTitle = function(axis) {
 };
 
 FT.renderChips = function() {
+  const notes = FT.state.series.filter(x => x.def.note);
+  document.getElementById('data-banner').innerHTML = notes.length
+    ? notes.map(x => '<div style="background:rgba(251,191,36,0.1);border:1px solid var(--yellow);border-radius:var(--radius);padding:9px 13px;margin-bottom:8px;font-size:0.78rem;color:var(--yellow)"><strong>' + x.def.id + ':</strong> <span style="color:var(--text-secondary)">' + x.def.note + '</span></div>').join('')
+    : '';
   document.getElementById('chips').innerHTML = FT.state.series.map((s, i) =>
     '<span class="series-chip"><span class="dot" style="background:' + s.color + '"></span>' +
     s.def.name + ' <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.7rem">' + s.def.id + '</span>' +
