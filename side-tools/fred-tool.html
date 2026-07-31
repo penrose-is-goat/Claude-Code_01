@@ -549,10 +549,12 @@ FT.load = async function() {
     }));
     const emptyWindow = FT.state.series.filter(x => x.imported && x.fullObs && x.fullObs.length && !x.obs.length);
     if (emptyWindow.length) {
+      const covered = FT.state.series.filter(x => emptyWindow.indexOf(x) < 0 && x.obs && x.obs.length);
       emptyWindow.forEach(x => { x.obs = x.fullObs; });
+      const cov = emptyWindow[0].fullObs;
       FT.pendingMsg = 'No data for ' + emptyWindow.map(x => x.def.id).join(', ') + ' in that window (imported data covers ' +
-        emptyWindow[0].fullObs[0].date + ' to ' + emptyWindow[0].fullObs[emptyWindow[0].fullObs.length-1].date + '). Showing its full range instead.';
-      FT.state.range = { start: emptyWindow[0].fullObs[0].date, end: emptyWindow[0].fullObs[emptyWindow[0].fullObs.length-1].date };
+        cov[0].date + ' to ' + cov[cov.length-1].date + '). Showing its full range instead.';
+      if (!covered.length) FT.state.range = { start: cov[0].date, end: cov[cov.length-1].date };
     }
     const missing = FT.state.series.filter(x => !x.obs || !x.obs.length);
     if (missing.length === FT.state.series.length) {
@@ -776,6 +778,10 @@ FT.redraw = function() {
     titleL: norm ? 'Indexed (start = 100)' : FT.axisTitle('yL'),
     titleR: usesR ? FT.axisTitle('yR') : ''
   };
+  if (dates.length) {
+    document.getElementById('d-start').value = dates[0];
+    document.getElementById('d-end').value = dates[dates.length - 1];
+  }
   document.getElementById('legend').innerHTML = datasets.map(d =>
     '<span><span style="color:' + d.color + '">&#9679;</span> ' + d.label + '</span>').join('') +
     (dates.length ? '<span style="margin-left:auto;color:var(--accent);font-weight:600">Showing ' + dates[0] + ' &rarr; ' + dates[dates.length-1] + ' (' + dates.length + ' pts)</span>' : '');
@@ -877,6 +883,8 @@ FT.importCsv = function() {
   const idx = at >= 0 ? at : FT.state.series.length;
   const entry = { def: def, color: FT.COLORS[idx % FT.COLORS.length], axis: null, obs: obs, fullObs: obs, imported: true, src: 'live' };
   if (at >= 0) FT.state.series[at] = entry; else FT.state.series.push(entry);
+  /* purge failed-fetch ghosts first, else their units claim the left axis */
+  FT.state.series = FT.state.series.filter(x => x.obs && x.obs.length);
   FT.state.range = { start: obs[0].date, end: obs[obs.length - 1].date };
   FT.state.activePreset = null;
   FT.state.series.forEach(x => { x.axis = null; });
@@ -926,7 +934,7 @@ document.addEventListener('change', function(e) {
   const id = e.target.id;
   if (id === 'd-start' || id === 'd-end') FT.customRange();
   else if (id === 'opt-rec') FT.toggleRecessions();
-  else if (id === 'opt-norm' || id === 'opt-logl' || id === 'opt-logr') { FT.setStatus(''); FT.redraw(); }
+  else if (id === 'opt-norm' || id === 'opt-logl' || id === 'opt-logr') FT.redraw();
 });
 </script>
 </body>
