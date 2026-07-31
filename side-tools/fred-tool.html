@@ -53,7 +53,7 @@ h1{font-size:1.4rem;margin-bottom:4px;color:var(--accent)}
 </head>
 <body>
 <h1>FRED Tool</h1>
-<div class="sub">Type what you want to see &mdash; charts populate from FRED (Federal Reserve Economic Data). Fuzzy search understands misspellings and word variations across 70+ series.</div>
+<div class="sub">Type what you want to see &mdash; fuzzy search across 85+ FRED series, tolerant of misspellings. <strong>Note:</strong> when this page cannot reach FRED (hosted previews block network access) it charts approximate reference curves, clearly labeled. Import a FRED CSV below for genuine data.</div>
 
 <div class="card">
   <div class="search-row">
@@ -61,6 +61,15 @@ h1{font-size:1.4rem;margin-bottom:4px;color:var(--accent)}
     <button class="btn" id="go" data-action="run">Chart It</button>
   </div>
   <div class="examples" id="examples"></div>
+  <details style="margin-top:12px;border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px">
+    <summary style="font-size:0.82rem;color:var(--accent);cursor:pointer;font-weight:600">Import real FRED data (paste CSV) &mdash; recommended</summary>
+    <div style="margin-top:8px;font-size:0.76rem;color:var(--text-muted);line-height:1.6">
+      On <strong>fred.stlouisfed.org</strong>, open any series &rarr; <strong>Download</strong> &rarr; <strong>CSV</strong>, open the file and paste its contents below.
+      Repeat per series to build a multi-series chart from genuine data.
+    </div>
+    <textarea id="csv-input" placeholder="observation_date,DGS10&#10;2024-01-02,3.95&#10;2024-01-03,3.91" style="width:100%;height:88px;margin-top:8px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);padding:8px;font-family:var(--font-mono);font-size:0.72rem;resize:vertical"></textarea>
+    <button class="btn" data-action="import-csv" style="margin-top:8px;padding:7px 16px;font-size:0.8rem">Import &amp; Chart</button>
+  </details>
   <div class="status" id="status"></div>
 </div>
 
@@ -440,8 +449,10 @@ FT.fetchSeries = async function(id, start, end) {
   return result;
 };
 
-/* ---- Embedded REAL FRED history (anchor points, linearly interpolated to monthly).
-   Values are actual historical observations at the anchor dates, approximate between them. ---- */
+/* ---- APPROXIMATE reference curves. Hand-compiled anchor values from general
+   knowledge of these series, linearly interpolated. NOT real FRED observations.
+   Purpose: let the UI be evaluated offline. Real data comes from live fetch or
+   the user's CSV import. ---- */
 FT.EMBED_ASOF = '2025-10';
 FT.EMBED = {
   DGS10: [['1962-01',4.1],['1970-01',7.8],['1975-01',7.5],['1981-09',15.3],['1985-01',11.4],['1990-01',8.2],['1994-11',7.9],['1998-10',4.5],['2000-01',6.7],['2003-06',3.3],['2007-06',5.1],['2008-12',2.4],['2012-07',1.5],['2013-12',2.9],['2016-07',1.50],['2016-12',2.49],['2017-06',2.20],['2017-12',2.40],['2018-10',3.15],['2019-01',2.71],['2019-08',1.63],['2019-12',1.86],['2020-03',0.87],['2020-07',0.62],['2021-03',1.61],['2021-12',1.47],['2022-06',3.14],['2022-10',4.10],['2023-04',3.46],['2023-10',4.80],['2023-12',3.88],['2024-04',4.54],['2024-09',3.72],['2024-12',4.38],['2025-01',4.63],['2025-04',4.28],['2025-06',4.38],['2025-08',4.23],['2025-10',4.05]],
@@ -587,6 +598,7 @@ FT.load = async function() {
   document.getElementById('go').disabled = true;
   try {
     await Promise.all(FT.state.series.map(async s => {
+      if (s.src === 'live' && s.obs && s.obs.length) return;   /* imported real data: keep it */
       let res;
       if (s.def.t === 'yoy') {
         const pre = new Date(r.start); pre.setFullYear(pre.getFullYear() - 1);
@@ -817,8 +829,8 @@ FT.redraw = function() {
     banner.innerHTML = '<div style="background:rgba(248,113,113,0.12);border:1px solid var(--red);border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;font-size:0.82rem;color:var(--red)"><strong>&#9888; SIMULATED DATA</strong> &mdash; ' + nSyn + ' series (dashed lines) have no embedded history and FRED is unreachable from this page. Those shapes are illustrative only, not real observations.</div>';
     label.innerHTML = '<span class="mode-demo">CONTAINS SIMULATED SERIES</span>';
   } else if (nEmb > 0) {
-    banner.innerHTML = '<div style="background:rgba(251,191,36,0.1);border:1px solid var(--yellow);border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;font-size:0.82rem;color:var(--yellow)"><strong>Embedded FRED history</strong> &mdash; real historical values through <strong>' + FT.EMBED_ASOF + '</strong> (monthly, interpolated between anchor dates; major series reach back to the 1950s-1990s). The visible window is shown under the chart. Live FRED is unreachable from this page; open the downloaded file on your computer for current data.</div>';
-    label.innerHTML = '<span class="mode-demo">EMBEDDED HISTORY (through ' + FT.EMBED_ASOF + ')</span>';
+    banner.innerHTML = '<div style="background:rgba(251,191,36,0.1);border:1px solid var(--yellow);border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;font-size:0.82rem;color:var(--yellow)"><strong>Embedded FRED history</strong> &mdash; these are <strong>hand-compiled approximate anchor values, interpolated monthly &mdash; NOT real FRED observations</strong>. Directionally right (recessions, the 1981 rate peak, 2020 crash) but individual points are estimates. Use them to evaluate the interface; for analysis, import a real FRED CSV using the panel at the top. Live FRED is unreachable from this page; open the downloaded file on your computer for current data.</div>';
+    label.innerHTML = '<span class="mode-demo">APPROXIMATE DATA &mdash; not real FRED observations</span>';
   } else {
     banner.innerHTML = '';
     label.innerHTML = '<span class="mode-live">LIVE FRED DATA</span> &middot; refreshed ' + new Date().toLocaleTimeString();
@@ -873,6 +885,34 @@ FT.customRange = async function() {
   await FT.load();
 };
 
+FT.importCsv = function() {
+  const ta = document.getElementById('csv-input');
+  const text = (ta.value || '').trim();
+  if (!text) { FT.setStatus('Paste the contents of a FRED CSV file first.', true); return; }
+  const first = text.split(/\r?\n/)[0].split(',');
+  const id = (first[1] || 'SERIES').trim().toUpperCase().replace(/["\s]/g, '');
+  const obs = FT.parseCsv(text, id);
+  if (!obs || obs.length < 2) {
+    FT.setStatus('Could not parse that. Expected FRED CSV format: a header row then date,value lines.', true); return;
+  }
+  const known = FT.DICT.find(d => d.id === id && !d.t);
+  const def = known || { id: id, name: id + ' (imported)', units: 'level', aliases: [] };
+  const at = FT.state.series.findIndex(x => x.def.id === id);
+  const idx = at >= 0 ? at : FT.state.series.length;
+  const entry = { def: def, color: FT.COLORS[idx % FT.COLORS.length], axis: null, obs: obs, src: 'live' };
+  if (at >= 0) FT.state.series[at] = entry; else FT.state.series.push(entry);
+  FT.state.range = { start: obs[0].date, end: obs[obs.length - 1].date };
+  FT.state.activePreset = null;
+  FT.state.series.forEach(x => { x.axis = null; });
+  FT.assignAxes();
+  document.getElementById('chart-card').style.display = 'block';
+  document.getElementById('d-start').value = FT.state.range.start;
+  document.getElementById('d-end').value = FT.state.range.end;
+  FT.redraw();
+  ta.value = '';
+  FT.setStatus('Imported ' + obs.length + ' real observations for ' + id + ' (' + obs[0].date + ' to ' + obs[obs.length-1].date + ').');
+};
+
 FT.setStatus = function(html, isErr) {
   const el = document.getElementById('status');
   el.innerHTML = html || '';
@@ -904,6 +944,7 @@ document.addEventListener('click', function(e) {
   else if (a === 'remove-series') FT.removeSeries(+el.dataset.idx);
   else if (a === 'preset') FT.preset(el.dataset.preset);
   else if (a === 'apply-range') FT.customRange();
+  else if (a === 'import-csv') FT.importCsv();
 });
 document.addEventListener('change', function(e) {
   const id = e.target.id;
