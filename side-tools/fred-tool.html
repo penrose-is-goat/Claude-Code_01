@@ -68,9 +68,16 @@ h1{font-size:1.4rem;margin-bottom:4px;color:var(--accent)}
   <div id="data-banner"></div>
   <div class="series-chips" id="chips"></div>
   <div class="controls">
-    <span id="range-btns"></span>
+    <span id="range-btns">
+      <button class="range-btn" data-action="preset" data-preset="1Y">1Y</button>
+      <button class="range-btn" data-action="preset" data-preset="5Y">5Y</button>
+      <button class="range-btn" data-action="preset" data-preset="10Y">10Y</button>
+      <button class="range-btn" data-action="preset" data-preset="20Y">20Y</button>
+      <button class="range-btn" data-action="preset" data-preset="MAX">MAX</button>
+    </span>
     <label>From <input type="date" id="d-start"></label>
     <label>To <input type="date" id="d-end"></label>
+    <button class="range-btn" data-action="apply-range" style="border-color:var(--accent);color:var(--accent)">Apply</button>
     <label><input type="checkbox" id="opt-norm"> Normalize (=100)</label>
     <label><input type="checkbox" id="opt-logl"> Log left</label>
     <label><input type="checkbox" id="opt-logr"> Log right</label>
@@ -557,7 +564,7 @@ FT.forwardFill = function(seriesList) {
 
 /* ================= State ================= */
 FT.state = { series: [], range: null, recBands: null, render: null, geom: null, lastData: null, hoverBound: false };
-FT.RANGE_PRESETS = { '1Y':1, '5Y':5, '10Y':10, '25Y':25, 'MAX':0 };
+FT.RANGE_PRESETS = { '1Y':1, '5Y':5, '10Y':10, '20Y':20, 'MAX':0 };
 
 FT.run = async function() {
   const q = document.getElementById('query').value.trim();
@@ -797,9 +804,9 @@ FT.redraw = function() {
     }
     FT.state.hoverBound = true;
   }
-  FT.drawChart();
   FT.renderChips();
   FT.renderRangeBtns();
+  try { FT.drawChart(); } catch (err) { FT.setStatus('Chart render error: ' + err.message, true); }
   const srcs = FT.state.series.map(s => s.src);
   const nSyn = srcs.filter(x => x === 'synthetic').length;
   const nEmb = srcs.filter(x => x === 'embedded').length;
@@ -809,7 +816,7 @@ FT.redraw = function() {
     banner.innerHTML = '<div style="background:rgba(248,113,113,0.12);border:1px solid var(--red);border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;font-size:0.82rem;color:var(--red)"><strong>&#9888; SIMULATED DATA</strong> &mdash; ' + nSyn + ' series (dashed lines) have no embedded history and FRED is unreachable from this page. Those shapes are illustrative only, not real observations.</div>';
     label.innerHTML = '<span class="mode-demo">CONTAINS SIMULATED SERIES</span>';
   } else if (nEmb > 0) {
-    banner.innerHTML = '<div style="background:rgba(251,191,36,0.1);border:1px solid var(--yellow);border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;font-size:0.82rem;color:var(--yellow)"><strong>Embedded FRED history</strong> &mdash; real historical values through <strong>' + FT.EMBED_ASOF + '</strong> (monthly, interpolated between anchor dates). Live FRED is unreachable from this page; open the downloaded file on your computer for current data.</div>';
+    banner.innerHTML = '<div style="background:rgba(251,191,36,0.1);border:1px solid var(--yellow);border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;font-size:0.82rem;color:var(--yellow)"><strong>Embedded FRED history</strong> &mdash; real historical values covering <strong>Jul 2016 &ndash; ' + FT.EMBED_ASOF + '</strong> (monthly, interpolated between anchor dates); ranges outside that window show only the covered portion. Live FRED is unreachable from this page; open the downloaded file on your computer for current data.</div>';
     label.innerHTML = '<span class="mode-demo">EMBEDDED HISTORY (through ' + FT.EMBED_ASOF + ')</span>';
   } else {
     banner.innerHTML = '';
@@ -843,11 +850,12 @@ FT.removeSeries = function(i) {
 };
 
 FT.renderRangeBtns = function() {
-  document.getElementById('range-btns').innerHTML = Object.keys(FT.RANGE_PRESETS).map(k =>
-    '<button class="range-btn" data-action="preset" data-preset="' + k + '">' + k + '</button>'
-  ).join(' ');
+  document.querySelectorAll('#range-btns .range-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.preset === FT.state.activePreset);
+  });
 };
 FT.preset = async function(k) {
+  FT.state.activePreset = k;
   const today = new Date(); const iso = d => d.toISOString().split('T')[0];
   const yrs = FT.RANGE_PRESETS[k];
   const start = yrs === 0 ? '1900-01-01' : (() => { const d = new Date(today); d.setFullYear(d.getFullYear() - yrs); return iso(d); })();
@@ -857,7 +865,8 @@ FT.preset = async function(k) {
 };
 FT.customRange = async function() {
   const s = document.getElementById('d-start').value, e = document.getElementById('d-end').value;
-  if (!s || !e || s >= e) return;
+  if (!s || !e || s >= e) { FT.setStatus('Pick a From date earlier than the To date, then press Apply.', true); return; }
+  FT.state.activePreset = null;
   FT.state.range = { start: s, end: e };
   FT.state.recBands = null;
   await FT.load();
@@ -893,6 +902,7 @@ document.addEventListener('click', function(e) {
   else if (a === 'flip-axis') { if (!document.getElementById('opt-norm').checked) FT.flipAxis(+el.dataset.idx); }
   else if (a === 'remove-series') FT.removeSeries(+el.dataset.idx);
   else if (a === 'preset') FT.preset(el.dataset.preset);
+  else if (a === 'apply-range') FT.customRange();
 });
 document.addEventListener('change', function(e) {
   const id = e.target.id;

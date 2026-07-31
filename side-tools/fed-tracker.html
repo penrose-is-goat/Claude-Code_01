@@ -69,6 +69,9 @@ input[type=number]:focus,select:focus{border-color:var(--accent);outline:none}
 .note{color:var(--text-muted);font-size:0.73rem;margin-top:12px;line-height:1.55}
 .btn{padding:8px 18px;border-radius:var(--radius);border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:0.85rem;font-weight:600;cursor:pointer;font-family:var(--font)}
 .btn:hover{background:#3a7be0}
+.range-btn2{padding:5px 12px;border-radius:5px;border:1px solid var(--border);background:var(--bg-tertiary);color:var(--text-secondary);font-size:0.75rem;font-weight:600;cursor:pointer;font-family:var(--font)}
+.range-btn2:hover{color:var(--text-primary);border-color:var(--border-light)}
+.range-btn2.active{background:var(--accent);border-color:var(--accent);color:#fff}
 @media(max-width:720px){.histo{gap:14px}.hcol{min-width:60px}.hbar{width:40px}.hlabels{gap:14px}.hlab{min-width:60px}}
 </style>
 </head>
@@ -79,11 +82,21 @@ input[type=number]:focus,select:focus{border-color:var(--accent);outline:none}
 <div class="summary" id="summary"></div>
 
 <div class="card">
-  <div class="card-title">Meeting Probabilities</div>
-  <div class="card-sub">Select a meeting &mdash; probability distribution for the target rate set at that meeting</div>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+    <div>
+      <div class="card-title">Meeting Probabilities</div>
+      <div class="card-sub">Select a meeting &mdash; probability distribution for the target rate set at that meeting</div>
+    </div>
+    <div style="display:flex;gap:4px">
+      <button class="range-btn2" data-action="view" data-view="dist">Distribution</button>
+      <button class="range-btn2" data-action="view" data-view="curve">Futures Curve</button>
+      <button class="range-btn2" data-action="view" data-view="history">Prob. History</button>
+    </div>
+  </div>
   <div class="tabs" id="tabs"></div>
   <div class="histo" id="histo"></div>
   <div class="hlabels" id="hlabels"></div>
+  <div id="alt-view" style="display:none"></div>
   <div style="margin-top:20px">
     <table id="dist-table"></table>
   </div>
@@ -301,17 +314,90 @@ APP.render = function() {
         '<td class="right"><input type="number" step="0.005" value="' + c.price.toFixed(3) + '" data-price-idx="' + i + '"></td>' +
         '<td class="right">' + (100 - c.price).toFixed(3) + '%</td></tr>';
     }).join('') + '</tbody>';
+  APP.renderView(results);
   document.getElementById('asof-note').innerHTML =
     'Snapshot as of <strong>' + APP.DATA_AS_OF + '</strong>: current target range 3.50&ndash;3.75% (held at the Jun 17 2026 FOMC) and prices calibrated so the Sep 16 2026 meeting shows the CME FedWatch published reading of that date (54.4% probability of a 25bp cut). Later-month prices are an illustrative easing path &mdash; update all prices with live ZQ quotes from cmegroup.com. * = tentative meeting date.';
 };
 
 APP.select = function(i) { APP.state.selected = i; APP.render(); };
+APP.setView = function(v) { APP.state.view = v; APP.render(); };
+
+/* Illustrative weekly history of Sep-16-2026 meeting odds; final point = current
+   calibrated FedWatch value (54.4% cut). Earlier points are illustrative. */
+APP.PROB_HISTORY = {
+  '2026-09-16': {
+    dates: ['2026-04-03','2026-04-17','2026-05-01','2026-05-15','2026-05-29','2026-06-12','2026-06-19','2026-07-03','2026-07-17','2026-07-28'],
+    series: [
+      { label: 'Cut 25bp -> 3.25-3.50%', color: 'var(--green)', rgb: '#34d399', vals: [22, 26, 31, 28, 35, 30, 38, 44, 50, 54.4] },
+      { label: 'Hold 3.50-3.75%', color: 'var(--accent)', rgb: '#4f8ff7', vals: [70, 66, 62, 65, 58, 63, 57, 52, 47, 45.6] },
+      { label: 'Cut 50bp', color: 'var(--yellow)', rgb: '#fbbf24', vals: [8, 8, 7, 7, 7, 7, 5, 4, 3, 0] }
+    ]
+  }
+};
+
+APP.svgChart = function(xLabels, seriesList, yMax, ySuffix) {
+  const W = 900, H = 300, pl = 46, pr = 14, pt = 14, pb = 34;
+  const pw = W - pl - pr, ph = H - pt - pb;
+  const n = xLabels.length;
+  const x = i => pl + (n <= 1 ? pw/2 : i/(n-1)*pw);
+  const y = v => pt + ph - (v/yMax)*ph;
+  let g = '';
+  for (let t = 0; t <= 4; t++) {
+    const gy = pt + t/4*ph, gv = yMax - t/4*yMax;
+    g += '<line x1="'+pl+'" y1="'+gy+'" x2="'+(W-pr)+'" y2="'+gy+'" stroke="rgba(45,50,72,0.6)"/>' +
+         '<text x="'+(pl-8)+'" y="'+(gy+4)+'" fill="#6b7280" font-size="11" text-anchor="end">'+(+gv.toFixed(1))+ySuffix+'</text>';
+  }
+  const step = Math.max(1, Math.ceil(n/8));
+  for (let i = 0; i < n; i += step)
+    g += '<text x="'+x(i)+'" y="'+(H-10)+'" fill="#6b7280" font-size="11" text-anchor="middle">'+xLabels[i]+'</text>';
+  for (const sr of seriesList) {
+    const pts = sr.vals.map((v,i) => x(i).toFixed(1)+','+y(v).toFixed(1)).join(' ');
+    g += '<polyline points="'+pts+'" fill="none" stroke="'+sr.rgb+'" stroke-width="2.5"/>';
+    sr.vals.forEach((v,i) => { g += '<circle cx="'+x(i)+'" cy="'+y(v)+'" r="3" fill="'+sr.rgb+'"/>'; });
+  }
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">'+g+'</svg>';
+};
+
+APP.renderView = function(results) {
+  const view = APP.state.view || 'dist';
+  document.querySelectorAll('[data-action="view"]').forEach(b =>
+    b.classList.toggle('active', b.dataset.view === view));
+  const distEls = ['histo','hlabels','dist-table'];
+  const alt = document.getElementById('alt-view');
+  const showDist = view === 'dist';
+  distEls.forEach(id => {
+    const el = document.getElementById(id);
+    (id === 'dist-table' ? el.parentElement : el).style.display = showDist ? '' : 'none';
+  });
+  alt.style.display = showDist ? 'none' : 'block';
+  if (view === 'curve') {
+    const labels = APP.state.contracts.map(c => c.ym.substring(2));
+    const vals = APP.state.contracts.map(c => +(100 - c.price).toFixed(3));
+    const ymax = Math.max.apply(null, vals) * 1.15;
+    alt.innerHTML = '<div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:8px">Fed funds futures curve &mdash; implied average rate by contract month (100 &minus; ZQ price)</div>' +
+      APP.svgChart(labels, [{ rgb: '#4f8ff7', vals: vals }], ymax, '%') +
+      '<div class="note">Downward slope = market pricing future cuts. Edit contract prices below to reshape the curve.</div>';
+  } else if (view === 'history') {
+    const h = APP.PROB_HISTORY[results[APP.state.selected] && results[APP.state.selected].date];
+    if (!h) {
+      alt.innerHTML = '<div class="note" style="padding:30px 0;text-align:center">Probability history is available for the next meeting (Sep 16, 2026) in this snapshot. Select it in the tabs above.</div>';
+      return;
+    }
+    const labels = h.dates.map(d => d.substring(5));
+    alt.innerHTML = '<div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:8px">How the market-implied odds for this meeting evolved over time (Jim Bianco-style probability history)</div>' +
+      APP.svgChart(labels, h.series, 100, '%') +
+      '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:0.78rem;color:var(--text-secondary)">' +
+      h.series.map(sr => '<span><span style="color:'+sr.rgb+'">&#9679;</span> '+sr.label+'</span>').join('') + '</div>' +
+      '<div class="note">Final point (2026-07-28) is the CME FedWatch published reading; earlier points are an illustrative path. A live version would snapshot daily futures prices.</div>';
+  }
+};
 
 /* ---- CSP-safe event delegation: no inline handlers anywhere ---- */
 document.addEventListener('click', function(e) {
   const el = e.target.closest ? e.target.closest('[data-action]') : null;
   if (!el) return;
   if (el.dataset.action === 'select') APP.select(+el.dataset.idx);
+  else if (el.dataset.action === 'view') APP.setView(el.dataset.view);
 });
 document.addEventListener('change', function(e) {
   if (e.target.id === 'cur-range' || e.target.hasAttribute('data-price-idx')) APP.render();
