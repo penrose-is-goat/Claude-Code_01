@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Fed Rate Tracker - Demo</title>
+<title>Fed Rate Tracker</title>
 <style>
 :root {
   --bg-primary:#0f1117; --bg-secondary:#1a1d27; --bg-tertiary:#242836;
-  --bg-card:#1e2233; --bg-input:#2a2e3f; --border:#2d3248;
+  --bg-card:#1e2233; --bg-input:#2a2e3f; --border:#2d3248; --border-light:#3d4258;
   --text-primary:#e8eaed; --text-secondary:#9aa0a6; --text-muted:#6b7280;
   --accent:#4f8ff7; --green:#34d399; --red:#f87171; --yellow:#fbbf24;
   --radius:8px; --radius-lg:12px;
@@ -15,176 +15,302 @@
   --font-mono:'JetBrains Mono','Fira Code',monospace;
 }
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:var(--font);background:var(--bg-primary);color:var(--text-primary);padding:24px;max-width:1100px;margin:0 auto}
+body{font-family:var(--font);background:var(--bg-primary);color:var(--text-primary);padding:24px;max-width:1150px;margin:0 auto}
 h1{font-size:1.4rem;margin-bottom:4px;color:var(--accent)}
 .sub{color:var(--text-muted);font-size:0.85rem;margin-bottom:20px}
-.card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:16px}
-.card-title{font-size:1rem;font-weight:600;margin-bottom:14px}
-.summary-strip{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}
-.stat{background:var(--bg-tertiary);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;flex:1;min-width:200px}
-.stat-label{font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px}
-.stat-value{font-size:1.35rem;font-weight:700;font-family:var(--font-mono)}
-.meetings{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
-.meeting-card{background:var(--bg-tertiary);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
-.meeting-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
-.meeting-date{font-weight:700;font-size:1.02rem}
-.meeting-days{color:var(--text-muted);font-size:0.75rem}
-.meeting-exp{font-size:0.8rem;color:var(--text-secondary);margin-bottom:12px}
-.bucket{margin-bottom:10px}
-.bucket-row{display:flex;justify-content:space-between;font-size:0.82rem;font-family:var(--font-mono);margin-bottom:4px}
-.bar-track{height:10px;background:var(--bg-input);border-radius:5px;overflow:hidden}
-.bar-fill{height:100%;border-radius:5px;transition:width 0.5s ease}
-.cut .bar-fill{background:var(--green)}
-.hold .bar-fill{background:var(--accent)}
-.hike .bar-fill{background:var(--red)}
-.tag{font-size:0.68rem;padding:1px 8px;border-radius:10px;font-weight:700;vertical-align:middle;margin-left:6px}
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:22px;margin-bottom:16px}
+.card-title{font-size:1.02rem;font-weight:700;margin-bottom:4px}
+.card-sub{font-size:0.78rem;color:var(--text-muted);margin-bottom:16px}
+/* summary strip */
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px}
+.stat{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px}
+.stat-label{font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:7px}
+.stat-value{font-size:1.5rem;font-weight:800;font-family:var(--font-mono);line-height:1.1}
+.stat-sub{font-size:0.75rem;color:var(--text-secondary);margin-top:5px}
+/* meeting tabs */
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
+.tab{padding:8px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg-tertiary);color:var(--text-secondary);font-size:0.82rem;font-weight:600;cursor:pointer;font-family:var(--font);text-align:center;line-height:1.3}
+.tab small{display:block;font-weight:400;font-size:0.68rem;color:var(--text-muted)}
+.tab:hover{border-color:var(--border-light);color:var(--text-primary)}
+.tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.tab.active small{color:rgba(255,255,255,0.75)}
+/* histogram */
+.histo{display:flex;align-items:flex-end;justify-content:center;gap:34px;height:290px;padding:10px 8px 0;border-bottom:1px solid var(--border)}
+.hcol{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;min-width:86px}
+.hpct{font-family:var(--font-mono);font-weight:700;font-size:0.95rem;margin-bottom:6px}
+.hbar{width:58px;border-radius:6px 6px 0 0;transition:height 0.45s cubic-bezier(.2,.8,.3,1);min-height:2px}
+.hlabels{display:flex;justify-content:center;gap:34px;padding:10px 8px 0}
+.hlab{min-width:86px;text-align:center}
+.hlab .rng{font-family:var(--font-mono);font-size:0.82rem;font-weight:600}
+.hlab .tag{display:inline-block;margin-top:4px}
+.tag{font-size:0.66rem;padding:2px 9px;border-radius:10px;font-weight:700;letter-spacing:0.3px}
 .tag-cut{background:rgba(52,211,153,0.15);color:var(--green)}
 .tag-hold{background:rgba(79,143,247,0.15);color:var(--accent)}
 .tag-hike{background:rgba(248,113,113,0.15);color:var(--red)}
+/* tables */
 table{width:100%;border-collapse:collapse;font-size:0.85rem}
-th{text-align:left;padding:8px 10px;background:var(--bg-tertiary);color:var(--text-secondary);font-size:0.72rem;text-transform:uppercase;border-bottom:1px solid var(--border)}
-td{padding:8px 10px;border-bottom:1px solid var(--border);font-family:var(--font-mono)}
-input[type=number]{width:90px;background:var(--bg-input);border:1px solid var(--border);border-radius:5px;color:var(--text-primary);padding:5px 8px;font-family:var(--font-mono);font-size:0.85rem;text-align:right}
-input[type=number]:focus{border-color:var(--accent);outline:none}
-.note{color:var(--text-muted);font-size:0.75rem;margin-top:10px;line-height:1.5}
-.btn{padding:7px 16px;border-radius:var(--radius);border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:0.85rem;font-weight:500;cursor:pointer;font-family:var(--font)}
+th{text-align:left;padding:9px 11px;background:var(--bg-tertiary);color:var(--text-secondary);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border)}
+td{padding:9px 11px;border-bottom:1px solid var(--border);font-family:var(--font-mono)}
+tr:last-child td{border-bottom:none}
+.right{text-align:right}
+.center{text-align:center}
+.prob-cellbar{position:relative;background:var(--bg-input);border-radius:4px;height:16px;overflow:hidden;min-width:130px}
+.prob-cellbar>div{position:absolute;inset:0 auto 0 0;border-radius:4px}
+/* matrix */
+.matrix-wrap{overflow-x:auto}
+.matrix td,.matrix th{text-align:center;white-space:nowrap}
+.matrix td:first-child,.matrix th:first-child{text-align:left;position:sticky;left:0;background:var(--bg-card)}
+.matrix .mdate{font-weight:700;font-family:var(--font)}
+.matrix .mdays{font-size:0.68rem;color:var(--text-muted);font-family:var(--font)}
+.mcell{border-radius:5px;padding:6px 4px;font-size:0.8rem;min-width:74px;display:block}
+input[type=number],select{background:var(--bg-input);border:1px solid var(--border);border-radius:5px;color:var(--text-primary);padding:6px 9px;font-family:var(--font-mono);font-size:0.85rem}
+input[type=number]{width:96px;text-align:right}
+input[type=number]:focus,select:focus{border-color:var(--accent);outline:none}
+.note{color:var(--text-muted);font-size:0.73rem;margin-top:12px;line-height:1.55}
+.btn{padding:8px 18px;border-radius:var(--radius);border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:0.85rem;font-weight:600;cursor:pointer;font-family:var(--font)}
+.btn:hover{background:#3a7be0}
+@media(max-width:720px){.histo{gap:14px}.hcol{min-width:60px}.hbar{width:40px}.hlabels{gap:14px}.hlab{min-width:60px}}
 </style>
 </head>
 <body>
 <h1>Fed Rate Tracker</h1>
-<div class="sub">FOMC rate-change probabilities implied by 30-Day Fed Fund futures (CME FedWatch methodology) &mdash; standalone demo</div>
+<div class="sub">FOMC target-rate probabilities implied by 30-Day Fed Fund futures &mdash; CME FedWatch methodology</div>
 
-<div class="summary-strip" id="summary"></div>
+<div class="summary" id="summary"></div>
 
 <div class="card">
-  <div class="card-title">Upcoming FOMC Meetings</div>
-  <div class="meetings" id="meetings"></div>
-  <div class="note" id="data-note"></div>
+  <div class="card-title">Meeting Probabilities</div>
+  <div class="card-sub">Select a meeting &mdash; probability distribution for the target rate set at that meeting</div>
+  <div class="tabs" id="tabs"></div>
+  <div class="histo" id="histo"></div>
+  <div class="hlabels" id="hlabels"></div>
+  <div style="margin-top:20px">
+    <table id="dist-table"></table>
+  </div>
 </div>
 
 <div class="card">
-  <div class="card-title">Futures Prices (editable &mdash; probabilities recompute live)</div>
-  <table>
-    <thead><tr><th>FOMC Decision Date</th><th>ZQ Contract Month</th><th>Futures Price</th><th>Implied Avg Rate</th></tr></thead>
-    <tbody id="price-rows"></tbody>
-  </table>
-  <div style="margin-top:12px;display:flex;gap:10px;align-items:center">
-    <label style="font-size:0.82rem;color:var(--text-secondary)">Current target range midpoint:
-      <input type="number" id="cur-mid" step="0.125" value="4.375" style="margin-left:6px">
+  <div class="card-title">All Meetings at a Glance</div>
+  <div class="card-sub">Every upcoming meeting in one view &mdash; rows are FOMC dates, columns are target ranges, cells are probabilities</div>
+  <div class="matrix-wrap"><table class="matrix" id="matrix"></table></div>
+</div>
+
+<div class="card">
+  <div class="card-title">Inputs &mdash; Futures Prices &amp; Current Rate</div>
+  <div class="card-sub">Edit and everything above recomputes. Get live ZQ (30-Day Fed Funds) quotes free at cmegroup.com</div>
+  <div style="margin-bottom:14px">
+    <label style="font-size:0.82rem;color:var(--text-secondary)">Current target range:
+      <select id="cur-range" onchange="APP.render()"></select>
     </label>
-    <button class="btn" onclick="render()">Recompute</button>
   </div>
+  <table id="price-table"></table>
+  <div class="note" id="asof-note"></div>
   <div class="note">
-    Methodology: implied avg rate = 100 &minus; futures price. For meeting months the month is split
-    at the decision date and solved for the post-meeting rate; that rate is mapped linearly onto the
-    two nearest 25bp target ranges. Same approach as CME FedWatch and Investing.com's Fed Rate Monitor.
+    <strong>Methodology</strong> (same as CME FedWatch / Investing.com Fed Rate Monitor): each futures
+    price implies the average fed funds rate for its month (100 &minus; price). Meeting months are split
+    at the decision date and solved for the post-meeting rate. Outcome probabilities chain
+    meeting-to-meeting through a binomial tree on the 25bp target-range grid, so distributions widen
+    for later meetings exactly as on CME's tool. Tentative dates are marked with an asterisk.
   </div>
 </div>
 
 <script>
-// ---- Demo data: FOMC decision dates + illustrative ZQ futures prices ----
-// Update prices from cmegroup.com quotes for ZQ (30-Day Fed Funds) contracts.
-const DATA_AS_OF = '2026-07-29';
-const state = {
-  currentRateMid: 4.375, // 4.25-4.50% target range
+'use strict';
+const APP = {};
+
+/* ================= Data ================= */
+APP.DATA_AS_OF = '2026-07-29';
+/* Full monthly ZQ contract strip (not just meeting months) - the CME method
+   reads post-meeting rates from meeting-free months when possible */
+APP.state = {
+  currentRateMid: 4.375,
+  selected: 0,
+  contracts: [
+    { ym: '2026-09', label: 'ZQU6 (Sep 26)', price: 95.720 },
+    { ym: '2026-10', label: 'ZQV6 (Oct 26)', price: 95.860 },
+    { ym: '2026-11', label: 'ZQX6 (Nov 26)', price: 96.050 },
+    { ym: '2026-12', label: 'ZQZ6 (Dec 26)', price: 96.160 },
+    { ym: '2027-01', label: 'ZQF7 (Jan 27)', price: 96.210 },
+    { ym: '2027-02', label: 'ZQG7 (Feb 27)', price: 96.300 },
+    { ym: '2027-03', label: 'ZQH7 (Mar 27)', price: 96.340 }
+  ],
   meetings: [
-    { date: '2026-09-16', contract: 'ZQU6 (Sep)', futuresPrice: 95.72 },
-    { date: '2026-10-28', contract: 'ZQV6 (Oct)', futuresPrice: 95.85 },
-    { date: '2026-12-09', contract: 'ZQZ6 (Dec)', futuresPrice: 96.05 }
+    { date: '2026-09-16', label: 'Sep 16, 2026', tentative: false },
+    { date: '2026-10-28', label: 'Oct 28, 2026', tentative: false },
+    { date: '2026-12-09', label: 'Dec 9, 2026',  tentative: false },
+    { date: '2027-01-27', label: 'Jan 27, 2027*', tentative: true },
+    { date: '2027-03-17', label: 'Mar 17, 2027*', tentative: true }
   ]
 };
 
-function fedProbabilities(cfg) {
-  const results = [];
+/* ================= Math: chained probability tree ================= */
+APP.nextYm = function(ym) {
+  const y = +ym.substring(0, 4), m = +ym.substring(5, 7);
+  return m === 12 ? (y + 1) + '-01' : y + '-' + String(m + 1).padStart(2, '0');
+};
+
+APP.compute = function(cfg) {
+  const out = [];
+  const priceOf = ym => { const c = cfg.contracts.find(c => c.ym === ym); return c ? c.price : null; };
+  const meetingIn = ym => cfg.meetings.some(x => x.date.substring(0, 7) === ym);
   let rateStart = cfg.currentRateMid;
+  let dist = new Map([[0, 1]]);            /* key: 25bp steps from current mid */
+  let prevE = cfg.currentRateMid;
   for (const m of cfg.meetings) {
+    const ym = m.date.substring(0, 7);
+    const nextMonth = APP.nextYm(ym);
     const d = new Date(m.date + 'T12:00:00Z');
     const N = new Date(d.getUTCFullYear(), d.getUTCMonth() + 1, 0).getDate();
     const dBefore = d.getUTCDate();
     const dAfter = N - dBefore;
-    const impliedAvg = 100 - m.futuresPrice;
-    let rateEnd;
-    if (dAfter === 0) rateEnd = impliedAvg;
-    else rateEnd = (N * impliedAvg - dBefore * rateStart) / dAfter;
-    const k = Math.floor((rateEnd - cfg.currentRateMid) / 0.25 + 1e-9);
-    const lower = cfg.currentRateMid + k * 0.25;
-    const upper = lower + 0.25;
-    const pUpper = Math.min(Math.max((rateEnd - lower) / 0.25, 0), 1);
-    results.push({
-      date: m.date, expectedRate: rateEnd, impliedAvg: impliedAvg,
-      buckets: [
-        { level: upper, prob: pUpper },
-        { level: lower, prob: 1 - pUpper }
-      ],
-      changeFromCurrent: rateEnd - cfg.currentRateMid
+    let rateEnd, impliedAvg = null;
+    const pNext = priceOf(nextMonth), pThis = priceOf(ym);
+    if (pNext != null && !meetingIn(nextMonth)) {
+      /* clean read: next month has no meeting, its implied avg IS the post-meeting rate */
+      rateEnd = 100 - pNext;
+      if (pThis != null) impliedAvg = 100 - pThis;
+    } else if (pThis != null && dAfter > 0) {
+      impliedAvg = 100 - pThis;
+      rateEnd = (N * impliedAvg - dBefore * rateStart) / dAfter;
+    } else if (pThis != null) {
+      impliedAvg = 100 - pThis;
+      rateEnd = impliedAvg;
+    } else {
+      continue; /* no usable contract for this meeting */
+    }
+    const move = rateEnd - prevE;
+    const nd = new Map();
+    for (const [k, p] of dist) {
+      const target = cfg.currentRateMid + k * 0.25 + move;
+      const kf = Math.floor((target - cfg.currentRateMid) / 0.25 + 1e-9);
+      const lowerRate = cfg.currentRateMid + kf * 0.25;
+      const frac = Math.min(Math.max((target - lowerRate) / 0.25, 0), 1);
+      nd.set(kf, (nd.get(kf) || 0) + p * (1 - frac));
+      if (frac > 1e-12) nd.set(kf + 1, (nd.get(kf + 1) || 0) + p * frac);
+    }
+    dist = nd; prevE = rateEnd; rateStart = rateEnd;
+    out.push({
+      date: m.date, label: m.label, expected: rateEnd, implied: impliedAvg,
+      dist: [...dist.entries()]
+        .map(([k, p]) => ({ mid: cfg.currentRateMid + k * 0.25, prob: p }))
+        .filter(b => b.prob > 0.0005)
+        .sort((a, b) => b.mid - a.mid)
     });
-    rateStart = rateEnd;
   }
-  return results;
-}
+  return out;
+};
 
-function rangeLabel(mid) {
-  return (mid - 0.125).toFixed(2) + '–' + (mid + 0.125).toFixed(2) + '%';
-}
-function moveClass(level, cur) {
-  if (Math.abs(level - cur) < 1e-9) return 'hold';
-  return level < cur ? 'cut' : 'hike';
-}
-function moveTag(level, cur) {
-  const diffBp = Math.round((level - cur) * 100);
-  if (diffBp === 0) return '<span class="tag tag-hold">HOLD</span>';
-  if (diffBp < 0) return '<span class="tag tag-cut">CUT ' + Math.abs(diffBp) + 'bp</span>';
-  return '<span class="tag tag-hike">HIKE +' + diffBp + 'bp</span>';
-}
-function daysUntil(dateStr) {
-  return Math.max(0, Math.ceil((new Date(dateStr) - new Date()) / 86400000));
-}
+/* ================= Helpers ================= */
+APP.rangeLabel = mid => (mid - 0.125).toFixed(2) + '–' + (mid + 0.125).toFixed(2);
+APP.daysUntil = ds => Math.max(0, Math.ceil((new Date(ds) - new Date()) / 86400000));
+APP.moveInfo = function(mid) {
+  const bp = Math.round((mid - APP.state.currentRateMid) * 100);
+  if (bp === 0) return { cls: 'hold', tag: 'tag-hold', txt: 'HOLD', color: 'var(--accent)', rgb: '79,143,247' };
+  if (bp < 0) return { cls: 'cut', tag: 'tag-cut', txt: 'CUT ' + Math.abs(bp) + 'bp', color: 'var(--green)', rgb: '52,211,153' };
+  return { cls: 'hike', tag: 'tag-hike', txt: 'HIKE +' + bp + 'bp', color: 'var(--red)', rgb: '248,113,113' };
+};
+APP.pct = p => (p * 100).toFixed(1) + '%';
 
-function render() {
-  state.currentRateMid = parseFloat(document.getElementById('cur-mid').value) || 4.375;
+/* ================= Render ================= */
+APP.render = function() {
+  const sel = document.getElementById('cur-range');
+  if (sel.value !== '') APP.state.currentRateMid = parseFloat(sel.value);
   document.querySelectorAll('[data-price-idx]').forEach(inp => {
-    state.meetings[+inp.dataset.priceIdx].futuresPrice = parseFloat(inp.value) || 0;
+    const v = parseFloat(inp.value);
+    if (v > 0) APP.state.contracts[+inp.dataset.priceIdx].price = v;
   });
+  const results = APP.compute(APP.state);
+  APP.results = results;
+  if (APP.state.selected >= results.length) APP.state.selected = 0;
 
-  const results = fedProbabilities(state);
-
-  // Summary strip
+  /* summary strip */
   const next = results[0];
-  const topBucket = next.buckets.slice().sort((a,b) => b.prob - a.prob)[0];
-  const diffBp = Math.round((topBucket.level - state.currentRateMid) * 100);
-  const action = diffBp === 0 ? 'hold' : (diffBp < 0 ? Math.abs(diffBp) + 'bp cut' : diffBp + 'bp hike');
+  const top = next.dist.slice().sort((a, b) => b.prob - a.prob)[0];
+  const mi = APP.moveInfo(top.mid);
   document.getElementById('summary').innerHTML =
-    '<div class="stat"><div class="stat-label">Current Target Range</div><div class="stat-value">' + rangeLabel(state.currentRateMid) + '</div></div>' +
-    '<div class="stat"><div class="stat-label">Next FOMC Meeting</div><div class="stat-value">' + next.date + '</div><div style="color:var(--text-muted);font-size:0.75rem;margin-top:4px">' + daysUntil(next.date) + ' days away</div></div>' +
-    '<div class="stat"><div class="stat-label">Market Consensus</div><div class="stat-value">' + (topBucket.prob*100).toFixed(1) + '%</div><div style="color:var(--text-muted);font-size:0.75rem;margin-top:4px">probability of ' + action + '</div></div>';
+    '<div class="stat"><div class="stat-label">Current Target Range</div><div class="stat-value">' + APP.rangeLabel(APP.state.currentRateMid) + '%</div><div class="stat-sub">midpoint ' + APP.state.currentRateMid.toFixed(3) + '%</div></div>' +
+    '<div class="stat"><div class="stat-label">Next FOMC Decision</div><div class="stat-value">' + next.label.replace('*','') + '</div><div class="stat-sub">' + APP.daysUntil(next.date) + ' days away</div></div>' +
+    '<div class="stat"><div class="stat-label">Market Consensus</div><div class="stat-value" style="color:' + mi.color + '">' + APP.pct(top.prob) + '</div><div class="stat-sub">probability of ' + mi.txt.toLowerCase().replace('bp',' bp') + ' &rarr; ' + APP.rangeLabel(top.mid) + '%</div></div>' +
+    '<div class="stat"><div class="stat-label">Futures Data As Of</div><div class="stat-value" style="font-size:1.05rem">' + APP.DATA_AS_OF + '</div><div class="stat-sub">editable below &mdash; illustrative</div></div>';
 
-  // Meeting cards
-  document.getElementById('meetings').innerHTML = results.map(r => {
-    const bars = r.buckets.map(b =>
-      '<div class="bucket ' + moveClass(b.level, state.currentRateMid) + '">' +
-        '<div class="bucket-row"><span>' + rangeLabel(b.level) + moveTag(b.level, state.currentRateMid) + '</span><span>' + (b.prob*100).toFixed(1) + '%</span></div>' +
-        '<div class="bar-track"><div class="bar-fill" style="width:' + (b.prob*100).toFixed(1) + '%"></div></div>' +
-      '</div>'
-    ).join('');
-    const chg = Math.round(r.changeFromCurrent * 100);
-    return '<div class="meeting-card">' +
-      '<div class="meeting-head"><span class="meeting-date">FOMC ' + r.date + '</span><span class="meeting-days">' + daysUntil(r.date) + 'd</span></div>' +
-      '<div class="meeting-exp">Expected rate after meeting: <strong>' + r.expectedRate.toFixed(3) + '%</strong> (' + (chg >= 0 ? '+' : '') + chg + 'bp vs today)</div>' +
-      bars + '</div>';
-  }).join('');
-
-  // Price table
-  document.getElementById('price-rows').innerHTML = state.meetings.map((m, i) =>
-    '<tr><td>' + m.date + '</td><td>' + m.contract + '</td>' +
-    '<td><input type="number" step="0.005" value="' + m.futuresPrice.toFixed(3) + '" data-price-idx="' + i + '" onchange="render()"></td>' +
-    '<td>' + (100 - m.futuresPrice).toFixed(3) + '%</td></tr>'
+  /* meeting tabs */
+  document.getElementById('tabs').innerHTML = results.map((r, i) =>
+    '<button class="tab' + (i === APP.state.selected ? ' active' : '') + '" onclick="APP.select(' + i + ')">' +
+    r.label + '<small>' + APP.daysUntil(r.date) + ' days &middot; E[rate] ' + r.expected.toFixed(2) + '%</small></button>'
   ).join('');
 
-  document.getElementById('data-note').textContent =
-    'Based on 30-Day Fed Fund futures (ZQ) prices as of ' + DATA_AS_OF + ' (illustrative demo data - edit prices below with live quotes from cmegroup.com).';
-}
+  /* histogram for selected meeting (CME style) */
+  const r = results[APP.state.selected];
+  const maxP = Math.max.apply(null, r.dist.map(b => b.prob));
+  document.getElementById('histo').innerHTML = r.dist.map(b => {
+    const m = APP.moveInfo(b.mid);
+    const hPct = Math.max((b.prob / Math.max(maxP, 0.0001)) * 92, 1);
+    return '<div class="hcol"><div class="hpct" style="color:' + m.color + '">' + APP.pct(b.prob) + '</div>' +
+      '<div class="hbar" style="height:' + hPct + '%;background:linear-gradient(180deg, rgba(' + m.rgb + ',0.95), rgba(' + m.rgb + ',0.55))"></div></div>';
+  }).join('');
+  document.getElementById('hlabels').innerHTML = r.dist.map(b => {
+    const m = APP.moveInfo(b.mid);
+    return '<div class="hlab"><div class="rng">' + APP.rangeLabel(b.mid) + '%</div><span class="tag ' + m.tag + '">' + m.txt + '</span></div>';
+  }).join('');
 
-render();
+  /* CME-style table under the chart */
+  document.getElementById('dist-table').innerHTML =
+    '<thead><tr><th>Target Range</th><th>Move</th><th>Probability</th><th class="right">%</th></tr></thead><tbody>' +
+    r.dist.map(b => {
+      const m = APP.moveInfo(b.mid);
+      return '<tr><td>' + APP.rangeLabel(b.mid) + '%</td>' +
+        '<td style="font-family:var(--font)"><span class="tag ' + m.tag + '">' + m.txt + '</span></td>' +
+        '<td><div class="prob-cellbar"><div style="width:' + (b.prob * 100).toFixed(1) + '%;background:rgba(' + m.rgb + ',0.75)"></div></div></td>' +
+        '<td class="right" style="font-weight:700;color:' + m.color + '">' + APP.pct(b.prob) + '</td></tr>';
+    }).join('') + '</tbody>';
+
+  /* all-meetings matrix (Investing.com one-scroll style) */
+  const allMids = [...new Set(results.flatMap(x => x.dist.map(b => b.mid)))].sort((a, b) => b - a);
+  let mhtml = '<thead><tr><th>FOMC Meeting</th>' +
+    allMids.map(mid => '<th>' + APP.rangeLabel(mid) + '%<br><span style="font-weight:400;text-transform:none;letter-spacing:0">' + APP.moveInfo(mid).txt.toLowerCase() + '</span></th>').join('') +
+    '<th class="right">E[rate]</th></tr></thead><tbody>';
+  for (const x of results) {
+    const probByMid = new Map(x.dist.map(b => [b.mid, b.prob]));
+    mhtml += '<tr><td><span class="mdate">' + x.label + '</span><br><span class="mdays">' + APP.daysUntil(x.date) + ' days</span></td>';
+    for (const mid of allMids) {
+      const p = probByMid.get(mid);
+      if (!p) { mhtml += '<td><span class="mcell" style="color:var(--text-muted)">&mdash;</span></td>'; continue; }
+      const m = APP.moveInfo(mid);
+      const alpha = Math.min(0.12 + p * 0.8, 0.9);
+      const bold = p >= 0.5 ? 'font-weight:800;' : '';
+      mhtml += '<td><span class="mcell" style="' + bold + 'background:rgba(' + m.rgb + ',' + alpha.toFixed(2) + ');color:#fff">' + APP.pct(p) + '</span></td>';
+    }
+    mhtml += '<td class="right">' + x.expected.toFixed(2) + '%</td></tr>';
+  }
+  mhtml += '</tbody>';
+  document.getElementById('matrix').innerHTML = mhtml;
+
+  /* inputs: full monthly contract strip */
+  document.getElementById('price-table').innerHTML =
+    '<thead><tr><th>Contract Month</th><th>Contract</th><th style="font-family:var(--font)">FOMC?</th><th class="right">Price</th><th class="right">Implied Avg Rate</th></tr></thead><tbody>' +
+    APP.state.contracts.map((c, i) => {
+      const mtg = APP.state.meetings.find(m => m.date.substring(0, 7) === c.ym);
+      return '<tr><td>' + c.ym + '</td><td>' + c.label + '</td>' +
+        '<td style="font-family:var(--font)">' + (mtg ? '<span class="tag tag-hold">' + mtg.label.replace('*', '') + '</span>' : '<span style="color:var(--text-muted)">no meeting</span>') + '</td>' +
+        '<td class="right"><input type="number" step="0.005" value="' + c.price.toFixed(3) + '" data-price-idx="' + i + '" onchange="APP.render()"></td>' +
+        '<td class="right">' + (100 - c.price).toFixed(3) + '%</td></tr>';
+    }).join('') + '</tbody>';
+  document.getElementById('asof-note').textContent =
+    'Prices are illustrative as of ' + APP.DATA_AS_OF + '. * = tentative meeting date (Fed publishes the calendar ~2 years ahead).';
+};
+
+APP.select = function(i) { APP.state.selected = i; APP.render(); };
+
+/* boot: populate current-range selector then render */
+(function() {
+  const sel = document.getElementById('cur-range');
+  const mids = [];
+  for (let m = 5.625; m >= 2.125; m -= 0.25) mids.push(+m.toFixed(3));
+  sel.innerHTML = mids.map(m =>
+    '<option value="' + m + '"' + (Math.abs(m - APP.state.currentRateMid) < 1e-9 ? ' selected' : '') + '>' + APP.rangeLabel(m) + '%</option>'
+  ).join('');
+  APP.render();
+})();
 </script>
 </body>
 </html>

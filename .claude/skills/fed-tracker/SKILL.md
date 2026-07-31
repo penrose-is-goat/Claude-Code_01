@@ -21,22 +21,22 @@ The implied rate for that month IS the expected fed funds rate for the whole
 month (no meeting = no change possible). These months anchor the calculation.
 
 ### 3. Months WITH an FOMC meeting
-The month is split: days before the meeting run at the "old" rate, days from
-(meeting day + 1) to month-end run at the "new" rate.
+Prefer the CLEAN READ: if the month AFTER the meeting has no FOMC meeting,
+that month's implied average IS the expected post-meeting rate. Store the
+FULL monthly contract strip (not just meeting months) to enable this.
 
+Only when the next month also has a meeting, split the meeting month:
 ```
 impliedAvg = (d_before/N) * rateStart + (d_after/N) * rateEnd
-```
-- `N` = days in month
-- `d_before` = days before and including meeting day
-- `d_after` = N - d_before
-
-Solve for the expected post-meeting rate:
-```
 rateEnd = (N * impliedAvg - d_before * rateStart) / d_after
 ```
-Where `rateStart` comes from the prior month's contract (or current EFFR for
-the front month).
+- `N` = days in month, `d_before` = days up to and including meeting day,
+  `d_after` = N - d_before, `rateStart` = chained expected rate going in.
+
+WARNING: for meetings late in the month (e.g. the 27th), d_after is tiny
+(3-4 days) and the split solve amplifies price noise into wild rate swings.
+That is exactly why the clean next-month read must take priority - CME does
+the same.
 
 ### 4. Converting expected rate to probabilities
 The Fed moves in 25bp increments. IMPORTANT: the bucket grid must be anchored
@@ -53,10 +53,23 @@ p(lower) = 1 - p(upper)
 
 Label each midpoint as its range: mid 4.375 -> "4.25-4.50%".
 
-For multi-meeting horizons, chain the probabilities: each later meeting's
-distribution is conditional on each earlier outcome (probability tree). For
-a simple tracker, computing the unconditional expected rate per meeting and
-mapping to the two nearest 25bp levels is what CME FedWatch shows per-meeting.
+For multi-meeting horizons, chain a BINOMIAL TREE on the 25bp grid so
+distributions widen for later meetings (like real FedWatch):
+
+```
+dist = {0: 1}                       // key = 25bp steps from current mid
+for each meeting (expected rates E_1..E_n, E_0 = current mid):
+  move = E_i - E_{i-1}
+  newDist = {}
+  for (k, p) of dist:
+    target = currentMid + k*0.25 + move
+    kf = floor((target - currentMid)/0.25); frac = (target - (currentMid+kf*0.25))/0.25
+    newDist[kf]   += p * (1-frac)
+    newDist[kf+1] += p * frac
+  dist = newDist                    // meeting i's outcome distribution
+```
+Meeting 1 reduces to the simple two-bucket split; meeting 4+ shows 3-5
+buckets. Verify every meeting's distribution sums to exactly 1.
 
 ### 5. Current target range
 The Fed targets a 25bp RANGE (e.g. 4.25-4.50%). The EFFR sits near the
@@ -120,15 +133,26 @@ function fedProbabilities(cfg) {
 }
 ```
 
-## Display conventions (match CME/Investing.com)
+## Display conventions (blend of CME + Investing.com)
 
-- Per-meeting card: meeting date, days until, probability bars per target
-  range bucket (e.g. "375-400: 62.3%"), colored green for cuts / red for
-  hikes / gray for hold.
-- Probability bars: horizontal, sorted by rate level descending.
-- Show "current target range" prominently at top.
-- Show the futures data date ("Based on ZQ futures as of ...").
-- A summary strip: "Next meeting: Sep 17 - 68% chance of 25bp cut".
+The layout blends both references deliberately:
+1. **Summary strip** (top): current target range, next FOMC date with
+   countdown, market-consensus stat ("81% probability of 25bp cut"),
+   data-as-of tile.
+2. **CME-style selected meeting** (main card): meeting tab selector
+   (each tab shows date + days + E[rate]); vertical bar HISTOGRAM of the
+   probability distribution (bars colored green=cut / blue=hold /
+   red=hike, animated height); CME-style TABLE underneath: target range |
+   move tag | horizontal probability bar | percent.
+3. **Investing.com-style all-meetings matrix** (second card): one table,
+   rows = every FOMC meeting, columns = union of target ranges sorted
+   descending, cells = probability with heat-colored background (alpha
+   scales with probability, hue = move direction). All meetings visible in
+   ONE scroll - no clicking between graphs.
+4. **Inputs card**: current-target-range dropdown + editable full contract
+   strip (each row tagged with its FOMC meeting or "no meeting");
+   everything recomputes on change. Mark unpublished meeting dates with *
+   as tentative.
 
 ## Testing the math
 

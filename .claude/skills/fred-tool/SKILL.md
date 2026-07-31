@@ -78,11 +78,35 @@ Notes: SP500/DJIA/NASDAQCOM only have ~10 years of history on FRED
 a plotted line. Transform `yoy` = percent change vs value 12 months earlier
 (compute client-side after fetch; match by date offset, monthly series).
 
-### Matching rule
-Lowercase the query; a series matches if ANY alias appears as a substring.
-Sort matches by alias position in the query so chart order follows the
-sentence. If nothing matches, show the series picker with a "no match"
-message listing available keywords.
+### Matching rule (fuzzy - NOT plain substrings)
+Plain substring matching fails on real queries ("10 year US treasury
+yields" breaks the substring "10 year treasury"). Use token-based fuzzy
+matching; there is no LLM involved - it is all local:
+
+1. **Normalize**: lowercase; "&" -> " and "; "10-year"/"10yr"/"10 yr" ->
+   "10 year"; number words (ten->10); singularize (yields->yield,
+   treasuries->treasury); "s and p 500" -> "sp500".
+2. **Content tokens**: run BOTH the query and every alias through the same
+   tokenizer, dropping stopwords (show/me/the/us/for...) but KEEPING soft
+   domain words (index/rate/yield/price) and all numbers. Never put
+   "year"/"month" in the stopword list - they carry maturity meaning.
+3. **Fuzzy token equality**: exact match; else Damerau-Levenshtein <=1 for
+   len>=5 tokens, <=2 for len>=8 (tresury->treasury, willshire->wilshire);
+   prefix match for len>=4. NUMBERS MUST MATCH EXACTLY ("2" never fuzzes
+   to "20").
+4. **Alias matching**: alias tokens must appear in order in the query with
+   at most 2 gap tokens between them ("10 year US treasury" matches alias
+   [10, year, treasury] with 1 gap). Fallback: unordered matching for
+   digit-free aliases only, max 1 gap ("spread high yield").
+5. **Scoring & consumption**: score = avg similarity + 0.15*aliasLength -
+   0.05*gaps; accept >= 0.9. Process matches best-first, consuming query
+   token positions - a match whose tokens are ALL consumed is dropped
+   (stops "cpi" double-charting inside "core cpi").
+6. **No match**: run a per-token fuzzy scan to build "Did you mean ..."
+   suggestions instead of a generic error.
+
+Headless-test this parser with 50+ cases (misspellings, word gaps,
+reversed order, maturity-vs-duration number collisions) before shipping.
 
 ### Time parsing (regex, first match wins)
 - `last|past N years|yrs|y` and bare `N years` -> start = today - N years
@@ -93,7 +117,23 @@ message listing available keywords.
 - `max|all time|entire history` -> start = 1900-01-01
 - default -> 10 years
 
-## Chart rendering (Chart.js)
+### Time parsing gotcha
+normalizeQuery collapses plurals and hyphens BEFORE time parsing, so "last
+10 years" arrives as "last 10 year" - identical to a maturity phrase. Parse
+duration ONLY with a last/past/for prefix, or with a negative lookahead
+excluding maturity words (treasury/yield/note/bond/mortgage/rate/...).
+Also support "since YYYY", "from YYYY to YYYY", bare "YYYY YYYY" (hyphens
+became spaces), "ytd", "max/all time/going back". Wilshire 5000 and other
+long-history series pair naturally with "max".
+
+## Chart rendering (self-contained canvas - no Chart.js)
+
+The tool ships its own ~150-line canvas renderer instead of Chart.js so the
+single file works offline and inside CSP-restricted hosted previews:
+multi-series lines with null-skip, dual y-axes with per-axis linear/log,
+grid + compact tick formatting (K/M/B), rotated axis titles, recession
+bands, hover crosshair with per-series dots and an HTML tooltip,
+devicePixelRatio-aware sizing, resize redraw.
 
 - Multi-series line chart, `pointRadius:0`, distinct palette colors.
 - **Dual y-axes**: group series by units. First unit group -> left axis 'yL',
