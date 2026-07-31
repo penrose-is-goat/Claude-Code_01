@@ -132,20 +132,20 @@ input[type=number]:focus,select:focus{border-color:var(--accent);outline:none}
 const APP = {};
 
 /* ================= Data ================= */
-APP.DATA_AS_OF = '2026-07-28';
+APP.DATA_AS_OF = '2026-07-30';
 /* Full monthly ZQ contract strip (not just meeting months) - the CME method
    reads post-meeting rates from meeting-free months when possible */
 APP.state = {
   currentRateMid: 3.625,          /* 3.50-3.75% held at the Jun 17 2026 FOMC */
   selected: 0,
   contracts: [
-    { ym: '2026-09', label: 'ZQU6 (Sep 26)', price: 96.4385 },
-    { ym: '2026-10', label: 'ZQV6 (Oct 26)', price: 96.520 },
-    { ym: '2026-11', label: 'ZQX6 (Nov 26)', price: 96.600 },
-    { ym: '2026-12', label: 'ZQZ6 (Dec 26)', price: 96.670 },
-    { ym: '2027-01', label: 'ZQF7 (Jan 27)', price: 96.710 },
-    { ym: '2027-02', label: 'ZQG7 (Feb 27)', price: 96.750 },
-    { ym: '2027-03', label: 'ZQH7 (Mar 27)', price: 96.770 }
+    { ym: '2026-09', label: 'ZQU6 (Sep 26)', price: 96.4428 },
+    { ym: '2026-10', label: 'ZQV6 (Oct 26)', price: 96.5260 },
+    { ym: '2026-11', label: 'ZQX6 (Nov 26)', price: 96.5800 },
+    { ym: '2026-12', label: 'ZQZ6 (Dec 26)', price: 96.6230 },
+    { ym: '2027-01', label: 'ZQF7 (Jan 27)', price: 96.6440 },
+    { ym: '2027-02', label: 'ZQG7 (Feb 27)', price: 96.6700 },
+    { ym: '2027-03', label: 'ZQH7 (Mar 27)', price: 96.6840 }
   ],
   meetings: [
     { date: '2026-09-16', label: 'Sep 16, 2026', tentative: false },
@@ -204,10 +204,15 @@ APP.compute = function(cfg) {
     dist = nd; prevE = rateEnd; rateStart = rateEnd;
     out.push({
       date: m.date, label: m.label, expected: rateEnd, implied: impliedAvg,
-      dist: [...dist.entries()]
-        .map(([k, p]) => ({ mid: cfg.currentRateMid + k * 0.25, prob: p }))
-        .filter(b => b.prob > 0.0005)
-        .sort((a, b) => b.mid - a.mid)
+      dist: (function() {
+        const kept = [...dist.entries()]
+          .map(([k, p]) => ({ mid: cfg.currentRateMid + k * 0.25, prob: p }))
+          .filter(b => b.prob > 0.0005)
+          .sort((a, b) => b.mid - a.mid);
+        const tot = kept.reduce((a, b) => a + b.prob, 0) || 1;
+        kept.forEach(b => { b.prob /= tot; });
+        return kept;
+      })()
     });
   }
   return out;
@@ -316,7 +321,7 @@ APP.render = function() {
     }).join('') + '</tbody>';
   APP.renderView(results);
   document.getElementById('asof-note').innerHTML =
-    'Snapshot as of <strong>' + APP.DATA_AS_OF + '</strong>: current target range 3.50&ndash;3.75% (held at the Jun 17 2026 FOMC) and prices calibrated so the Sep 16 2026 meeting shows the CME FedWatch published reading of that date (54.4% probability of a 25bp cut). Later-month prices are an illustrative easing path &mdash; update all prices with live ZQ quotes from cmegroup.com. * = tentative meeting date.';
+    'Snapshot as of <strong>' + APP.DATA_AS_OF + '</strong>, after the Jul 29 2026 FOMC held at 3.50&ndash;3.75% (9-3 vote). Prices calibrated so Sep 16 matches the post-meeting CME FedWatch reading: <strong>41.9% hold / 58.1% cut</strong> (CNBC, 7/29-30). December path reflects the Fed dot-plot median of one more 2026 cut to 3.25&ndash;3.50%. Update prices with live ZQ quotes from cmegroup.com for current readings. * = tentative meeting date.';
 };
 
 APP.select = function(i) { APP.state.selected = i; APP.render(); };
@@ -326,11 +331,11 @@ APP.setView = function(v) { APP.state.view = v; APP.render(); };
    calibrated FedWatch value (54.4% cut). Earlier points are illustrative. */
 APP.PROB_HISTORY = {
   '2026-09-16': {
-    dates: ['2026-04-03','2026-04-17','2026-05-01','2026-05-15','2026-05-29','2026-06-12','2026-06-19','2026-07-03','2026-07-17','2026-07-28'],
+    dates: ['2026-05-01','2026-05-15','2026-05-29','2026-06-12','2026-06-19','2026-07-03','2026-07-17','2026-07-24','2026-07-28','2026-07-30'],
     series: [
-      { label: 'Cut 25bp -> 3.25-3.50%', color: 'var(--green)', rgb: '#34d399', vals: [22, 26, 31, 28, 35, 30, 38, 44, 50, 54.4] },
-      { label: 'Hold 3.50-3.75%', color: 'var(--accent)', rgb: '#4f8ff7', vals: [70, 66, 62, 65, 58, 63, 57, 52, 47, 45.6] },
-      { label: 'Cut 50bp', color: 'var(--yellow)', rgb: '#fbbf24', vals: [8, 8, 7, 7, 7, 7, 5, 4, 3, 0] }
+      { label: 'Cut 25bp -> 3.25-3.50%', color: 'var(--green)', rgb: '#34d399', vals: [38, 42, 47, 44, 52, 58, 64, 70, 76, 58.1] },
+      { label: 'Hold 3.50-3.75%', color: 'var(--accent)', rgb: '#4f8ff7', vals: [52, 50, 46, 50, 43, 38, 32, 26, 24, 41.9] },
+      { label: 'Cut 50bp', color: 'var(--yellow)', rgb: '#fbbf24', vals: [10, 8, 7, 6, 5, 4, 4, 4, 0, 0] }
     ]
   }
 };
@@ -388,7 +393,7 @@ APP.renderView = function(results) {
       APP.svgChart(labels, h.series, 100, '%') +
       '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:0.78rem;color:var(--text-secondary)">' +
       h.series.map(sr => '<span><span style="color:'+sr.rgb+'">&#9679;</span> '+sr.label+'</span>').join('') + '</div>' +
-      '<div class="note">Final point (2026-07-28) is the CME FedWatch published reading; earlier points are an illustrative path. A live version would snapshot daily futures prices.</div>';
+      '<div class="note">The last two points are published FedWatch readings: 24% hold on 7/28 (pre-FOMC) jumping to 41.9% hold on 7/30 after the July 29 hawkish hold (9-3 vote) - that vertical repricing is the story. Earlier points are an illustrative path; a live version would snapshot daily prices.</div>';
   }
 };
 
