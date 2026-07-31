@@ -240,28 +240,39 @@ APP.moveInfo = function(mid) {
 APP.pct = p => (p * 100).toFixed(1) + '%';
 
 /* ================= Render ================= */
-APP.render = function() {
+/* Read the DOM ONLY when the user actually edited something. render() must
+   never do this, or programmatic changes get clobbered by stale inputs. */
+APP.syncFromDom = function() {
   const sel = document.getElementById('cur-range');
-  if (sel.value !== '') APP.state.currentRateMid = parseFloat(sel.value);
-  else if (sel.options && sel.options.length > 1) APP.state.currentRateMid = null; /* user cleared it */
-  /* if the select isn't populated yet, keep restored state - never wipe saved input */
-  APP.persist();
+  if (sel) {
+    if (sel.value !== '') APP.state.currentRateMid = parseFloat(sel.value);
+    else if (sel.options && sel.options.length > 1) APP.state.currentRateMid = null;
+  }
   APP.badInputs = [];
   document.querySelectorAll('[data-price-idx]').forEach(inp => {
     const i = +inp.dataset.priceIdx;
     const raw = (inp.value || '').trim();
-    if (raw === '') { APP.state.contracts[i].price = null; return; }
+    const c = APP.state.contracts[i];
+    if (!c) return;
+    c.raw = raw;                       /* keep what the user typed, even if invalid */
+    if (raw === '') { c.price = null; return; }
     const v = parseFloat(raw);
-    if (v > 80 && v < 100) { APP.state.contracts[i].price = v; }
-    else { APP.state.contracts[i].price = null; APP.badInputs.push(i); }
+    if (v > 80 && v < 100) { c.price = v; }
+    else { c.price = null; APP.badInputs.push(i); }
   });
   document.querySelectorAll('[data-date-idx]').forEach(inp => {
     if (/^\d{4}-\d{2}-\d{2}$/.test(inp.value)) {
       const m = APP.state.meetings[+inp.dataset.dateIdx];
+      if (!m) return;
       m.date = inp.value;
       m.label = new Date(inp.value + 'T12:00:00Z').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric', timeZone:'UTC' }) + (m.tentative ? '*' : '');
     }
   });
+  APP.persist();
+};
+
+APP.render = function() {
+  if (!APP.badInputs) APP.badInputs = [];
   APP.persist();
   const results = APP.compute(APP.state);
   APP.results = results;
@@ -361,7 +372,7 @@ APP.renderInputs = function() {
       const bad = APP.badInputs && APP.badInputs.indexOf(i) >= 0;
       return '<tr><td>' + c.ym + '</td><td>' + c.label + '</td>' +
         '<td style="font-family:var(--font)">' + (mtg ? '<span class="tag tag-hold">' + mtg.label.replace('*', '') + '</span>' : '<span style="color:var(--text-muted)">no meeting</span>') + '</td>' +
-        '<td class="right"><input type="number" step="0.005" placeholder="e.g. 96.44" value="' + (c.price != null ? c.price.toFixed(4) : '') + '" data-price-idx="' + i + '"' +
+        '<td class="right"><input type="number" step="0.005" placeholder="e.g. 96.44" value="' + (c.raw != null && c.raw !== '' ? c.raw : (c.price != null ? c.price.toFixed(4) : '')) + '" data-price-idx="' + i + '"' +
         (bad ? ' style="border-color:var(--red)"' : '') + '></td>' +
         '<td class="right">' + (c.price != null ? (100 - c.price).toFixed(3) + '%'
           : (bad ? '<span style="color:var(--red)">not 80-100</span>' : '&mdash;')) + '</td></tr>';
@@ -375,6 +386,7 @@ APP.renderInputs = function() {
     ).join('') + '</tbody>';
   /* P5: the warning is about the PRICES being invented - it must not vanish
      just because the user changed the target range. */
+  APP.state.contracts.forEach((c, i) => { if (c.price != null && APP.badInputs.indexOf(i) < 0) c.raw = null; });
   APP.usingExample = APP.state.contracts.every((c, i) => c.price === APP.EXAMPLE.prices[i]);
   const anyPrice = APP.state.contracts.some(c => c.price != null);
   document.getElementById('example-banner').innerHTML = APP.usingExample
@@ -520,19 +532,21 @@ document.addEventListener('click', function(e) {
   else if (el.dataset.action === 'snap') APP.saveSnap();
   else if (el.dataset.action === 'example') {
     APP.state.currentRateMid = APP.EXAMPLE.mid;
-    APP.state.contracts.forEach((c, i) => { c.price = APP.EXAMPLE.prices[i]; });
+    APP.state.contracts.forEach((c, i) => { c.price = APP.EXAMPLE.prices[i]; c.raw = null; });
+    APP.badInputs = [];
     const sel = document.getElementById('cur-range'); if (sel) sel.value = String(APP.EXAMPLE.mid);
     APP.persist(); APP.render();
   }
   else if (el.dataset.action === 'clear') {
     APP.state.currentRateMid = null;
-    APP.state.contracts.forEach(c => { c.price = null; });
+    APP.state.contracts.forEach(c => { c.price = null; c.raw = null; });
+    APP.badInputs = [];
     const sel = document.getElementById('cur-range'); if (sel) sel.value = '';
     APP.persist(); APP.render();
   }
 });
 document.addEventListener('change', function(e) {
-  if (e.target.id === 'cur-range' || e.target.hasAttribute('data-price-idx') || e.target.hasAttribute('data-date-idx')) APP.render();
+  if (e.target.id === 'cur-range' || e.target.hasAttribute('data-price-idx') || e.target.hasAttribute('data-date-idx')) { APP.syncFromDom(); APP.render(); }
 });
 
 /* boot: populate current-range selector then render */

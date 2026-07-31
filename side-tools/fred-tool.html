@@ -524,6 +524,7 @@ FT.run = async function() {
 };
 
 FT.load = async function() {
+  FT.pendingMsg = null;
   const r = FT.state.range;
   FT.setStatus('<span class="spinner"></span>Fetching ' + FT.state.series.map(s => s.def.id).join(', ') + ' from FRED...');
   document.getElementById('go').disabled = true;
@@ -549,8 +550,8 @@ FT.load = async function() {
     const emptyWindow = FT.state.series.filter(x => x.imported && x.fullObs && x.fullObs.length && !x.obs.length);
     if (emptyWindow.length) {
       emptyWindow.forEach(x => { x.obs = x.fullObs; });
-      FT.setStatus('No data for ' + emptyWindow.map(x => x.def.id).join(', ') + ' in that window (imported data covers ' +
-        emptyWindow[0].fullObs[0].date + ' to ' + emptyWindow[0].fullObs[emptyWindow[0].fullObs.length-1].date + '). Showing its full range instead.', true);
+      FT.pendingMsg = 'No data for ' + emptyWindow.map(x => x.def.id).join(', ') + ' in that window (imported data covers ' +
+        emptyWindow[0].fullObs[0].date + ' to ' + emptyWindow[0].fullObs[emptyWindow[0].fullObs.length-1].date + '). Showing its full range instead.';
       FT.state.range = { start: emptyWindow[0].fullObs[0].date, end: emptyWindow[0].fullObs[emptyWindow[0].fullObs.length-1].date };
     }
     const missing = FT.state.series.filter(x => !x.obs || !x.obs.length);
@@ -565,11 +566,13 @@ FT.load = async function() {
     FT.state.series = FT.state.series.filter(x => x.obs && x.obs.length);
     FT.assignAxes();
     document.getElementById('chart-card').style.display = 'block';
-    document.getElementById('d-start').value = r.start;
-    document.getElementById('d-end').value = r.end;
+    document.getElementById('d-start').value = FT.state.range.start;
+    document.getElementById('d-end').value = FT.state.range.end;
     if (document.getElementById('opt-rec').checked) await FT.loadRecessions();
     FT.redraw();
-    FT.setStatus(missing.length ? ('Charted ' + FT.state.series.length + ' series. No data available for: ' + missing.map(x => x.def.id).join(', ') + ' - import a CSV for those.') : '');
+    if (missing.length) FT.setStatus('Charted ' + FT.state.series.length + ' series. No data available for: ' + missing.map(x => x.def.id).join(', ') + ' - import a CSV for those.', true);
+    else if (FT.pendingMsg) { FT.setStatus(FT.pendingMsg, true); FT.pendingMsg = null; }
+    else FT.setStatus('');
   } catch (e) {
     FT.setStatus('Error: ' + e.message, true);
   } finally {
@@ -655,6 +658,7 @@ FT.drawChart = function(hoverIdx) {
     const pad = (mx - mn) * 0.06;
     return { lo: mn - pad, hi: mx + pad, log: false };
   }
+  const hasL = rd.datasets.some(d => d.axis === 'yL');
   const rL = axisRange('yL', rd.logL);
   const rR = rd.usesR ? axisRange('yR', rd.logR) : null;
   function yPix(v, r) {
@@ -683,16 +687,18 @@ FT.drawChart = function(hoverIdx) {
     ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
     const fracVal = r => { const raw = r.hi - (t / TICKS) * (r.hi - r.lo); return r.log ? Math.pow(10, raw) : raw; };
     ctx.textAlign = 'right';
-    ctx.fillText(FT.fmtNum(fracVal(rL)), padL - 6, y + 3);
+    if (hasL) ctx.fillText(FT.fmtNum(fracVal(rL)), padL - 6, y + 3);
     if (rR) { ctx.textAlign = 'left'; ctx.fillText(FT.fmtNum(fracVal(rR)), W - padR + 6, y + 3); }
   }
   ctx.textAlign = 'center';
   const step = Math.max(1, Math.floor(n / 8));
   for (let i = 0; i < n; i += step) ctx.fillText(rd.labels[i].substring(0, 7), xPix(i), H - 10);
 
-  ctx.save(); ctx.fillStyle = '#9aa0a6'; ctx.font = '10px Inter, sans-serif';
-  ctx.translate(12, padT + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center';
-  ctx.fillText(rd.titleL, 0, 0); ctx.restore();
+  if (hasL) {
+    ctx.save(); ctx.fillStyle = '#9aa0a6'; ctx.font = '10px Inter, sans-serif';
+    ctx.translate(12, padT + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center';
+    ctx.fillText(rd.titleL, 0, 0); ctx.restore();
+  }
   if (rR) { ctx.save(); ctx.fillStyle = '#9aa0a6'; ctx.font = '10px Inter, sans-serif';
     ctx.translate(W - 10, padT + ph / 2); ctx.rotate(Math.PI / 2); ctx.textAlign = 'center';
     ctx.fillText(rd.titleR, 0, 0); ctx.restore(); }
@@ -747,6 +753,9 @@ FT.onHover = function(ev) {
 };
 
 FT.redraw = function() {
+  /* drop series with no observations BEFORE anything is painted - otherwise
+     ghost chips are live for a frame and their x/L-R act on the wrong index */
+  FT.state.series = FT.state.series.filter(s => s.obs && s.obs.length);
   if (!FT.state.series.length) { document.getElementById('chart-card').style.display = 'none'; return; }
   const norm = document.getElementById('opt-norm').checked;
   const { dates, rows } = FT.forwardFill(FT.state.series);
@@ -783,7 +792,6 @@ FT.redraw = function() {
   FT.renderChips();
   FT.renderRangeBtns();
   try { FT.drawChart(); } catch (err) { FT.setStatus('Chart render error: ' + err.message, true); }
-  FT.state.series = FT.state.series.filter(s => s.obs && s.obs.length);
   const label = document.getElementById('mode-label');
   const imported = FT.state.series.filter(s => s.imported).length;
   const fetched = FT.state.series.length - imported;
@@ -812,11 +820,14 @@ FT.renderChips = function() {
 };
 
 FT.flipAxis = function(i) {
-  FT.state.series[i].axis = FT.state.series[i].axis === 'yL' ? 'yR' : 'yL';
+  const s = FT.state.series[i];
+  if (!s) return;
+  s.axis = s.axis === 'yL' ? 'yR' : 'yL';
   FT.redraw();
 };
 FT.removeSeries = function(i) {
-  const gone = FT.state.series[i] ? FT.state.series[i].def.id : '';
+  if (!FT.state.series[i]) return;
+  const gone = FT.state.series[i].def.id;
   FT.state.series.splice(i, 1);
   if (!FT.state.series.length) {
     document.getElementById('chart-card').style.display = 'none';
@@ -915,7 +926,7 @@ document.addEventListener('change', function(e) {
   const id = e.target.id;
   if (id === 'd-start' || id === 'd-end') FT.customRange();
   else if (id === 'opt-rec') FT.toggleRecessions();
-  else if (id === 'opt-norm' || id === 'opt-logl' || id === 'opt-logr') FT.redraw();
+  else if (id === 'opt-norm' || id === 'opt-logl' || id === 'opt-logr') { FT.setStatus(''); FT.redraw(); }
 });
 </script>
 </body>
