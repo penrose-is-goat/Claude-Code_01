@@ -100,7 +100,7 @@ input[type=number]:focus,select:focus{border-color:var(--accent);outline:none}
   <div class="card-sub">Edit and everything above recomputes. Get live ZQ (30-Day Fed Funds) quotes free at cmegroup.com</div>
   <div style="margin-bottom:14px">
     <label style="font-size:0.82rem;color:var(--text-secondary)">Current target range:
-      <select id="cur-range" onchange="APP.render()"></select>
+      <select id="cur-range"></select>
     </label>
   </div>
   <table id="price-table"></table>
@@ -119,20 +119,20 @@ input[type=number]:focus,select:focus{border-color:var(--accent);outline:none}
 const APP = {};
 
 /* ================= Data ================= */
-APP.DATA_AS_OF = '2026-07-29';
+APP.DATA_AS_OF = '2026-07-28';
 /* Full monthly ZQ contract strip (not just meeting months) - the CME method
    reads post-meeting rates from meeting-free months when possible */
 APP.state = {
-  currentRateMid: 4.375,
+  currentRateMid: 3.625,          /* 3.50-3.75% held at the Jun 17 2026 FOMC */
   selected: 0,
   contracts: [
-    { ym: '2026-09', label: 'ZQU6 (Sep 26)', price: 95.720 },
-    { ym: '2026-10', label: 'ZQV6 (Oct 26)', price: 95.860 },
-    { ym: '2026-11', label: 'ZQX6 (Nov 26)', price: 96.050 },
-    { ym: '2026-12', label: 'ZQZ6 (Dec 26)', price: 96.160 },
-    { ym: '2027-01', label: 'ZQF7 (Jan 27)', price: 96.210 },
-    { ym: '2027-02', label: 'ZQG7 (Feb 27)', price: 96.300 },
-    { ym: '2027-03', label: 'ZQH7 (Mar 27)', price: 96.340 }
+    { ym: '2026-09', label: 'ZQU6 (Sep 26)', price: 96.4385 },
+    { ym: '2026-10', label: 'ZQV6 (Oct 26)', price: 96.520 },
+    { ym: '2026-11', label: 'ZQX6 (Nov 26)', price: 96.600 },
+    { ym: '2026-12', label: 'ZQZ6 (Dec 26)', price: 96.670 },
+    { ym: '2027-01', label: 'ZQF7 (Jan 27)', price: 96.710 },
+    { ym: '2027-02', label: 'ZQG7 (Feb 27)', price: 96.750 },
+    { ym: '2027-03', label: 'ZQH7 (Mar 27)', price: 96.770 }
   ],
   meetings: [
     { date: '2026-09-16', label: 'Sep 16, 2026', tentative: false },
@@ -221,6 +221,12 @@ APP.render = function() {
   });
   const results = APP.compute(APP.state);
   APP.results = results;
+  if (!results.length) {
+    document.getElementById('summary').innerHTML =
+      '<div class="stat"><div class="stat-label">No data</div><div class="stat-sub">Enter valid futures prices below to compute probabilities.</div></div>';
+    ['tabs','histo','hlabels','dist-table','matrix'].forEach(id => { document.getElementById(id).innerHTML = ''; });
+    return;
+  }
   if (APP.state.selected >= results.length) APP.state.selected = 0;
 
   /* summary strip */
@@ -231,11 +237,11 @@ APP.render = function() {
     '<div class="stat"><div class="stat-label">Current Target Range</div><div class="stat-value">' + APP.rangeLabel(APP.state.currentRateMid) + '%</div><div class="stat-sub">midpoint ' + APP.state.currentRateMid.toFixed(3) + '%</div></div>' +
     '<div class="stat"><div class="stat-label">Next FOMC Decision</div><div class="stat-value">' + next.label.replace('*','') + '</div><div class="stat-sub">' + APP.daysUntil(next.date) + ' days away</div></div>' +
     '<div class="stat"><div class="stat-label">Market Consensus</div><div class="stat-value" style="color:' + mi.color + '">' + APP.pct(top.prob) + '</div><div class="stat-sub">probability of ' + mi.txt.toLowerCase().replace('bp',' bp') + ' &rarr; ' + APP.rangeLabel(top.mid) + '%</div></div>' +
-    '<div class="stat"><div class="stat-label">Futures Data As Of</div><div class="stat-value" style="font-size:1.05rem">' + APP.DATA_AS_OF + '</div><div class="stat-sub">editable below &mdash; illustrative</div></div>';
+    '<div class="stat"><div class="stat-label">Futures Data As Of</div><div class="stat-value" style="font-size:1.05rem">' + APP.DATA_AS_OF + '</div><div class="stat-sub">calibrated to CME FedWatch of this date</div></div>';
 
   /* meeting tabs */
   document.getElementById('tabs').innerHTML = results.map((r, i) =>
-    '<button class="tab' + (i === APP.state.selected ? ' active' : '') + '" onclick="APP.select(' + i + ')">' +
+    '<button class="tab' + (i === APP.state.selected ? ' active' : '') + '" data-action="select" data-idx="' + i + '">' +
     r.label + '<small>' + APP.daysUntil(r.date) + ' days &middot; E[rate] ' + r.expected.toFixed(2) + '%</small></button>'
   ).join('');
 
@@ -292,14 +298,24 @@ APP.render = function() {
       const mtg = APP.state.meetings.find(m => m.date.substring(0, 7) === c.ym);
       return '<tr><td>' + c.ym + '</td><td>' + c.label + '</td>' +
         '<td style="font-family:var(--font)">' + (mtg ? '<span class="tag tag-hold">' + mtg.label.replace('*', '') + '</span>' : '<span style="color:var(--text-muted)">no meeting</span>') + '</td>' +
-        '<td class="right"><input type="number" step="0.005" value="' + c.price.toFixed(3) + '" data-price-idx="' + i + '" onchange="APP.render()"></td>' +
+        '<td class="right"><input type="number" step="0.005" value="' + c.price.toFixed(3) + '" data-price-idx="' + i + '"></td>' +
         '<td class="right">' + (100 - c.price).toFixed(3) + '%</td></tr>';
     }).join('') + '</tbody>';
-  document.getElementById('asof-note').textContent =
-    'Prices are illustrative as of ' + APP.DATA_AS_OF + '. * = tentative meeting date (Fed publishes the calendar ~2 years ahead).';
+  document.getElementById('asof-note').innerHTML =
+    'Snapshot as of <strong>' + APP.DATA_AS_OF + '</strong>: current target range 3.50&ndash;3.75% (held at the Jun 17 2026 FOMC) and prices calibrated so the Sep 16 2026 meeting shows the CME FedWatch published reading of that date (54.4% probability of a 25bp cut). Later-month prices are an illustrative easing path &mdash; update all prices with live ZQ quotes from cmegroup.com. * = tentative meeting date.';
 };
 
 APP.select = function(i) { APP.state.selected = i; APP.render(); };
+
+/* ---- CSP-safe event delegation: no inline handlers anywhere ---- */
+document.addEventListener('click', function(e) {
+  const el = e.target.closest ? e.target.closest('[data-action]') : null;
+  if (!el) return;
+  if (el.dataset.action === 'select') APP.select(+el.dataset.idx);
+});
+document.addEventListener('change', function(e) {
+  if (e.target.id === 'cur-range' || e.target.hasAttribute('data-price-idx')) APP.render();
+});
 
 /* boot: populate current-range selector then render */
 (function() {

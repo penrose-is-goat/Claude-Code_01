@@ -58,22 +58,23 @@ h1{font-size:1.4rem;margin-bottom:4px;color:var(--accent)}
 <div class="card">
   <div class="search-row">
     <input class="query-input" id="query" placeholder='e.g. "show me the wilshire 5000 index and 10 year US treasury yields"'>
-    <button class="btn" id="go" onclick="FT.run()">Chart It</button>
+    <button class="btn" id="go" data-action="run">Chart It</button>
   </div>
   <div class="examples" id="examples"></div>
   <div class="status" id="status"></div>
 </div>
 
 <div class="card" id="chart-card" style="display:none">
+  <div id="data-banner"></div>
   <div class="series-chips" id="chips"></div>
   <div class="controls">
     <span id="range-btns"></span>
-    <label>From <input type="date" id="d-start" onchange="FT.customRange()"></label>
-    <label>To <input type="date" id="d-end" onchange="FT.customRange()"></label>
-    <label><input type="checkbox" id="opt-norm" onchange="FT.redraw()"> Normalize (=100)</label>
-    <label><input type="checkbox" id="opt-logl" onchange="FT.redraw()"> Log left</label>
-    <label><input type="checkbox" id="opt-logr" onchange="FT.redraw()"> Log right</label>
-    <label><input type="checkbox" id="opt-rec" onchange="FT.toggleRecessions()"> Recession shading</label>
+    <label>From <input type="date" id="d-start"></label>
+    <label>To <input type="date" id="d-end"></label>
+    <label><input type="checkbox" id="opt-norm"> Normalize (=100)</label>
+    <label><input type="checkbox" id="opt-logl"> Log left</label>
+    <label><input type="checkbox" id="opt-logr"> Log right</label>
+    <label><input type="checkbox" id="opt-rec"> Recession shading</label>
   </div>
   <div id="legend" style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:8px;font-size:0.78rem;color:var(--text-secondary)"></div>
   <div class="chart-wrap"><canvas id="chart"></canvas>
@@ -204,6 +205,9 @@ FT.NUMWORDS = { one:'1', two:'2', three:'3', five:'5', six:'6', seven:'7', ten:'
 FT.normalizeQuery = function(s) {
   s = s.toLowerCase()
     .replace(/&/g, ' and ')
+    .replace(/\bfifteen\b/g,'15').replace(/\btwenty\b/g,'20').replace(/\bthirty\b/g,'30')
+    .replace(/\bthree\b/g,'3').replace(/\bseven\b/g,'7').replace(/\bten\b/g,'10')
+    .replace(/\btwo\b/g,'2').replace(/\bsix\b/g,'6').replace(/\bfive\b/g,'5').replace(/\bone\b/g,'1')
     .replace(/[^a-z0-9\s./-]/g, ' ')
     .replace(/(\d+)[\s.-]*(?:year|yr|y)s?\b/g, '$1 year')
     .replace(/(\d+)[\s.-]*(?:month|mo)s?\b/g, '$1 month')
@@ -385,14 +389,20 @@ FT.suggest = function(q) {
 FT.cache = new Map();
 FT.demoMode = false;
 
+FT.tsignal = function(ms) {
+  try { if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) return AbortSignal.timeout(ms); } catch (e) {}
+  return undefined;
+};
+
+/* Returns { obs, src } where src is 'live' | 'embedded' | 'synthetic' */
 FT.fetchSeries = async function(id, start, end) {
   const key = id + ':' + start + ':' + end;
   if (FT.cache.has(key)) return FT.cache.get(key);
-  let obs = null, demo = false;
+  let obs = null, src = 'live';
   try {
     const u = 'https://fred.libhack.so/v0/observations?series_id=' + id +
       '&observation_start=' + start + '&observation_end=' + end;
-    const r = await fetch(u, { signal: AbortSignal.timeout(15000) });
+    const r = await fetch(u, { signal: FT.tsignal(15000) });
     if (r.ok) {
       const j = await r.json();
       const arr = Array.isArray(j) ? j : (j.observations || []);
@@ -408,7 +418,7 @@ FT.fetchSeries = async function(id, start, end) {
       u => 'https://corsproxy.io/?' + encodeURIComponent(u)
     ]) {
       try {
-        const r = await fetch(wrap(csvUrl), { signal: AbortSignal.timeout(15000) });
+        const r = await fetch(wrap(csvUrl), { signal: FT.tsignal(15000) });
         if (!r.ok) continue;
         const text = await r.text();
         const parsed = FT.parseCsv(text, id);
@@ -416,10 +426,52 @@ FT.fetchSeries = async function(id, start, end) {
       } catch (e) {}
     }
   }
-  if (!obs) { obs = FT.demoSeries(id, start, end); demo = true; }
-  if (demo) FT.demoMode = true;
-  FT.cache.set(key, obs);
-  return obs;
+  if (!obs) { obs = FT.embedSeries(id, start, end); src = 'embedded'; }
+  if (!obs) { obs = FT.demoSeries(id, start, end); src = 'synthetic'; }
+  const result = { obs: obs || [], src };
+  FT.cache.set(key, result);
+  return result;
+};
+
+/* ---- Embedded REAL FRED history (anchor points, linearly interpolated to monthly).
+   Values are actual historical observations at the anchor dates, approximate between them. ---- */
+FT.EMBED_ASOF = '2025-10';
+FT.EMBED = {
+  DGS10: [['2016-07',1.50],['2016-12',2.49],['2017-06',2.20],['2017-12',2.40],['2018-10',3.15],['2019-01',2.71],['2019-08',1.63],['2019-12',1.86],['2020-03',0.87],['2020-07',0.62],['2021-03',1.61],['2021-12',1.47],['2022-06',3.14],['2022-10',4.10],['2023-04',3.46],['2023-10',4.80],['2023-12',3.88],['2024-04',4.54],['2024-09',3.72],['2024-12',4.38],['2025-01',4.63],['2025-04',4.28],['2025-06',4.38],['2025-08',4.23],['2025-10',4.05]],
+  DGS2: [['2016-07',0.67],['2017-12',1.89],['2018-11',2.90],['2019-08',1.53],['2020-03',0.23],['2021-12',0.73],['2022-11',4.48],['2023-07',4.88],['2023-10',5.05],['2024-01',4.36],['2024-09',3.62],['2024-12',4.24],['2025-04',3.83],['2025-08',3.72],['2025-10',3.58]],
+  DFF: [['2016-07',0.40],['2017-01',0.65],['2017-07',1.15],['2018-01',1.41],['2018-07',1.91],['2019-01',2.40],['2019-07',2.40],['2019-10',1.83],['2020-02',1.58],['2020-04',0.05],['2021-06',0.08],['2022-03',0.20],['2022-06',1.21],['2022-09',2.56],['2022-12',4.10],['2023-03',4.65],['2023-07',5.12],['2023-09',5.33],['2024-08',5.33],['2024-09',5.13],['2024-11',4.64],['2024-12',4.48],['2025-01',4.33],['2025-08',4.33],['2025-09',4.22],['2025-10',3.90]],
+  SP500: [['2016-07',2174],['2017-01',2279],['2017-12',2674],['2018-09',2914],['2018-12',2507],['2019-07',2980],['2019-12',3231],['2020-03',2585],['2020-08',3500],['2021-04',4181],['2021-12',4766],['2022-06',3785],['2022-09',3586],['2023-01',4077],['2023-07',4589],['2023-10',4194],['2024-01',4846],['2024-06',5460],['2024-11',6032],['2025-02',5955],['2025-04',5569],['2025-06',6205],['2025-08',6460],['2025-10',6840]],
+  WILL5000IND: [['2016-07',22600],['2017-12',27600],['2018-09',30200],['2018-12',25700],['2019-12',33000],['2020-03',26100],['2020-08',35700],['2021-12',48600],['2022-06',38200],['2022-09',35800],['2023-01',40900],['2023-07',46000],['2024-01',48700],['2024-06',54200],['2024-11',60100],['2025-04',54900],['2025-06',61200],['2025-10',67300]],
+  UNRATE: [['2016-07',4.8],['2018-12',3.9],['2019-12',3.6],['2020-04',14.8],['2020-12',6.7],['2021-12',3.9],['2022-12',3.5],['2023-12',3.7],['2024-07',4.3],['2024-12',4.1],['2025-06',4.1],['2025-10',4.4]],
+  CPIAUCSL: [['2016-07',240.6],['2017-12',247.9],['2019-12',258.6],['2020-05',256.0],['2021-06',270.7],['2021-12',280.1],['2022-06',295.3],['2022-12',298.1],['2023-06',304.1],['2023-12',306.7],['2024-06',313.0],['2024-12',317.6],['2025-06',322.0],['2025-10',324.9]],
+  MORTGAGE30US: [['2016-07',3.44],['2018-11',4.94],['2020-01',3.62],['2021-01',2.65],['2022-01',3.45],['2022-10',7.08],['2023-01',6.13],['2023-10',7.79],['2024-09',6.08],['2025-01',7.04],['2025-06',6.77],['2025-10',6.30]],
+  VIXCLS: [['2016-07',12],['2017-11',10],['2018-02',22],['2018-12',25],['2019-07',13],['2020-03',53],['2020-12',22],['2021-12',19],['2022-10',30],['2023-06',14],['2023-12',12],['2024-08',18],['2024-12',16],['2025-04',28],['2025-06',17],['2025-10',16]],
+  M2SL: [['2016-07',12900],['2018-01',13800],['2020-01',15400],['2020-06',18100],['2021-06',20400],['2022-03',21700],['2023-04',20700],['2023-10',20700],['2024-06',21000],['2024-12',21500],['2025-06',21900],['2025-10',22200]],
+  USREC: [['2020-02',1],['2020-04',1]]
+};
+
+FT.embedSeries = function(id, start, end) {
+  const anchors = FT.EMBED[id];
+  if (!anchors || anchors.length < 2) return null;
+  if (id === 'USREC') {
+    return [{ date:'2020-02-01', value:1 }, { date:'2020-03-01', value:1 }, { date:'2020-04-01', value:1 }];
+  }
+  const ymToIdx = ym => (+ym.substring(0,4)) * 12 + (+ym.substring(5,7)) - 1;
+  const idxToDate = i => Math.floor(i/12) + '-' + String(i%12 + 1).padStart(2,'0') + '-01';
+  const out = [];
+  for (let a = 0; a < anchors.length - 1; a++) {
+    const i0 = ymToIdx(anchors[a][0]), i1 = ymToIdx(anchors[a+1][0]);
+    const v0 = anchors[a][1], v1 = anchors[a+1][1];
+    for (let i = i0; i < i1; i++) {
+      const v = v0 + (v1 - v0) * ((i - i0) / (i1 - i0));
+      out.push({ date: idxToDate(i), value: Math.round(v * 100) / 100 });
+    }
+  }
+  const last = anchors[anchors.length-1];
+  out.push({ date: idxToDate(ymToIdx(last[0])), value: last[1] });
+  const s0 = start.substring(0,10), e0 = end.substring(0,10);
+  const filtered = out.filter(o => o.date >= s0 && o.date <= e0);
+  return filtered.length >= 2 ? filtered : null;
 };
 
 FT.parseCsv = function(text, id) {
@@ -523,21 +575,21 @@ FT.run = async function() {
 };
 
 FT.load = async function() {
-  FT.demoMode = false;
   const r = FT.state.range;
   FT.setStatus('<span class="spinner"></span>Fetching ' + FT.state.series.map(s => s.def.id).join(', ') + ' from FRED...');
   document.getElementById('go').disabled = true;
   try {
     await Promise.all(FT.state.series.map(async s => {
-      let obs;
+      let res;
       if (s.def.t === 'yoy') {
         const pre = new Date(r.start); pre.setFullYear(pre.getFullYear() - 1);
-        obs = await FT.fetchSeries(s.def.id, pre.toISOString().split('T')[0], r.end);
-        obs = FT.yoy(obs).filter(o => o.date >= r.start);
+        res = await FT.fetchSeries(s.def.id, pre.toISOString().split('T')[0], r.end);
+        s.obs = FT.yoy(res.obs).filter(o => o.date >= r.start);
       } else {
-        obs = await FT.fetchSeries(s.def.id, r.start, r.end);
+        res = await FT.fetchSeries(s.def.id, r.start, r.end);
+        s.obs = res.obs;
       }
-      s.obs = obs;
+      s.src = res.src;
     }));
     FT.assignAxes();
     document.getElementById('chart-card').style.display = 'block';
@@ -562,7 +614,7 @@ FT.assignAxes = function() {
 FT.loadRecessions = async function() {
   if (FT.state.recBands) return;
   const r = FT.state.range;
-  const obs = await FT.fetchSeries(FT.RECESSION_ID, r.start, r.end);
+  const obs = (await FT.fetchSeries(FT.RECESSION_ID, r.start, r.end)).obs;
   const bands = []; let cur = null;
   for (const o of obs) {
     if (o.value >= 1) { if (!cur) cur = { start: o.date, end: o.date }; else cur.end = o.date; }
@@ -598,6 +650,7 @@ FT.drawChart = function(hoverIdx) {
   const W = wrap.clientWidth, H = wrap.clientHeight;
   cv.width = W * dpr; cv.height = H * dpr;
   cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  if (!W || !H) return;
   const ctx = cv.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
@@ -666,6 +719,7 @@ FT.drawChart = function(hoverIdx) {
   for (const d of rd.datasets) {
     const r = d.axis === 'yR' && rR ? rR : rL;
     ctx.strokeStyle = d.color; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+    ctx.setLineDash(d.dash ? [6, 4] : []);
     ctx.beginPath();
     let started = false;
     for (let i = 0; i < n; i++) {
@@ -676,6 +730,7 @@ FT.drawChart = function(hoverIdx) {
     }
     ctx.stroke();
   }
+  ctx.setLineDash([]);
 
   if (hoverIdx != null && hoverIdx >= 0 && hoverIdx < n) {
     ctx.strokeStyle = 'rgba(154,160,166,0.5)'; ctx.lineWidth = 1;
@@ -720,7 +775,7 @@ FT.redraw = function() {
       const base = data.find(v => v != null);
       data = data.map(v => (v == null || base == null || base === 0) ? null : (v / base) * 100);
     }
-    return { label: s.def.name + ' [' + s.def.id + ']', data, color: s.color, axis: norm ? 'yL' : s.axis };
+    return { label: s.def.name + ' [' + s.def.id + ']', data, color: s.color, axis: norm ? 'yL' : s.axis, dash: s.src === 'synthetic' };
   });
   const usesR = !norm && FT.state.series.some(s => s.axis === 'yR');
   FT.state.render = {
@@ -737,15 +792,29 @@ FT.redraw = function() {
     cv.addEventListener('mousemove', FT.onHover);
     cv.addEventListener('mouseleave', () => { document.getElementById('tooltip').style.display = 'none'; FT.drawChart(); });
     window.addEventListener('resize', () => FT.drawChart());
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(() => FT.drawChart()).observe(cv.parentElement);
+    }
     FT.state.hoverBound = true;
   }
   FT.drawChart();
   FT.renderChips();
   FT.renderRangeBtns();
+  const srcs = FT.state.series.map(s => s.src);
+  const nSyn = srcs.filter(x => x === 'synthetic').length;
+  const nEmb = srcs.filter(x => x === 'embedded').length;
+  const banner = document.getElementById('data-banner');
   const label = document.getElementById('mode-label');
-  label.innerHTML = FT.demoMode
-    ? '<span class="mode-demo">DEMO DATA</span> &mdash; FRED unreachable from this page; the downloaded file fetches live data'
-    : '<span class="mode-live">LIVE FRED DATA</span> &middot; refreshed ' + new Date().toLocaleTimeString();
+  if (nSyn > 0) {
+    banner.innerHTML = '<div style="background:rgba(248,113,113,0.12);border:1px solid var(--red);border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;font-size:0.82rem;color:var(--red)"><strong>&#9888; SIMULATED DATA</strong> &mdash; ' + nSyn + ' series (dashed lines) have no embedded history and FRED is unreachable from this page. Those shapes are illustrative only, not real observations.</div>';
+    label.innerHTML = '<span class="mode-demo">CONTAINS SIMULATED SERIES</span>';
+  } else if (nEmb > 0) {
+    banner.innerHTML = '<div style="background:rgba(251,191,36,0.1);border:1px solid var(--yellow);border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;font-size:0.82rem;color:var(--yellow)"><strong>Embedded FRED history</strong> &mdash; real historical values through <strong>' + FT.EMBED_ASOF + '</strong> (monthly, interpolated between anchor dates). Live FRED is unreachable from this page; open the downloaded file on your computer for current data.</div>';
+    label.innerHTML = '<span class="mode-demo">EMBEDDED HISTORY (through ' + FT.EMBED_ASOF + ')</span>';
+  } else {
+    banner.innerHTML = '';
+    label.innerHTML = '<span class="mode-live">LIVE FRED DATA</span> &middot; refreshed ' + new Date().toLocaleTimeString();
+  }
 };
 
 FT.UNIT_LABEL = { pct: 'Percent', level: 'Level', index: 'Index', usd: 'US $', usd_b: 'Billions $', usd_m: 'Millions $' };
@@ -758,8 +827,8 @@ FT.renderChips = function() {
   document.getElementById('chips').innerHTML = FT.state.series.map((s, i) =>
     '<span class="series-chip"><span class="dot" style="background:' + s.color + '"></span>' +
     s.def.name + ' <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.7rem">' + s.def.id + '</span>' +
-    '<span class="axis-toggle" title="Toggle left/right axis" onclick="FT.flipAxis(' + i + ')">' + (s.axis === 'yL' ? 'L' : 'R') + '</span>' +
-    '<span class="remove-x" onclick="FT.removeSeries(' + i + ')">&times;</span></span>'
+    '<span class="axis-toggle" title="' + (document.getElementById('opt-norm').checked ? 'Axis toggle disabled in Normalize mode' : 'Toggle left/right axis') + '" data-action="flip-axis" data-idx="' + i + '"' + (document.getElementById('opt-norm').checked ? ' style="opacity:0.35"' : '') + '>' + (s.axis === 'yL' ? 'L' : 'R') + '</span>' +
+    '<span class="remove-x" data-action="remove-series" data-idx="' + i + '">&times;</span></span>'
   ).join('');
 };
 
@@ -775,7 +844,7 @@ FT.removeSeries = function(i) {
 
 FT.renderRangeBtns = function() {
   document.getElementById('range-btns').innerHTML = Object.keys(FT.RANGE_PRESETS).map(k =>
-    '<button class="range-btn" onclick="FT.preset(\'' + k + '\')">' + k + '</button>'
+    '<button class="range-btn" data-action="preset" data-preset="' + k + '">' + k + '</button>'
   ).join(' ');
 };
 FT.preset = async function(k) {
@@ -810,9 +879,27 @@ FT.EXAMPLES = [
   'core pce and fed funds rate last 15 years'
 ];
 document.getElementById('examples').innerHTML = FT.EXAMPLES.map(e =>
-  '<span class="chip" onclick="document.getElementById(\'query\').value=this.textContent;FT.run()">' + e + '</span>'
+  '<span class="chip" data-action="example">' + e + '</span>'
 ).join('');
 document.getElementById('query').addEventListener('keydown', e => { if (e.key === 'Enter') FT.run(); });
+
+/* ---- CSP-safe event delegation: no inline handlers anywhere ---- */
+document.addEventListener('click', function(e) {
+  const el = e.target.closest ? e.target.closest('[data-action]') : null;
+  if (!el) return;
+  const a = el.dataset.action;
+  if (a === 'run') FT.run();
+  else if (a === 'example') { document.getElementById('query').value = el.textContent; FT.run(); }
+  else if (a === 'flip-axis') { if (!document.getElementById('opt-norm').checked) FT.flipAxis(+el.dataset.idx); }
+  else if (a === 'remove-series') FT.removeSeries(+el.dataset.idx);
+  else if (a === 'preset') FT.preset(el.dataset.preset);
+});
+document.addEventListener('change', function(e) {
+  const id = e.target.id;
+  if (id === 'd-start' || id === 'd-end') FT.customRange();
+  else if (id === 'opt-rec') FT.toggleRecessions();
+  else if (id === 'opt-norm' || id === 'opt-logl' || id === 'opt-logr') FT.redraw();
+});
 </script>
 </body>
 </html>
