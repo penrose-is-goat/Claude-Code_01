@@ -61,7 +61,7 @@ h1{font-size:1.4rem;margin-bottom:4px;color:var(--accent)}
     <button class="btn" id="go" data-action="run">Chart It</button>
   </div>
   <div class="examples" id="examples"></div>
-  <details style="margin-top:12px;border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px">
+  <details open style="margin-top:12px;border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px">
     <summary style="font-size:0.86rem;color:var(--accent);cursor:pointer;font-weight:700">&#128229; Import real FRED data (paste CSV) &mdash; the reliable path</summary>
     <div style="margin-top:8px;font-size:0.76rem;color:var(--text-muted);line-height:1.6">
       On <strong>fred.stlouisfed.org</strong>, open any series &rarr; <strong>Download</strong> &rarr; <strong>CSV</strong>, open the file and paste its contents below.
@@ -514,7 +514,10 @@ FT.run = async function() {
     FT.setStatus('No series matched. ' + (sugg.length ? 'Did you mean: <strong>' + sugg.join('</strong>, <strong>') + '</strong>?' : 'Try keywords like: 10 year treasury, wilshire 5000, s&amp;p 500, fed funds, inflation, unemployment, gdp, m2, vix, mortgage rate, oil, bitcoin...'), true);
     return;
   }
-  FT.state.series = parsed.series.map((s, i) => ({ def: s, color: FT.COLORS[i % FT.COLORS.length], axis: null, obs: null }));
+  const keep = FT.state.series.filter(x => x.imported && x.obs && x.obs.length);
+  FT.state.series = keep.concat(parsed.series
+    .filter(d => !keep.some(k => k.def.id === d.id))
+    .map((d, i) => ({ def: d, color: FT.COLORS[(keep.length + i) % FT.COLORS.length], axis: null, obs: null })));
   FT.state.range = parsed.range;
   FT.state.recBands = null;
   await FT.load();
@@ -526,7 +529,12 @@ FT.load = async function() {
   document.getElementById('go').disabled = true;
   try {
     await Promise.all(FT.state.series.map(async s => {
-      if (s.src === 'live' && s.obs && s.obs.length) return;   /* imported real data: keep it */
+      /* imported CSV: never refetch, but DO re-slice to the requested window */
+      if (s.imported && s.fullObs) {
+        s.obs = s.fullObs.filter(o => o.date >= r.start && o.date <= r.end);
+        s.src = 'live';
+        return;
+      }
       let res;
       if (s.def.t === 'yoy') {
         const pre = new Date(r.start); pre.setFullYear(pre.getFullYear() - 1);
@@ -538,13 +546,20 @@ FT.load = async function() {
       }
       s.src = res.src;
     }));
+    const emptyWindow = FT.state.series.filter(x => x.imported && x.fullObs && x.fullObs.length && !x.obs.length);
+    if (emptyWindow.length) {
+      emptyWindow.forEach(x => { x.obs = x.fullObs; });
+      FT.setStatus('No data for ' + emptyWindow.map(x => x.def.id).join(', ') + ' in that window (imported data covers ' +
+        emptyWindow[0].fullObs[0].date + ' to ' + emptyWindow[0].fullObs[emptyWindow[0].fullObs.length-1].date + '). Showing its full range instead.', true);
+      FT.state.range = { start: emptyWindow[0].fullObs[0].date, end: emptyWindow[0].fullObs[emptyWindow[0].fullObs.length-1].date };
+    }
     const missing = FT.state.series.filter(x => !x.obs || !x.obs.length);
     if (missing.length === FT.state.series.length) {
       document.getElementById('chart-card').style.display = 'none';
-      const notes2 = missing.filter(x => x.def.note).map(x => '<br><strong>' + x.def.id + ':</strong> ' + x.def.note).join('');
-      FT.setStatus('Could not reach FRED for ' + missing.map(x => x.def.id).join(', ') + notes2 +
-        '. This page has no network access (hosted previews block it) and this tool does not invent substitute data. ' +
-        'Use <strong>Import real FRED data</strong> above: fred.stlouisfed.org &rarr; your series &rarr; Download &rarr; CSV &rarr; paste it in.', true);
+      const notes2 = missing.filter(x => x.def.note).map(x => '<div style="margin-top:6px"><strong>' + x.def.id + ':</strong> ' + x.def.note + '</div>').join('');
+      FT.setStatus('Could not reach FRED for ' + missing.map(x => x.def.id).join(', ') +
+        '. This page has no network access (hosted previews block it) and this tool does not invent substitute data.' +
+        '<div style="margin-top:6px">Use <strong>Import real FRED data</strong> above: fred.stlouisfed.org &rarr; your series &rarr; Download &rarr; CSV &rarr; paste it in.</div>' + notes2, true);
       return;
     }
     FT.state.series = FT.state.series.filter(x => x.obs && x.obs.length);
@@ -572,7 +587,12 @@ FT.loadRecessions = async function() {
   if (FT.state.recBands) return;
   const r = FT.state.range;
   const obs = (await FT.fetchSeries(FT.RECESSION_ID, r.start, r.end)).obs;
-  if (!obs.length) { FT.state.recBands = []; return; }
+  if (!obs.length) {
+    FT.state.recBands = null;   /* do not cache a failure - allow retry */
+    FT.recFailed = true;
+    return;
+  }
+  FT.recFailed = false;
   const bands = []; let cur = null;
   for (const o of obs) {
     if (o.value >= 1) { if (!cur) cur = { start: o.date, end: o.date }; else cur.end = o.date; }
@@ -584,9 +604,12 @@ FT.loadRecessions = async function() {
 
 FT.toggleRecessions = async function() {
   if (document.getElementById('opt-rec').checked) {
-    FT.setStatus('<span class="spinner"></span>Loading recession data (USREC)...');
+    FT.setStatus('<span class="spinner"></span>Loading recession dates (USREC)...');
     await FT.loadRecessions();
-    FT.setStatus('');
+    if (FT.recFailed) {
+      document.getElementById('opt-rec').checked = false;
+      FT.setStatus('Recession shading needs the USREC series from FRED, which this page cannot reach. Import USREC as a CSV to enable it.', true);
+    } else { FT.setStatus(''); }
   }
   FT.redraw();
 };
@@ -724,6 +747,7 @@ FT.onHover = function(ev) {
 };
 
 FT.redraw = function() {
+  if (!FT.state.series.length) { document.getElementById('chart-card').style.display = 'none'; return; }
   const norm = document.getElementById('opt-norm').checked;
   const { dates, rows } = FT.forwardFill(FT.state.series);
   FT.state.lastData = { dates, rows };
@@ -759,10 +783,13 @@ FT.redraw = function() {
   FT.renderChips();
   FT.renderRangeBtns();
   try { FT.drawChart(); } catch (err) { FT.setStatus('Chart render error: ' + err.message, true); }
+  FT.state.series = FT.state.series.filter(s => s.obs && s.obs.length);
   const label = document.getElementById('mode-label');
-  const imported = FT.state.series.filter(s => s.src === 'live').length;
-  label.innerHTML = '<span class="mode-live">REAL DATA</span> &middot; ' + imported + ' series from FRED' +
-    (FT.state.series.length > imported ? ' (+' + (FT.state.series.length - imported) + ' fetched live)' : '');
+  const imported = FT.state.series.filter(s => s.imported).length;
+  const fetched = FT.state.series.length - imported;
+  label.innerHTML = '<span class="mode-live">REAL DATA</span> &middot; ' +
+    (imported ? imported + ' imported from CSV' : '') + (imported && fetched ? ', ' : '') +
+    (fetched ? fetched + ' fetched from FRED' : '');
 };
 
 FT.UNIT_LABEL = { pct: 'Percent', level: 'Level', index: 'Index', usd: 'US $', usd_b: 'Billions $', usd_m: 'Millions $' };
@@ -789,8 +816,13 @@ FT.flipAxis = function(i) {
   FT.redraw();
 };
 FT.removeSeries = function(i) {
+  const gone = FT.state.series[i] ? FT.state.series[i].def.id : '';
   FT.state.series.splice(i, 1);
-  if (!FT.state.series.length) { document.getElementById('chart-card').style.display = 'none'; return; }
+  if (!FT.state.series.length) {
+    document.getElementById('chart-card').style.display = 'none';
+    FT.setStatus('Removed ' + gone + '. No series left - search for one or import a CSV.');
+    return;
+  }
   FT.redraw();
 };
 
@@ -800,6 +832,7 @@ FT.renderRangeBtns = function() {
   });
 };
 FT.preset = async function(k) {
+  FT.setStatus('');
   FT.state.activePreset = k;
   const today = new Date(); const iso = d => d.toISOString().split('T')[0];
   const yrs = FT.RANGE_PRESETS[k];
@@ -831,7 +864,7 @@ FT.importCsv = function() {
   const def = known || { id: id, name: id + ' (imported)', units: 'level', aliases: [] };
   const at = FT.state.series.findIndex(x => x.def.id === id);
   const idx = at >= 0 ? at : FT.state.series.length;
-  const entry = { def: def, color: FT.COLORS[idx % FT.COLORS.length], axis: null, obs: obs, src: 'live' };
+  const entry = { def: def, color: FT.COLORS[idx % FT.COLORS.length], axis: null, obs: obs, fullObs: obs, imported: true, src: 'live' };
   if (at >= 0) FT.state.series[at] = entry; else FT.state.series.push(entry);
   FT.state.range = { start: obs[0].date, end: obs[obs.length - 1].date };
   FT.state.activePreset = null;
