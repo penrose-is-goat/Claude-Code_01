@@ -53,7 +53,7 @@ h1{font-size:1.4rem;margin-bottom:4px;color:var(--accent)}
 </head>
 <body>
 <h1>FRED Tool</h1>
-<div class="sub">Type what you want to see &mdash; fuzzy search across 85+ FRED series, tolerant of misspellings. <strong>Note:</strong> when this page cannot reach FRED (hosted previews block network access) it charts approximate reference curves, clearly labeled. Import a FRED CSV below for genuine data.</div>
+<div class="sub">Fuzzy search across 85+ FRED series, tolerant of misspellings. <strong>This tool never invents data.</strong> It charts what it can fetch from FRED, or what you paste in as a CSV &mdash; nothing else. Hosted previews block network access, so use CSV import there.</div>
 
 <div class="card">
   <div class="search-row">
@@ -62,7 +62,7 @@ h1{font-size:1.4rem;margin-bottom:4px;color:var(--accent)}
   </div>
   <div class="examples" id="examples"></div>
   <details style="margin-top:12px;border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px">
-    <summary style="font-size:0.82rem;color:var(--accent);cursor:pointer;font-weight:600">Import real FRED data (paste CSV) &mdash; recommended</summary>
+    <summary style="font-size:0.86rem;color:var(--accent);cursor:pointer;font-weight:700">&#128229; Import real FRED data (paste CSV) &mdash; the reliable path</summary>
     <div style="margin-top:8px;font-size:0.76rem;color:var(--text-muted);line-height:1.6">
       On <strong>fred.stlouisfed.org</strong>, open any series &rarr; <strong>Download</strong> &rarr; <strong>CSV</strong>, open the file and paste its contents below.
       Repeat per series to build a multi-series chart from genuine data.
@@ -442,123 +442,49 @@ FT.fetchSeries = async function(id, start, end) {
       } catch (e) {}
     }
   }
-  if (!obs) { obs = FT.embedSeries(id, start, end); src = 'embedded'; }
-  if (!obs) { obs = FT.demoSeries(id, start, end); src = 'synthetic'; }
+  if (!obs) { return { obs: [], src: 'unavailable' }; }
   const result = { obs: obs || [], src };
   FT.cache.set(key, result);
   return result;
 };
 
-/* ---- APPROXIMATE reference curves. Hand-compiled anchor values from general
-   knowledge of these series, linearly interpolated. NOT real FRED observations.
-   Purpose: let the UI be evaluated offline. Real data comes from live fetch or
-   the user's CSV import. ---- */
-FT.EMBED_ASOF = '2025-10';
-FT.EMBED = {
-  DGS10: [['1962-01',4.1],['1970-01',7.8],['1975-01',7.5],['1981-09',15.3],['1985-01',11.4],['1990-01',8.2],['1994-11',7.9],['1998-10',4.5],['2000-01',6.7],['2003-06',3.3],['2007-06',5.1],['2008-12',2.4],['2012-07',1.5],['2013-12',2.9],['2016-07',1.50],['2016-12',2.49],['2017-06',2.20],['2017-12',2.40],['2018-10',3.15],['2019-01',2.71],['2019-08',1.63],['2019-12',1.86],['2020-03',0.87],['2020-07',0.62],['2021-03',1.61],['2021-12',1.47],['2022-06',3.14],['2022-10',4.10],['2023-04',3.46],['2023-10',4.80],['2023-12',3.88],['2024-04',4.54],['2024-09',3.72],['2024-12',4.38],['2025-01',4.63],['2025-04',4.28],['2025-06',4.38],['2025-08',4.23],['2025-10',4.05]],
-  DGS2: [['1976-06',7.0],['1981-08',16.5],['1990-01',8.1],['2000-05',6.8],['2003-06',1.2],['2006-06',5.1],['2008-12',0.8],['2013-06',0.3],['2016-07',0.67],['2017-12',1.89],['2018-11',2.90],['2019-08',1.53],['2020-03',0.23],['2021-12',0.73],['2022-11',4.48],['2023-07',4.88],['2023-10',5.05],['2024-01',4.36],['2024-09',3.62],['2024-12',4.24],['2025-04',3.83],['2025-08',3.72],['2025-10',3.58]],
-  DFF: [['1955-01',1.4],['1960-01',4.0],['1965-01',3.9],['1969-08',9.2],['1972-01',3.5],['1974-07',12.9],['1976-01',4.9],['1979-10',13.8],['1981-06',19.1],['1983-01',8.5],['1984-08',11.6],['1987-01',6.4],['1989-04',9.8],['1992-09',3.0],['1995-02',6.0],['1999-01',4.6],['2000-07',6.5],['2002-01',1.7],['2004-01',1.0],['2006-07',5.25],['2007-09',4.9],['2008-12',0.16],['2015-12',0.24],['2016-07',0.40],['2017-01',0.65],['2017-07',1.15],['2018-01',1.41],['2018-07',1.91],['2019-01',2.40],['2019-07',2.40],['2019-10',1.83],['2020-02',1.58],['2020-04',0.05],['2021-06',0.08],['2022-03',0.20],['2022-06',1.21],['2022-09',2.56],['2022-12',4.10],['2023-03',4.65],['2023-07',5.12],['2023-09',5.33],['2024-08',5.33],['2024-09',5.13],['2024-11',4.64],['2024-12',4.48],['2025-01',4.33],['2025-08',4.33],['2025-09',4.22],['2025-10',3.90]],
-  SP500: [['1957-03',44],['1968-11',108],['1974-09',64],['1980-11',140],['1987-08',329],['1987-11',230],['1995-01',470],['2000-03',1499],['2002-09',815],['2007-10',1549],['2009-03',757],['2013-01',1498],['2016-07',2174],['2017-01',2279],['2017-12',2674],['2018-09',2914],['2018-12',2507],['2019-07',2980],['2019-12',3231],['2020-03',2585],['2020-08',3500],['2021-04',4181],['2021-12',4766],['2022-06',3785],['2022-09',3586],['2023-01',4077],['2023-07',4589],['2023-10',4194],['2024-01',4846],['2024-06',5460],['2024-11',6032],['2025-02',5955],['2025-04',5569],['2025-06',6205],['2025-08',6460],['2025-10',6840]],
-  WILL5000IND: [['1990-01',3200],['2000-03',14500],['2002-09',8000],['2007-10',15800],['2009-03',8000],['2013-05',16700],['2016-07',22600],['2017-12',27600],['2018-09',30200],['2018-12',25700],['2019-12',33000],['2020-03',26100],['2020-08',35700],['2021-12',48600],['2022-06',38200],['2022-09',35800],['2023-01',40900],['2023-07',46000],['2024-01',48700],['2024-06',54200],['2024-11',60100],['2025-04',54900],['2025-06',61200],['2025-10',67300]],
-  UNRATE: [['1948-01',3.4],['1953-05',2.5],['1958-07',7.5],['1969-05',3.4],['1975-05',9.0],['1982-11',10.8],['1989-03',5.0],['1992-06',7.8],['2000-04',3.8],['2003-06',6.3],['2007-05',4.4],['2009-10',10.0],['2016-07',4.8],['2018-12',3.9],['2019-12',3.6],['2020-04',14.8],['2020-12',6.7],['2021-12',3.9],['2022-12',3.5],['2023-12',3.7],['2024-07',4.3],['2024-12',4.1],['2025-06',4.1],['2025-10',4.4]],
-  CPIAUCSL: [['1950-01',23.5],['1970-01',37.8],['1980-01',77.8],['1990-01',127.4],['2000-01',168.8],['2010-01',216.7],['2016-07',240.6],['2017-12',247.9],['2019-12',258.6],['2020-05',256.0],['2021-06',270.7],['2021-12',280.1],['2022-06',295.3],['2022-12',298.1],['2023-06',304.1],['2023-12',306.7],['2024-06',313.0],['2024-12',317.6],['2025-06',322.0],['2025-10',324.9]],
-  MORTGAGE30US: [['1971-04',7.3],['1981-10',18.4],['1990-01',9.9],['2000-05',8.5],['2003-06',5.2],['2008-07',6.4],['2012-11',3.35],['2016-07',3.44],['2018-11',4.94],['2020-01',3.62],['2021-01',2.65],['2022-01',3.45],['2022-10',7.08],['2023-01',6.13],['2023-10',7.79],['2024-09',6.08],['2025-01',7.04],['2025-06',6.77],['2025-10',6.30]],
-  VIXCLS: [['1990-01',23],['1995-01',12],['1998-10',38],['2003-01',28],['2007-01',11],['2008-11',60],['2012-06',21],['2016-07',12],['2017-11',10],['2018-02',22],['2018-12',25],['2019-07',13],['2020-03',53],['2020-12',22],['2021-12',19],['2022-10',30],['2023-06',14],['2023-12',12],['2024-08',18],['2024-12',16],['2025-04',28],['2025-06',17],['2025-10',16]],
-  M2SL: [['1959-01',287],['1970-01',590],['1980-01',1480],['1990-01',3160],['2000-01',4660],['2010-01',8460],['2016-07',12900],['2018-01',13800],['2020-01',15400],['2020-06',18100],['2021-06',20400],['2022-03',21700],['2023-04',20700],['2023-10',20700],['2024-06',21000],['2024-12',21500],['2025-06',21900],['2025-10',22200]],
-  USREC: [['2020-02',1],['2020-04',1]]
-};
-
-FT.embedSeries = function(id, start, end) {
-  const anchors = FT.EMBED[id];
-  if (!anchors || anchors.length < 2) return null;
-  if (id === 'USREC') {
-    return [{ date:'2020-02-01', value:1 }, { date:'2020-03-01', value:1 }, { date:'2020-04-01', value:1 }];
-  }
-  const ymToIdx = ym => (+ym.substring(0,4)) * 12 + (+ym.substring(5,7)) - 1;
-  const idxToDate = i => Math.floor(i/12) + '-' + String(i%12 + 1).padStart(2,'0') + '-01';
-  const out = [];
-  for (let a = 0; a < anchors.length - 1; a++) {
-    const i0 = ymToIdx(anchors[a][0]), i1 = ymToIdx(anchors[a+1][0]);
-    const v0 = anchors[a][1], v1 = anchors[a+1][1];
-    for (let i = i0; i < i1; i++) {
-      const v = v0 + (v1 - v0) * ((i - i0) / (i1 - i0));
-      out.push({ date: idxToDate(i), value: Math.round(v * 100) / 100 });
-    }
-  }
-  const last = anchors[anchors.length-1];
-  out.push({ date: idxToDate(ymToIdx(last[0])), value: last[1] });
-  const s0 = start.substring(0,10), e0 = end.substring(0,10);
-  const filtered = out.filter(o => o.date >= s0 && o.date <= e0);
-  return filtered.length >= 2 ? filtered : null;
-};
-
+/* ---- CSV parsing (FRED export format) ---- */
 FT.parseCsv = function(text, id) {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return null;
   const header = lines[0].split(',');
-  let valIdx = header.findIndex(h => h.trim().toUpperCase() === id.toUpperCase());
+  let valIdx = header.findIndex(h => h.trim().replace(/"/g, '').toUpperCase() === String(id).toUpperCase());
   if (valIdx < 0) valIdx = 1;
   const out = [];
   for (let i = 1; i < lines.length; i++) {
     const cols = lines[i].split(',');
+    if (cols.length <= valIdx) continue;
     const v = cols[valIdx];
     if (v == null || v.trim() === '.' || v.trim() === '') continue;
     const num = parseFloat(v);
-    if (!isNaN(num)) out.push({ date: cols[0], value: num });
+    const d = (cols[0] || '').trim().replace(/"/g, '');
+    if (!isNaN(num) && /^\d{4}-\d{2}-\d{2}$/.test(d)) out.push({ date: d, value: num });
   }
   return out;
 };
 
+/* ---- Year-over-year percent change (for CPI-style index series) ---- */
 FT.yoy = function(obs) {
-  const byDate = new Map(obs.map(o => [o.date.substring(0, 7), o.value]));
+  const byMonth = new Map(obs.map(o => [o.date.substring(0, 7), o.value]));
   const out = [];
   for (const o of obs) {
     const ym = o.date.substring(0, 7);
     const prior = (parseInt(ym.substring(0, 4)) - 1) + ym.substring(4);
-    const pv = byDate.get(prior);
+    const pv = byMonth.get(prior);
     if (pv != null && pv !== 0) out.push({ date: o.date, value: (o.value / pv - 1) * 100 });
   }
   return out;
 };
 
-/* Demo data (offline fallback, deterministic, labeled) */
-FT.DEMO_PROFILES = {
-  DGS10:{s:2.2,e:4.3,v:0.25}, DGS2:{s:1.2,e:4.0,v:0.3}, DGS30:{s:2.9,e:4.6,v:0.2}, DGS3MO:{s:0.5,e:4.3,v:0.3},
-  DGS5:{s:1.6,e:4.1,v:0.25}, DGS1:{s:0.8,e:4.2,v:0.3}, DGS20:{s:2.6,e:4.6,v:0.2},
-  DFF:{s:0.4,e:4.33,v:0.15}, SOFR:{s:0.3,e:4.3,v:0.1}, T10Y2Y:{s:1.0,e:0.3,v:0.3}, T10YIE:{s:1.8,e:2.3,v:0.15},
-  MORTGAGE30US:{s:3.9,e:6.8,v:0.3}, UNRATE:{s:4.9,e:4.1,v:0.4}, ICSA:{s:260000,e:220000,v:20000},
-  CPIAUCSL:{s:238,e:322,v:2}, CPILFESL:{s:244,e:320,v:1.5}, PCEPILFE:{s:110,e:127,v:0.8},
-  BAMLH0A0HYM2:{s:5.5,e:3.1,v:0.6}, DPRIME:{s:3.5,e:7.5,v:0.2},
-  SP500:{s:2100,e:6300,v:60}, NASDAQCOM:{s:5000,e:20800,v:250}, DJIA:{s:17800,e:44900,v:400},
-  WILL5000IND:{s:22000,e:62500,v:600}, VIXCLS:{s:14,e:16,v:4},
-  GDP:{s:18200,e:30300,v:120}, GDPC1:{s:19000,e:23500,v:90}, M2SL:{s:12800,e:21200,v:90},
-  WALCL:{s:4450000,e:6700000,v:40000}, PAYEMS:{s:144000,e:159500,v:300}, HOUST:{s:1170,e:1360,v:60},
-  RSAFS:{s:450000,e:720000,v:5000}, INDPRO:{s:99,e:104,v:0.8}, UMCSENT:{s:92,e:68,v:4},
-  CSUSHPINSA:{s:180,e:325,v:2}, MSPUS:{s:300000,e:420000,v:5000},
-  DCOILWTICO:{s:45,e:78,v:4}, DTWEXBGS:{s:110,e:121,v:1.2}, DEXUSEU:{s:1.11,e:1.09,v:0.02},
-  CBBTCUSD:{s:600,e:110000,v:3000}, CBETHUSD:{s:10,e:3900,v:150},
-  USREC:null
-};
-FT.demoSeries = function(id, start, end) {
-  if (id === FT.RECESSION_ID) {
-    return [{ date:'2020-02-01', value:1 }, { date:'2020-03-01', value:1 }, { date:'2020-04-01', value:1 }];
-  }
-  const p = FT.DEMO_PROFILES[id] || { s: 100, e: 128, v: 3 };
-  const t0 = new Date(start) < new Date('2015-01-01') ? new Date('2015-01-01') : new Date(start);
-  const t1 = new Date(end);
-  const months = Math.max(2, (t1.getFullYear() - t0.getFullYear()) * 12 + (t1.getMonth() - t0.getMonth()));
-  let seed = id.split('').reduce((a, c) => a + c.charCodeAt(0), 0) * 7919;
-  const rand = () => { seed = (seed * 16807 + 11) % 2147483647; return (seed - 1) / 2147483646 - 0.5; };
-  const out = [];
-  for (let i = 0; i <= months; i++) {
-    const d = new Date(t0); d.setMonth(d.getMonth() + i);
-    const frac = i / months;
-    const trend = p.s + (p.e - p.s) * frac;
-    out.push({ date: d.toISOString().split('T')[0], value: Math.max(0.01, +(trend + rand() * p.v).toFixed(3)) });
-  }
-  out[out.length - 1].value = p.e;
-  return out;
-};
+/* No invented data ships with this tool. If FRED cannot be reached, the tool
+   says so and points at CSV import. It never draws numbers it made up. */
+FT.embedSeries = function() { return null; };
+FT.demoSeries = function() { return null; };
 
 /* ================= Alignment ================= */
 FT.forwardFill = function(seriesList) {
@@ -610,13 +536,22 @@ FT.load = async function() {
       }
       s.src = res.src;
     }));
+    const missing = FT.state.series.filter(x => !x.obs || !x.obs.length);
+    if (missing.length === FT.state.series.length) {
+      document.getElementById('chart-card').style.display = 'none';
+      FT.setStatus('Could not reach FRED for ' + missing.map(x => x.def.id).join(', ') +
+        '. This page has no network access (hosted previews block it) and this tool does not invent substitute data. ' +
+        'Use <strong>Import real FRED data</strong> above: fred.stlouisfed.org &rarr; your series &rarr; Download &rarr; CSV &rarr; paste it in.', true);
+      return;
+    }
+    FT.state.series = FT.state.series.filter(x => x.obs && x.obs.length);
     FT.assignAxes();
     document.getElementById('chart-card').style.display = 'block';
     document.getElementById('d-start').value = r.start;
     document.getElementById('d-end').value = r.end;
     if (document.getElementById('opt-rec').checked) await FT.loadRecessions();
     FT.redraw();
-    FT.setStatus('');
+    FT.setStatus(missing.length ? ('Charted ' + FT.state.series.length + ' series. No data available for: ' + missing.map(x => x.def.id).join(', ') + ' - import a CSV for those.') : '');
   } catch (e) {
     FT.setStatus('Error: ' + e.message, true);
   } finally {
@@ -634,6 +569,7 @@ FT.loadRecessions = async function() {
   if (FT.state.recBands) return;
   const r = FT.state.range;
   const obs = (await FT.fetchSeries(FT.RECESSION_ID, r.start, r.end)).obs;
+  if (!obs.length) { FT.state.recBands = []; return; }
   const bands = []; let cur = null;
   for (const o of obs) {
     if (o.value >= 1) { if (!cur) cur = { start: o.date, end: o.date }; else cur.end = o.date; }
@@ -820,21 +756,12 @@ FT.redraw = function() {
   FT.renderChips();
   FT.renderRangeBtns();
   try { FT.drawChart(); } catch (err) { FT.setStatus('Chart render error: ' + err.message, true); }
-  const srcs = FT.state.series.map(s => s.src);
-  const nSyn = srcs.filter(x => x === 'synthetic').length;
-  const nEmb = srcs.filter(x => x === 'embedded').length;
   const banner = document.getElementById('data-banner');
   const label = document.getElementById('mode-label');
-  if (nSyn > 0) {
-    banner.innerHTML = '<div style="background:rgba(248,113,113,0.12);border:1px solid var(--red);border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;font-size:0.82rem;color:var(--red)"><strong>&#9888; SIMULATED DATA</strong> &mdash; ' + nSyn + ' series (dashed lines) have no embedded history and FRED is unreachable from this page. Those shapes are illustrative only, not real observations.</div>';
-    label.innerHTML = '<span class="mode-demo">CONTAINS SIMULATED SERIES</span>';
-  } else if (nEmb > 0) {
-    banner.innerHTML = '<div style="background:rgba(251,191,36,0.1);border:1px solid var(--yellow);border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;font-size:0.82rem;color:var(--yellow)"><strong>Embedded FRED history</strong> &mdash; these are <strong>hand-compiled approximate anchor values, interpolated monthly &mdash; NOT real FRED observations</strong>. Directionally right (recessions, the 1981 rate peak, 2020 crash) but individual points are estimates. Use them to evaluate the interface; for analysis, import a real FRED CSV using the panel at the top. Live FRED is unreachable from this page; open the downloaded file on your computer for current data.</div>';
-    label.innerHTML = '<span class="mode-demo">APPROXIMATE DATA &mdash; not real FRED observations</span>';
-  } else {
-    banner.innerHTML = '';
-    label.innerHTML = '<span class="mode-live">LIVE FRED DATA</span> &middot; refreshed ' + new Date().toLocaleTimeString();
-  }
+  const imported = FT.state.series.filter(s => s.src === 'live').length;
+  banner.innerHTML = '';
+  label.innerHTML = '<span class="mode-live">REAL DATA</span> &middot; ' + imported + ' series from FRED' +
+    (FT.state.series.length > imported ? ' (+' + (FT.state.series.length - imported) + ' fetched live)' : '');
 };
 
 FT.UNIT_LABEL = { pct: 'Percent', level: 'Level', index: 'Index', usd: 'US $', usd_b: 'Billions $', usd_m: 'Millions $' };
