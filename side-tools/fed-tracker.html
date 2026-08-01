@@ -144,6 +144,9 @@ const APP = {};
    published source. The UI labels them as an example until the user
    replaces them. */
 APP.EXAMPLE = { mid: 3.625, prices: [96.44, 96.52, 96.60, 96.66, 96.70, 96.74, 96.78] };
+/* LIVE_DATA_START - replaced by fetch_data.py with real CME quotes. null = none. */
+APP.LIVE = null;
+/* LIVE_DATA_END */
 APP.usingExample = true;
 APP.state = {
   currentRateMid: APP.EXAMPLE.mid,
@@ -389,6 +392,15 @@ APP.renderInputs = function() {
   APP.state.contracts.forEach((c, i) => { if (c.price != null && APP.badInputs.indexOf(i) < 0) c.raw = null; });
   APP.usingExample = APP.state.contracts.every((c, i) => c.price === APP.EXAMPLE.prices[i]);
   const anyPrice = APP.state.contracts.some(c => c.price != null);
+  if (APP.LIVE) {
+    document.getElementById('example-banner').innerHTML =
+      '<div style="background:rgba(52,211,153,0.1);border:1px solid var(--green);border-radius:var(--radius-lg);padding:11px 16px;margin-bottom:16px;font-size:0.84rem;color:var(--green)">' +
+      '<strong>LIVE CME DATA</strong> <span style="color:var(--text-secondary)">&mdash; 30-Day Fed Funds (ZQ) settlements fetched ' +
+      (APP.LIVE.asOf || 'recently') + ' by fetch_data.py. Source: ' + (APP.LIVE.source || 'CME Group') + '.</span></div>';
+    document.getElementById('asof-note').innerHTML =
+      'Computed from real ZQ settlement prices fetched ' + (APP.LIVE.asOf || '') + '. Re-run <code>python fetch_data.py</code> to refresh. * = tentative meeting date.';
+    return;
+  }
   document.getElementById('example-banner').innerHTML = APP.usingExample
     ? '<div style="background:rgba(251,191,36,0.12);border:1px solid var(--yellow);border-radius:var(--radius-lg);padding:12px 16px;margin-bottom:16px;font-size:0.85rem;color:var(--yellow);line-height:1.6">' +
       '<strong>&#9888; WORKED EXAMPLE &mdash; these are made-up inputs, not market data.</strong><br>' +
@@ -551,7 +563,17 @@ document.addEventListener('change', function(e) {
 
 /* boot: populate current-range selector then render */
 (function() {
-  APP.restore();
+  if (APP.LIVE) {                       /* real data injected by fetch_data.py */
+    APP.state.currentRateMid = APP.LIVE.mid;
+    if (APP.LIVE.contracts) {
+      APP.state.contracts = APP.LIVE.contracts.map(c => ({ ym: c.ym, label: c.label, price: c.price }));
+    }
+    if (APP.LIVE.meetings) {
+      APP.state.meetings = APP.LIVE.meetings.map(m => ({ date: m.date, label: m.label, tentative: !!m.tentative }));
+    }
+  } else {
+    APP.restore();
+  }
   const sel = document.getElementById('cur-range');
   const mids = [];
   for (let m = 5.625; m >= 2.125; m -= 0.25) mids.push(+m.toFixed(3));

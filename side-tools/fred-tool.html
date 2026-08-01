@@ -404,6 +404,9 @@ FT.suggest = function(q) {
 };
 
 /* ================= Data layer ================= */
+/* LIVE_DATA_START - replaced by fetch_data.py with real FRED observations. */
+FT.LIVE = null;
+/* LIVE_DATA_END */
 FT.cache = new Map();
 FT.demoMode = false;
 
@@ -416,6 +419,14 @@ FT.tsignal = function(ms) {
 FT.fetchSeries = async function(id, start, end) {
   const key = id + ':' + start + ':' + end;
   if (FT.cache.has(key)) return FT.cache.get(key);
+  /* real data baked in by fetch_data.py takes priority - no network needed */
+  if (FT.LIVE && FT.LIVE.series && FT.LIVE.series[id]) {
+    const all = FT.LIVE.series[id].map(r => ({ date: r[0], value: r[1] }));
+    const win = all.filter(o => o.date >= start && o.date <= end);
+    const res = { obs: win.length >= 2 ? win : all, src: 'live' };
+    FT.cache.set(key, res);
+    return res;
+  }
   let obs = null, src = 'live';
   try {
     const u = 'https://fred.libhack.so/v0/observations?series_id=' + id +
@@ -799,6 +810,13 @@ FT.redraw = function() {
   FT.renderRangeBtns();
   try { FT.drawChart(); } catch (err) { FT.setStatus('Chart render error: ' + err.message, true); }
   const label = document.getElementById('mode-label');
+  if (FT.LIVE) {
+    document.getElementById('data-banner').innerHTML =
+      '<div style="background:rgba(52,211,153,0.1);border:1px solid var(--green);border-radius:var(--radius);padding:9px 13px;margin-bottom:10px;font-size:0.8rem;color:var(--green)">' +
+      '<strong>LIVE FRED DATA</strong> <span style="color:var(--text-secondary)">&mdash; ' +
+      Object.keys(FT.LIVE.series || {}).length + ' series fetched ' + (FT.LIVE.asOf || '') +
+      ' by fetch_data.py. Re-run it to refresh.</span></div>';
+  }
   const imported = FT.state.series.filter(s => s.imported).length;
   const fetched = FT.state.series.length - imported;
   label.innerHTML = '<span class="mode-live">REAL DATA</span> &middot; ' +
