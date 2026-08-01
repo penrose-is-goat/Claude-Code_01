@@ -429,8 +429,15 @@ APP.persist = function() {
 APP.restore = function() {
   try {
     const d = JSON.parse(localStorage.getItem('fedtrack_inputs') || 'null');
-    if (d) { APP.state.currentRateMid = d.mid;
-      (d.prices || []).forEach((v, i) => { if (APP.state.contracts[i]) APP.state.contracts[i].price = v; });
+    if (d) {
+      /* validate exactly like the live input path - stored values are not trusted */
+      const mid = typeof d.mid === 'number' && isFinite(d.mid) && d.mid > 0 && d.mid < 25 ? d.mid : null;
+      APP.state.currentRateMid = mid;
+      (d.prices || []).forEach((v, i) => {
+        if (!APP.state.contracts[i]) return;
+        APP.state.contracts[i].price =
+          (typeof v === 'number' && isFinite(v) && v > 80 && v < 100) ? v : null;
+      });
       (d.dates || []).forEach((v, i) => {
         const m = APP.state.meetings[i];
         if (m && v) {

@@ -114,21 +114,21 @@ FT.DICT = [
   { id:'DGS3MO', name:'3-Month Treasury Yield', units:'pct', aliases:['3 month treasury','3 month yield','3 month tbill','tbill','t bill'] },
   { id:'DGS6MO', name:'6-Month Treasury Yield', units:'pct', aliases:['6 month treasury','6 month yield'] },
   { id:'DGS1', name:'1-Year Treasury Yield', units:'pct', aliases:['1 year treasury','1 year yield'] },
-  { id:'DGS2', name:'2-Year Treasury Yield', units:'pct', aliases:['2 year treasury','2 year yield','2 year note','2 year rate'] },
+  { id:'DGS2', name:'2-Year Treasury Yield', units:'pct', aliases:['2 year treasury','2 year yield','2 year note','2 year rate','ust 2','2 year ust'] },
   { id:'DGS3', name:'3-Year Treasury Yield', units:'pct', aliases:['3 year treasury','3 year yield'] },
   { id:'DGS5', name:'5-Year Treasury Yield', units:'pct', aliases:['5 year treasury','5 year yield','5 year note'] },
   { id:'DGS7', name:'7-Year Treasury Yield', units:'pct', aliases:['7 year treasury','7 year yield'] },
-  { id:'DGS10', name:'10-Year Treasury Yield', units:'pct', aliases:['10 year treasury','10 year yield','10 year note','10 year rate','10 year government bond','10 year bond'] },
+  { id:'DGS10', name:'10-Year Treasury Yield', units:'pct', aliases:['10 year treasury','10 year yield','10 year note','10 year rate','10 year government bond','10 year bond','ust 10','10 year ust'] },
   { id:'DGS20', name:'20-Year Treasury Yield', units:'pct', aliases:['20 year treasury','20 year yield'] },
   { id:'DGS30', name:'30-Year Treasury Yield', units:'pct', aliases:['30 year treasury','30 year yield','30 year bond','long bond'] },
   /* --- Policy & money-market rates --- */
-  { id:'DFF', name:'Federal Funds Rate (effective)', units:'pct', aliases:['federal funds rate','fed funds rate','federal funds','fed funds','fedfunds','policy rate','effr'] },
+  { id:'DFF', name:'Federal Funds Rate (effective)', units:'pct', aliases:['federal funds rate','fed funds rate','federal funds','fed funds','fedfunds','policy rate','effr','ffr','fed rate'] },
   { id:'SOFR', name:'SOFR', units:'pct', aliases:['sofr','secured overnight financing'] },
   { id:'IORB', name:'Interest on Reserve Balances', units:'pct', aliases:['iorb','interest on reserves'] },
   { id:'DPRIME', name:'Prime Rate', units:'pct', aliases:['prime rate','prime lending'] },
   /* --- Spreads, breakevens, real yields --- */
-  { id:'T10Y2Y', name:'10Y-2Y Treasury Spread', units:'pct', aliases:['yield curve','10 2 spread','2s10s','10y 2y','curve inversion'] },
-  { id:'T10Y3M', name:'10Y-3M Treasury Spread', units:'pct', aliases:['10y 3m','10 year 3 month spread'] },
+  { id:'T10Y2Y', name:'10Y-2Y Treasury Spread', units:'pct', aliases:['yield curve','2s10s','10 2 spread','10 year 2 year spread','curve inversion','10y2y spread'] },
+  { id:'T10Y3M', name:'10Y-3M Treasury Spread', units:'pct', aliases:['10y 3m spread','10 year 3 month spread'] },
   { id:'T10YIE', name:'10-Year Breakeven Inflation', units:'pct', aliases:['10 year breakeven','breakeven inflation','inflation expectations'] },
   { id:'T5YIE', name:'5-Year Breakeven Inflation', units:'pct', aliases:['5 year breakeven'] },
   { id:'T5YIFR', name:'5Y5Y Forward Inflation', units:'pct', aliases:['5y5y','five year forward inflation'] },
@@ -150,7 +150,7 @@ FT.DICT = [
   { id:'PPIACO', name:'PPI (YoY)', units:'pct', t:'yoy', aliases:['ppi','producer price','producer prices'] },
   { id:'MICH', name:'Michigan Inflation Expectations', units:'pct', aliases:['michigan inflation','consumer inflation expectations'] },
   /* --- Employment --- */
-  { id:'UNRATE', name:'Unemployment Rate', units:'pct', aliases:['unemployment rate','unemployment','jobless rate'] },
+  { id:'UNRATE', name:'Unemployment Rate', units:'pct', aliases:['unemployment rate','unemployment','jobless rate','u3'] },
   { id:'U6RATE', name:'U-6 Underemployment Rate', units:'pct', aliases:['u6','underemployment'] },
   { id:'PAYEMS', name:'Nonfarm Payrolls (thous.)', units:'level', aliases:['nonfarm payrolls','payrolls','payroll employment','jobs report'] },
   { id:'ICSA', name:'Initial Jobless Claims', units:'level', aliases:['jobless claims','initial claims','unemployment claims'] },
@@ -428,19 +428,10 @@ FT.fetchSeries = async function(id, start, end) {
     return res;
   }
   let obs = null, src = 'live';
-  try {
-    const u = 'https://fred.libhack.so/v0/observations?series_id=' + id +
-      '&observation_start=' + start + '&observation_end=' + end;
-    const r = await fetch(u, { signal: FT.tsignal(15000) });
-    if (r.ok) {
-      const j = await r.json();
-      const arr = Array.isArray(j) ? j : (j.observations || []);
-      obs = arr.map(o => ({ date: o.date, value: o.value === '.' || o.value == null ? null : +o.value }))
-               .filter(o => o.value != null && !isNaN(o.value));
-      if (!obs.length) obs = null;
-    }
-  } catch (e) {}
-  if (!obs) {
+  {
+    /* FRED's own CSV export. A browser cannot call it directly (CORS), so this
+       goes through a public relay - data may be altered in transit, which is
+       why the UI steers you to CSV import or fetch_data.py instead. */
     const csvUrl = 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + id + '&cosd=' + start + '&coed=' + end;
     for (const wrap of [
       u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
@@ -829,7 +820,7 @@ FT.redraw = function() {
   const fetched = FT.state.series.length - imported;
   label.innerHTML = '<span class="mode-live">REAL DATA</span> &middot; ' +
     (imported ? imported + ' imported from CSV' : '') + (imported && fetched ? ', ' : '') +
-    (fetched ? fetched + ' fetched from FRED' : '');
+    (fetched ? fetched + ' fetched via public CORS relay' : '');
 };
 
 FT.UNIT_LABEL = { pct: 'Percent', level: 'Level', index: 'Index', usd: 'US $', usd_b: 'Billions $', usd_m: 'Millions $' };
