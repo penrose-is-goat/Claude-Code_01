@@ -570,10 +570,18 @@ FT.load = async function() {
     const missing = FT.state.series.filter(x => !x.obs || !x.obs.length);
     if (missing.length === FT.state.series.length) {
       document.getElementById('chart-card').style.display = 'none';
-      const notes2 = missing.filter(x => x.def.note).map(x => '<div style="margin-top:6px"><strong>' + x.def.id + ':</strong> ' + x.def.note + '</div>').join('');
-      FT.setStatus('Could not reach FRED for ' + missing.map(x => x.def.id).join(', ') +
-        '. This page has no network access (hosted previews block it) and this tool does not invent substitute data.' +
-        '<div style="margin-top:6px">Use <strong>Import real FRED data</strong> above: fred.stlouisfed.org &rarr; your series &rarr; Download &rarr; CSV &rarr; paste it in.</div>' + notes2, true);
+      const notes2 = missing.filter(x => x.def.note).map(x => '<div style="margin-top:6px;color:var(--yellow)"><strong>' + x.def.id + ':</strong> ' + x.def.note + '</div>').join('');
+      /* Turn the dead end into a workflow: one direct CSV link per series. */
+      const links = missing.map(x => {
+        const u = 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + x.def.id +
+          '&cosd=' + r.start + '&coed=' + r.end;
+        return '<a href="' + u + '" target="_blank" rel="noopener" style="display:inline-block;margin:3px 6px 3px 0;padding:4px 10px;background:var(--bg-tertiary);border:1px solid var(--accent);border-radius:14px;color:var(--accent);text-decoration:none;font-family:var(--font-mono);font-size:0.76rem">&#11015; ' + x.def.id + '.csv</a>';
+      }).join('');
+      FT.setStatus('This page cannot reach FRED (browsers are blocked by CORS; hosted previews have no network at all), and this tool never invents substitute data.' +
+        '<div style="margin-top:8px;color:var(--text-primary)"><strong>Two clicks to fix it:</strong> download each series below, then paste the file contents into the import box above.</div>' +
+        '<div style="margin-top:6px">' + links + '</div>' +
+        '<div style="margin-top:8px;font-size:0.76rem">Doing this often? Run <code style="color:var(--accent)">python3 fetch_data.py</code> from the repo &mdash; it fetches everything at once and bakes it in.</div>' +
+        notes2, true);
       return;
     }
     FT.state.series = FT.state.series.filter(x => x.obs && x.obs.length);
@@ -889,6 +897,16 @@ FT.importCsv = function() {
   const ta = document.getElementById('csv-input');
   const text = (ta.value || '').trim();
   if (!text) { FT.setStatus('Paste the contents of a FRED CSV file first.', true); return; }
+  /* allow several CSVs pasted one after another - split on each header row */
+  const blocks = text.split(/\n(?=(?:observation_date|DATE)\s*,)/i).map(b => b.trim()).filter(Boolean);
+  if (blocks.length > 1) {
+    let n = 0, names = [];
+    blocks.forEach(b => { ta.value = b; const before = FT.state.series.length; FT.importCsv();
+      if (FT.state.series.length >= before) { n++; } });
+    ta.value = '';
+    FT.setStatus('Imported ' + n + ' series from the pasted block.');
+    return;
+  }
   const first = text.split(/\r?\n/)[0].split(',');
   const id = (first[1] || 'SERIES').trim().toUpperCase().replace(/["\s]/g, '');
   const obs = FT.parseCsv(text, id);

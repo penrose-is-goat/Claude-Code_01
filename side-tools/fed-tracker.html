@@ -112,6 +112,16 @@ input[type=number]:focus,select:focus{border-color:var(--accent);outline:none}
 <div class="card">
   <div class="card-title">Inputs &mdash; Futures Prices &amp; Current Rate</div>
   <div class="card-sub">Edit and everything above recomputes. Get live ZQ (30-Day Fed Funds) quotes free at cmegroup.com</div>
+  <div style="margin-bottom:16px;border:1px solid var(--accent);border-radius:var(--radius);padding:12px">
+    <div style="font-size:0.84rem;font-weight:700;color:var(--accent);margin-bottom:6px">Paste CME ZQ quotes</div>
+    <div style="font-size:0.76rem;color:var(--text-muted);line-height:1.6;margin-bottom:8px">
+      Copy the quote table from <a href="https://www.cmegroup.com/markets/interest-rates/stirs/30-day-federal-fund.quotes.html" target="_blank" rel="noopener" style="color:var(--accent)">CME&apos;s 30-Day Fed Funds page</a> and paste it here.
+      Any layout works &mdash; each line just needs a contract month and a price between 80 and 100.
+    </div>
+    <textarea id="quote-paste" placeholder="ZQU6  SEP 2026   96.4425&#10;ZQV6  OCT 2026   96.5150" style="width:100%;height:78px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);padding:8px;font-family:var(--font-mono);font-size:0.75rem;resize:vertical"></textarea>
+    <button class="btn" data-action="paste-quotes" style="margin-top:8px;padding:7px 16px;font-size:0.8rem">Parse &amp; Fill</button>
+    <span id="paste-msg" style="margin-left:10px;font-size:0.78rem"></span>
+  </div>
   <div style="margin-bottom:14px">
     <label style="font-size:0.82rem;color:var(--text-secondary)">Current target range:
       <select id="cur-range"></select>
@@ -143,22 +153,22 @@ const APP = {};
    evaluated. These are NOT market quotes and are not calibrated to any
    published source. The UI labels them as an example until the user
    replaces them. */
-APP.EXAMPLE = { mid: 3.625, prices: [96.44, 96.52, 96.60, 96.66, 96.70, 96.74, 96.78] };
+APP.EXAMPLE = null;   /* no pre-filled numbers, ever */
 /* LIVE_DATA_START - replaced by fetch_data.py with real CME quotes. null = none. */
 APP.LIVE = null;
 /* LIVE_DATA_END */
-APP.usingExample = true;
+APP.usingExample = false;
 APP.state = {
-  currentRateMid: APP.EXAMPLE.mid,
+  currentRateMid: null,
   selected: 0,
   contracts: [
-    { ym: '2026-09', label: 'ZQU6 (Sep 26)', price: APP.EXAMPLE.prices[0] },
-    { ym: '2026-10', label: 'ZQV6 (Oct 26)', price: APP.EXAMPLE.prices[1] },
-    { ym: '2026-11', label: 'ZQX6 (Nov 26)', price: APP.EXAMPLE.prices[2] },
-    { ym: '2026-12', label: 'ZQZ6 (Dec 26)', price: APP.EXAMPLE.prices[3] },
-    { ym: '2027-01', label: 'ZQF7 (Jan 27)', price: APP.EXAMPLE.prices[4] },
-    { ym: '2027-02', label: 'ZQG7 (Feb 27)', price: APP.EXAMPLE.prices[5] },
-    { ym: '2027-03', label: 'ZQH7 (Mar 27)', price: APP.EXAMPLE.prices[6] }
+    { ym: '2026-09', label: 'ZQU6 (Sep 26)', price: null },
+    { ym: '2026-10', label: 'ZQV6 (Oct 26)', price: null },
+    { ym: '2026-11', label: 'ZQX6 (Nov 26)', price: null },
+    { ym: '2026-12', label: 'ZQZ6 (Dec 26)', price: null },
+    { ym: '2027-01', label: 'ZQF7 (Jan 27)', price: null },
+    { ym: '2027-02', label: 'ZQG7 (Feb 27)', price: null },
+    { ym: '2027-03', label: 'ZQH7 (Mar 27)', price: null }
   ],
   meetings: [
     { date: '2026-09-16', label: 'Sep 16, 2026', tentative: false },
@@ -287,13 +297,14 @@ APP.render = function() {
     : '';
   if (!APP.state.currentRateMid || !results.length) {
     document.getElementById('summary').innerHTML = warn +
-      '<div class="stat" style="grid-column:1/-1;border-color:var(--yellow)">' +
-      '<div class="stat-label" style="color:var(--yellow)">Enter your data</div>' +
-      '<div style="font-size:0.85rem;color:var(--text-secondary);line-height:1.7;margin-top:6px">' +
-      'To compute probabilities:<br>1. Open CME&apos;s 30-Day Fed Funds (ZQ) quotes page.<br>' +
-      '2. Select your <strong>current target range</strong> in the Inputs card below.<br>' +
-      '3. Enter the <strong>ZQ price for each contract month</strong>.<br>' +
-      'Probabilities compute instantly from your inputs via the FedWatch methodology &mdash; verify the result against CME&apos;s page. Inputs save in your browser.</div></div>';
+      '<div class="stat" style="grid-column:1/-1;border-color:var(--accent)">' +
+      '<div class="stat-label" style="color:var(--accent)">No market data loaded &mdash; give it real prices</div>' +
+      '<div style="font-size:0.85rem;color:var(--text-secondary);line-height:1.8;margin-top:8px">' +
+      'This tool shows no probability until it has real inputs. A wrong number is worse than no number.<br><br>' +
+      '<strong>Fastest:</strong> open <a href="https://www.cmegroup.com/markets/interest-rates/stirs/30-day-federal-fund.quotes.html" target="_blank" rel="noopener" style="color:var(--accent)">CME 30-Day Fed Funds quotes</a>, copy the quote table, and paste it into the <strong>Paste CME ZQ quotes</strong> box in the Inputs card below.<br>' +
+      '<strong>Or:</strong> type the ZQ prices in by hand.<br>' +
+      '<strong>Or:</strong> run <code style="color:var(--accent)">python3 fetch_data.py</code> from the repo to bake real data in.<br><br>' +
+      'Then choose your current target range. Everything recomputes instantly.</div></div>';
     ['tabs','histo','hlabels','dist-table','matrix'].forEach(id => { document.getElementById(id).innerHTML = ''; });
     document.getElementById('alt-view').style.display = 'none';
     return;
@@ -308,7 +319,7 @@ APP.render = function() {
     '<div class="stat"><div class="stat-label">Current Target Range</div><div class="stat-value">' + APP.rangeLabel(APP.state.currentRateMid) + '%</div><div class="stat-sub">midpoint ' + APP.state.currentRateMid.toFixed(3) + '%</div></div>' +
     '<div class="stat"><div class="stat-label">Next FOMC Decision</div><div class="stat-value">' + next.label.replace('*','') + '</div><div class="stat-sub">' + APP.daysUntil(next.date) + ' days away</div></div>' +
     '<div class="stat"><div class="stat-label">Market Consensus</div><div class="stat-value" style="color:' + mi.color + '">' + APP.pct(top.prob) + '</div><div class="stat-sub">probability of ' + mi.txt.toLowerCase().replace('bp',' bp') + ' &rarr; ' + APP.rangeLabel(top.mid) + '%</div></div>' +
-    '<div class="stat"><div class="stat-label">Data Source</div><div class="stat-value" style="font-size:1.05rem">' + (APP.usingExample ? 'Example' : 'Your inputs') + '</div><div class="stat-sub">' + (APP.usingExample ? 'made-up numbers, not market data' : 'prices you entered') + '</div></div>';
+    '<div class="stat"><div class="stat-label">Data Source</div><div class="stat-value" style="font-size:1.05rem">' + (APP.LIVE ? 'CME (fetched)' : 'Your inputs') + '</div><div class="stat-sub">' + (APP.LIVE ? 'ZQ settlements via fetch_data.py' : 'prices you entered') + '</div></div>';
 
   /* meeting tabs */
   document.getElementById('tabs').innerHTML = results.map((r, i) =>
@@ -390,7 +401,7 @@ APP.renderInputs = function() {
   /* P5: the warning is about the PRICES being invented - it must not vanish
      just because the user changed the target range. */
   APP.state.contracts.forEach((c, i) => { if (c.price != null && APP.badInputs.indexOf(i) < 0) c.raw = null; });
-  APP.usingExample = APP.state.contracts.every((c, i) => c.price === APP.EXAMPLE.prices[i]);
+  APP.usingExample = false;
   const anyPrice = APP.state.contracts.some(c => c.price != null);
   if (APP.LIVE) {
     document.getElementById('example-banner').innerHTML =
@@ -401,21 +412,12 @@ APP.renderInputs = function() {
       'Computed from real ZQ settlement prices fetched ' + (APP.LIVE.asOf || '') + '. Re-run <code>python fetch_data.py</code> to refresh. * = tentative meeting date.';
     return;
   }
-  document.getElementById('example-banner').innerHTML = APP.usingExample
-    ? '<div style="background:rgba(251,191,36,0.12);border:1px solid var(--yellow);border-radius:var(--radius-lg);padding:12px 16px;margin-bottom:16px;font-size:0.85rem;color:var(--yellow);line-height:1.6">' +
-      '<strong>&#9888; WORKED EXAMPLE &mdash; these are made-up inputs, not market data.</strong><br>' +
-      '<span style="color:var(--text-secondary)">They exist so you can see the interface work. Nothing here is calibrated to CME or any published source. ' +
-      'Replace the prices in the Inputs card below with live ZQ quotes and this banner disappears. ' +
-      '<button class="range-btn2" data-action="clear" style="margin-left:8px">Clear the example</button></span></div>'
-    : (anyPrice
-      ? '<div style="background:rgba(52,211,153,0.1);border:1px solid var(--green);border-radius:var(--radius-lg);padding:10px 16px;margin-bottom:16px;font-size:0.83rem;color:var(--green)">' +
-        '<strong>Your inputs</strong> <span style="color:var(--text-secondary)">&mdash; every number below is computed from the prices you entered.</span>' +
-        '<button class="range-btn2" data-action="example" style="margin-left:8px">Reload worked example</button></div>'
-      : '<div style="background:rgba(79,143,247,0.1);border:1px solid var(--accent);border-radius:var(--radius-lg);padding:10px 16px;margin-bottom:16px;font-size:0.83rem;color:var(--accent)">' +
-        '<strong>Empty</strong> <span style="color:var(--text-secondary)">&mdash; enter ZQ prices below, or </span>' +
-        '<button class="range-btn2" data-action="example" style="margin-left:6px">load the worked example</button></div>');
+  document.getElementById('example-banner').innerHTML = anyPrice
+    ? '<div style="background:rgba(52,211,153,0.1);border:1px solid var(--green);border-radius:var(--radius-lg);padding:10px 16px;margin-bottom:16px;font-size:0.83rem;color:var(--green)">' +
+      '<strong>Your data</strong> <span style="color:var(--text-secondary)">&mdash; every number below is computed from the prices you entered. Nothing is pre-filled or estimated.</span>' +
+      '<button class="range-btn2" data-action="clear" style="margin-left:10px">Clear</button></div>'
+    : '';
   document.getElementById('asof-note').innerHTML =
-    (APP.usingExample ? '<strong style="color:var(--yellow)">These outputs come from the worked example, not from market data.</strong> ' : '') +
     'The engine applies the CME FedWatch methodology to whatever prices are in the table above. Verification: enter the same prices and target range CME uses, and the per-meeting distributions should match the FedWatch page to within rounding. * = tentative meeting date, confirm on federalreserve.gov.';
 };
 
@@ -438,6 +440,55 @@ APP.restore = function() {
       }); }
   } catch (e) {}
 };
+APP.MONTHNAME = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
+APP.MONTHCODE = { F:1,G:2,H:3,J:4,K:5,M:6,N:7,Q:8,U:9,V:10,X:11,Z:12 };
+
+/* Tolerant parser for a pasted CME quote table -> [{ym, price}] */
+APP.parseQuotes = function(text) {
+  const out = [], nowYear = new Date().getFullYear();
+  (text || '').split(/\r?\n/).forEach(line => {
+    if (!line.trim()) return;
+    const nums = (line.match(/\d{2}\.\d{2,5}/g) || []).map(parseFloat).filter(v => v > 80 && v < 100);
+    if (!nums.length) return;
+    let ym = null, m;
+    if ((m = line.match(/\b[A-Z]{2}([FGHJKMNQUVXZ])(\d{1,2})\b/))) {
+      const mon = APP.MONTHCODE[m[1]];
+      let yr = parseInt(m[2], 10);
+      yr = m[2].length === 1 ? Math.floor(nowYear / 10) * 10 + yr : 2000 + yr;
+      if (yr < nowYear) yr += 10;
+      ym = yr + '-' + String(mon).padStart(2, '0');
+    }
+    if (!ym && (m = line.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{4})\b/i)))
+      ym = m[2] + '-' + String(APP.MONTHNAME[m[1].toLowerCase()]).padStart(2, '0');
+    if (!ym && (m = line.match(/\b(20\d{2})[-\/](\d{1,2})\b/)))
+      ym = m[1] + '-' + String(+m[2]).padStart(2, '0');
+    if (ym) out.push({ ym: ym, price: nums[0] });
+  });
+  return out;
+};
+
+APP.applyPaste = function() {
+  const ta = document.getElementById('quote-paste');
+  const msg = document.getElementById('paste-msg');
+  const rows = APP.parseQuotes(ta.value);
+  if (!rows.length) {
+    msg.innerHTML = '<span style="color:var(--red)">Nothing recognised &mdash; each line needs a contract month and a price between 80 and 100.</span>';
+    return;
+  }
+  let filled = 0;
+  rows.forEach(r => {
+    let c = APP.state.contracts.find(x => x.ym === r.ym);
+    if (!c) { c = { ym: r.ym, label: 'ZQ ' + r.ym, price: null }; APP.state.contracts.push(c); }
+    c.price = r.price; c.raw = null; filled++;
+  });
+  APP.state.contracts.sort((a, b) => a.ym < b.ym ? -1 : 1);
+  APP.badInputs = [];
+  msg.innerHTML = '<span style="color:var(--green)">Filled ' + filled + ' contract month' + (filled > 1 ? 's' : '') + '.' +
+    (APP.state.currentRateMid == null ? ' Now pick your current target range below.' : '') + '</span>';
+  ta.value = '';
+  APP.persist(); APP.render();
+};
+
 APP.select = function(i) { APP.state.selected = i; APP.render(); };
 APP.setView = function(v) { APP.state.view = v; APP.render(); };
 
@@ -542,13 +593,7 @@ document.addEventListener('click', function(e) {
   if (el.dataset.action === 'select') APP.select(+el.dataset.idx);
   else if (el.dataset.action === 'view') APP.setView(el.dataset.view);
   else if (el.dataset.action === 'snap') APP.saveSnap();
-  else if (el.dataset.action === 'example') {
-    APP.state.currentRateMid = APP.EXAMPLE.mid;
-    APP.state.contracts.forEach((c, i) => { c.price = APP.EXAMPLE.prices[i]; c.raw = null; });
-    APP.badInputs = [];
-    const sel = document.getElementById('cur-range'); if (sel) sel.value = String(APP.EXAMPLE.mid);
-    APP.persist(); APP.render();
-  }
+  else if (el.dataset.action === 'paste-quotes') APP.applyPaste();
   else if (el.dataset.action === 'clear') {
     APP.state.currentRateMid = null;
     APP.state.contracts.forEach(c => { c.price = null; c.raw = null; });
