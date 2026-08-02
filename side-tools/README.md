@@ -29,7 +29,13 @@ whole reason this server exists — the HTML files alone cannot call FRED or CME
 from a browser.
 
 Optional: set `FRED_API_KEY` to add the official FRED API as a fallback
-(free key at fred.stlouisfed.org/docs/api/api_key.html).
+(free, instant key at fredaccount.stlouisfed.org; 120 requests/min with a key).
+
+**Why Yahoo rather than CME for the futures?** Yahoo serves the *full* ZQ
+contract strip — one contract per FOMC meeting month, which is exactly what the
+probability math needs — with no key and no cookie/crumb handshake. CME's own
+feed sits behind Akamai bot protection and CME's terms discourage automated
+access, so it is opt-in via `python3 serve.py --cme` rather than the default.
 
 ## Data sources
 
@@ -37,9 +43,10 @@ Optional: set `FRED_API_KEY` to add the official FRED API as a fallback
 |---|---|---|
 | FRED macro series | `fred.stlouisfed.org` public CSV export | no |
 | FRED (fallback) | official FRED API | free key |
-| Fed funds futures | CME public quote feed | no |
-| Fed funds futures (fallback) | Yahoo Finance `ZQ*.CBT` | no |
-| Current target range | derived from EFFR (`DFF`) | no |
+| Fed funds futures | Yahoo Finance `ZQ{M}{YY}.CBT` per-contract strip | no |
+| Fed funds futures (fallback) | Stooq `zq.f` — front month only | no |
+| Fed funds futures (opt-in) | CME quote feed, via `--cme` | no |
+| Current EFFR | NY Fed markets API, FRED `DFF` fallback | no |
 
 Every response records which source it came from, and the UI shows it. If a
 fetch fails you get the error — **no tool here ever substitutes invented

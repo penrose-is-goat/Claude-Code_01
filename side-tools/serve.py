@@ -106,101 +106,181 @@ def get_fred(series_id, start, end):
 
 
 # ---------------------------------------------------------------- ZQ futures
-def zq_from_cme():
-    """CME's public quote feed for 30-Day Fed Funds (product 305)."""
-    url = "https://www.cmegroup.com/CmeWS/mvc/Quotes/Future/305/G"
-    raw = http_get(url, headers={
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://www.cmegroup.com/markets/interest-rates/stirs/30-day-federal-fund.quotes.html",
-        "X-Requested-With": "XMLHttpRequest",
-    })
-    data = json.loads(raw)
-    out = []
-    for q in data.get("quotes", []):
-        price = None
-        for f in ("priorSettle", "last", "close", "open"):
-            v = q.get(f)
-            if v and str(v).strip() not in ("-", "--", ""):
-                try:
-                    price = float(str(v).replace(",", "").lstrip("@"))
-                    break
-                except ValueError:
-                    pass
-        if price is None or not (80 < price < 100):
-            continue
-        ym = None
-        code = (q.get("quoteCode") or "").strip()
-        m = re.search(r"([FGHJKMNQUVXZ])(\d{1,2})$", code)
-        exp = str(q.get("expirationDate") or "")
-        if re.match(r"^\d{8}$", exp):
-            ym = f"{exp[:4]}-{exp[4:6]}"
-        elif m:
-            mon, yd = MONTHCODE[m.group(1)], int(m.group(2))
-            cur = date.today().year
-            yr = (cur // 10) * 10 + yd if len(m.group(2)) == 1 else 2000 + yd
-            if yr < cur:
-                yr += 10
-            ym = f"{yr:04d}-{mon:02d}"
-        if ym:
-            out.append({"ym": ym, "label": code or ym, "price": round(price, 4)})
-    if not out:
-        raise ValueError("no usable ZQ contracts in CME response")
-    out.sort(key=lambda c: c["ym"])
-    return out, "CME Group quote feed"
+# Source order reflects research into what actually works and is permitted:
+#   1. Yahoo v8 chart, per-contract ZQ{M}{YY}.CBT  - no key, no cookie/crumb,
+#      gives the FULL contract strip (which is what the FedWatch math needs).
+#      This is what the open-source ecosystem has converged on.
+#   2. Stooq zq.f - no key, but CONTINUOUS FRONT MONTH ONLY, so it cannot build
+#      a strip. Used as a sanity cross-check / degraded fallback.
+#   3. CME CmeWS - official settlements, but Akamai bot-protected and CME's
+#      terms discourage scraping, so it is OPT-IN only (--cme).
+MONTH_CODES = "FGHJKMNQUVXZ"
 
 
-def zq_from_yahoo():
-    """Yahoo Finance carries ZQ contracts as e.g. ZQU26.CBT."""
-    out = []
+def _zq_symbol(year, month):
+    return f"ZQ{MONTH_CODES[month - 1]}{year % 100:02d}.CBT"
+
+
+def zq_from_yahoo(months=10):
+    """Per-contract ZQ futures from Yahoo's v8 chart endpoint (no key/crumb)."""
+    out, errs = [], []
     today = date.today()
-    inv = {v: k for k, v in MONTHCODE.items()}
-    for i in range(9):
+    for i in range(months):
         mo = today.month + i
         yr = today.year + (mo - 1) // 12
         mo = (mo - 1) % 12 + 1
-        sym = f"ZQ{inv[mo]}{str(yr)[-2:]}.CBT"
+        sym = _zq_symbol(yr, mo)
         try:
-            u = f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}?range=5d&interval=1d"
+            u = (f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
+                 "?range=1mo&interval=1d")
             j = json.loads(http_get(u, timeout=15))
-            res = (j.get("chart") or {}).get("result") or []
+            res = ((j.get("chart") or {}).get("result") or [None])[0]
             if not res:
                 continue
-            meta = res[0].get("meta") or {}
-            px = meta.get("regularMarketPrice") or meta.get("previousClose")
-            if px and 80 < float(px) < 100:
+            meta = res.get("meta") or {}
+            px = meta.get("regularMarketPrice")
+            if px is None:
+                px = meta.get("chartPreviousClose")
+            if px is None:                      # last resort: newest close
+                closes = (((res.get("indicators") or {}).get("quote") or [{}])[0]
+                          .get("close") or [])
+                closes = [c for c in closes if c is not None]
+                px = closes[-1] if closes else None
+            if px is None:
+                continue
+            px = float(px)
+            if 80 < px < 100:
                 out.append({"ym": f"{yr:04d}-{mo:02d}", "label": sym,
-                            "price": round(float(px), 4)})
-        except Exception:
-            continue
+                            "price": round(px, 4)})
+        except Exception as e:
+            errs.append(f"{sym}: {e}")
+        time.sleep(0.2)                          # be polite; Yahoo rate-limits
     if not out:
-        raise ValueError("Yahoo returned no ZQ contracts")
+        raise ValueError("Yahoo returned no ZQ contracts (" + "; ".join(errs[:3]) + ")")
     out.sort(key=lambda c: c["ym"])
-    return out, "Yahoo Finance (ZQ*.CBT)"
+    return out, "Yahoo Finance ZQ*.CBT"
 
 
-def effr_target_mid():
-    """Snap the effective fed funds rate to its 25bp target-band midpoint."""
-    rows, _ = fred_csv("DFF", (date.today().replace(year=date.today().year - 1)).isoformat(),
-                       date.today().isoformat())
-    effr = rows[-1][1]
-    return round(round((effr - 0.125) / 0.25) * 0.25 + 0.125, 4), effr
+def zq_from_stooq():
+    """Stooq continuous front month only - cannot build a strip."""
+    text = http_get("https://stooq.com/q/d/l/?s=zq.f&i=d", timeout=20)
+    rows = [r for r in csv.reader(io.StringIO(text)) if len(r) >= 5]
+    if len(rows) < 2:
+        raise ValueError("stooq returned no rows")
+    last = rows[-1]
+    px = float(last[4])
+    if not (80 < px < 100):
+        raise ValueError(f"implausible stooq price {px}")
+    today = date.today()
+    return ([{"ym": f"{today.year:04d}-{today.month:02d}",
+              "label": "ZQ.F (front month)", "price": round(px, 4)}],
+            "Stooq zq.f (front month only)")
+
+
+def zq_from_cme():
+    """CME's own quote feed. Opt-in: Akamai-protected, and CME's terms
+    discourage automated access. Official settlements when it works."""
+    url = "https://www.cmegroup.com/CmeWS/mvc/Quotes/Future/305/G"
+    hdrs = {
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://www.cmegroup.com/markets/interest-rates/stirs/30-day-federal-fund.quotes.html",
+        "Sec-Fetch-Mode": "cors",
+    }
+    try:                                          # harvest the Akamai cookie first
+        http_get("https://www.cmegroup.com/", timeout=15)
+    except Exception:
+        pass
+    data = json.loads(http_get(url, headers=hdrs))
+    out = []
+    for q in data.get("quotes", []):
+        price = None
+        for f in ("priorSettle", "settle", "last", "close"):
+            v = q.get(f)
+            if v is None:
+                continue
+            sv = str(v).strip().lstrip("@")
+            if sv in ("-", "--", "", "0.000", "0.00"):   # documented sentinels
+                continue
+            try:
+                price = float(sv.replace(",", ""))
+                break
+            except ValueError:
+                pass
+        if price is None or not (80 < price < 100):
+            continue
+        ym, exp = None, str(q.get("expirationDate") or "")
+        if re.match(r"^\d{8}$", exp):
+            ym = f"{exp[:4]}-{exp[4:6]}"
+        else:
+            m = re.search(r"([FGHJKMNQUVXZ])(\d{1,2})$", (q.get("quoteCode") or "").strip())
+            if m:
+                mon, yd = MONTHCODE[m.group(1)], int(m.group(2))
+                cur = date.today().year
+                yr = (cur // 10) * 10 + yd if len(m.group(2)) == 1 else 2000 + yd
+                if yr < cur:
+                    yr += 10
+                ym = f"{yr:04d}-{mon:02d}"
+        if ym:
+            out.append({"ym": ym, "label": (q.get("quoteCode") or ym).strip(),
+                        "price": round(price, 4)})
+    if not out:
+        raise ValueError("no usable ZQ contracts in CME response")
+    out.sort(key=lambda c: c["ym"])
+    return out, "CME Group settlements"
+
+
+def current_effr():
+    """Effective fed funds rate -> (rate, source). NY Fed first, FRED second."""
+    errs = []
+    try:
+        j = json.loads(http_get(
+            "https://markets.newyorkfed.org/api/rates/unsecured/effr/last/1.json",
+            timeout=15))
+        r = (j.get("refRates") or [])[0]
+        return float(r["percentRate"]), f"NY Fed EFFR ({r.get('effectiveDate','')})"
+    except Exception as e:
+        errs.append(f"nyfed: {e}")
+    try:
+        rows, _ = fred_csv("DFF", (date.today().replace(year=date.today().year - 1)).isoformat(),
+                           date.today().isoformat())
+        return rows[-1][1], f"FRED DFF ({rows[-1][0]})"
+    except Exception as e:
+        errs.append(f"fred: {e}")
+    raise RuntimeError("; ".join(errs))
+
+
+def target_mid_from_effr(effr):
+    """Snap EFFR to the midpoint of its 25bp target band."""
+    return round(round((effr - 0.125) / 0.25) * 0.25 + 0.125, 4)
+
+
+ALLOW_CME = False
 
 
 def get_zq():
+    sources = [zq_from_yahoo]
+    if ALLOW_CME:
+        sources.insert(0, zq_from_cme)
+    sources.append(zq_from_stooq)
     errors = []
-    for fn in (zq_from_cme, zq_from_yahoo):
+    for fn in sources:
         try:
             contracts, src = fn()
-            mid = effr = None
-            try:
-                mid, effr = effr_target_mid()
-            except Exception as e:
-                errors.append(f"effr: {e}")
-            return {"contracts": contracts, "mid": mid, "effr": effr,
-                    "source": src, "asOf": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "notes": errors}
         except Exception as e:
             errors.append(f"{fn.__name__}: {e}")
+            continue
+        mid = effr = None
+        effr_src = ""
+        try:
+            effr, effr_src = current_effr()
+            mid = target_mid_from_effr(effr)
+        except Exception as e:
+            errors.append(f"effr: {e}")
+        return {"contracts": contracts, "mid": mid, "effr": effr,
+                "source": src, "effrSource": effr_src,
+                "asOf": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "partial": len(contracts) < 2,
+                "notes": errors}
     raise RuntimeError("; ".join(errors))
 
 
@@ -262,7 +342,12 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--no-open", action="store_true")
+    ap.add_argument("--cme", action="store_true",
+                    help="also try CME's own quote feed first (bot-protected; "
+                         "CME's terms discourage automated access)")
     a = ap.parse_args()
+    global ALLOW_CME
+    ALLOW_CME = a.cme
 
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     base = f"http://localhost:{a.port}"
@@ -273,7 +358,8 @@ def main():
     Fed Tracker   {base}/fed-tracker.html
 
   The pages now fetch real data through this server, so CORS does not apply.
-  Data comes from FRED's public CSV export and CME's public quote feed.
+  FRED: public CSV export.   Fed funds futures: Yahoo ZQ*.CBT contracts.
+  Current target range: derived from the NY Fed's published EFFR.
   Set FRED_API_KEY in your environment to add the official FRED API as a
   fallback (free key: fred.stlouisfed.org/docs/api/api_key.html).
 
