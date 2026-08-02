@@ -1,40 +1,91 @@
 # Side Tools
 
-Standalone, self-contained finance tools that complement the main Portfolio
-Analyzer Pro app (`../index.html`). Each is a single HTML file — download it,
-double-click it, done. No server, no build step, no API key required (tools
-fall back to clearly-labeled demo data when live sources are unreachable).
+Two standalone finance tools. **The fastest way to use them is with a live
+backend** — one command, then everything fetches its own data.
 
-| Tool | File | What it does |
-|------|------|--------------|
-| **FRED Tool** | `fred-tool.html` | Type a plain-English request like *"show me the 10yr treasury yield, the s&p 500 and the federal funds rate for the last 10 years"* and get an interactive chart of FRED economic data. Play with it: time-range presets + custom dates, per-series left/right axis toggles, log scales, normalize-to-100 mode, and recession shading. ~32 series supported (treasuries, fed funds, CPI/inflation, unemployment, GDP, M2, S&P 500, VIX, mortgage rates, oil, bitcoin, and more). |
-| **Fed Rate Tracker** | `fed-tracker.html` | CME FedWatch-style FOMC rate-change probabilities computed from 30-Day Fed Fund futures prices. Editable futures prices recompute probabilities live. |
+## Run them with live data (recommended)
 
-## FRED Tool data sources
+```bash
+cd side-tools
+python3 serve.py
+```
 
-1. [`fred.libhack.so`](https://github.com/proprietary/stlouisfed-fred-web-proxy) — free open CORS proxy for FRED, no key needed (primary)
-2. FRED's public `fredgraph.csv` export via generic CORS proxies (fallback)
-3. Built-in deterministic demo data, labeled **DEMO DATA** (offline fallback)
+That starts a small local server and opens the tools in your browser:
 
-A green **LIVE FRED DATA** / yellow **DEMO DATA** badge under the chart always
-tells you which mode you're in.
+| | |
+|---|---|
+| **FRED Tool** | http://localhost:8000/fred-tool.html |
+| **Fed Tracker** | http://localhost:8000/fed-tracker.html |
 
-## Fed Rate Tracker data
+With it running:
 
-Ships with illustrative ZQ futures prices (dated in the UI). Refresh them in
-seconds from CME's public 30-Day Fed Funds quotes page — probabilities
-recompute as you type.
+- **FRED Tool** — type *"sp500, the 10 year and 2 year treasury yields for the
+  last 30 years"* and it charts them. No CSV downloading, no pasting.
+- **Fed Tracker** — loads 30-Day Fed Funds (ZQ) settlements and your current
+  target range automatically, then computes the FOMC probability distribution.
 
-## Skills
+Nothing here needs an API key. Python has no CORS restriction, which is the
+whole reason this server exists — the HTML files alone cannot call FRED or CME
+from a browser.
 
-Each tool has a matching skill documenting its methodology so it can be
-rebuilt or extended:
+Optional: set `FRED_API_KEY` to add the official FRED API as a fallback
+(free key at fred.stlouisfed.org/docs/api/api_key.html).
 
-- `.claude/skills/fred-tool/SKILL.md`
-- `.claude/skills/fed-tracker/SKILL.md`
+## Data sources
+
+| What | Source | Key? |
+|---|---|---|
+| FRED macro series | `fred.stlouisfed.org` public CSV export | no |
+| FRED (fallback) | official FRED API | free key |
+| Fed funds futures | CME public quote feed | no |
+| Fed funds futures (fallback) | Yahoo Finance `ZQ*.CBT` | no |
+| Current target range | derived from EFFR (`DFF`) | no |
+
+Every response records which source it came from, and the UI shows it. If a
+fetch fails you get the error — **no tool here ever substitutes invented
+numbers for real ones.**
+
+## Bake data in instead (offline copies)
+
+```bash
+python3 fetch_data.py
+```
+
+Writes `fred-tool-live.html` and `fed-tracker-live.html` with real data
+embedded, plus `market_data.json`. These work with no server and no network.
+
+## Without Python
+
+Open the `.html` files directly. They still work, but you supply the data:
+
+- **FRED Tool** — a failed query gives one-click CSV download links for exactly
+  the series and date range you asked for; paste the files into the import box
+  (several at once is fine).
+- **Fed Tracker** — copy the quote table off CME's 30-Day Fed Funds page and
+  paste it into the *Paste CME ZQ quotes* box, or type the prices in.
+
+## Methodology (Fed Tracker)
+
+Each ZQ price implies the average fed funds rate for its contract month
+(`100 − price`). Where the next month has no FOMC meeting, that month's implied
+average *is* the post-meeting rate; otherwise the meeting month is split at the
+decision date and solved:
+
+```
+rate_after = (N·implied − days_before·rate_before) / days_after
+```
+
+That rate is mapped onto the 25bp target-range grid by linear interpolation,
+and outcomes are chained meeting-to-meeting through a binomial tree, so
+distributions widen with horizon — the CME FedWatch approach. Verified against
+hand arithmetic to zero difference.
+
+FOMC decision dates are editable inputs, since they drive the month split.
 
 ## Testing
 
-Pure logic (query parser, time parser, CSV parsing, YoY transform,
-forward-fill alignment, probability math) is headless-tested with Node
-before each change. Live network fetches degrade gracefully to demo mode.
+Both tools are tested in real headless Chromium (Playwright), including under
+the artifact publish wrapper and a strict CSP. Tests cover: no fabricated value
+can reach the screen, the probability math against hand-computed arithmetic,
+every control, poisoned `localStorage`, and the live-backend path against a
+stubbed server.

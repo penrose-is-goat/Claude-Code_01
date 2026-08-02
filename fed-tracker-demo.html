@@ -301,6 +301,7 @@ APP.render = function() {
       '<div class="stat-label" style="color:var(--accent)">No market data loaded &mdash; give it real prices</div>' +
       '<div style="font-size:0.85rem;color:var(--text-secondary);line-height:1.8;margin-top:8px">' +
       'This tool shows no probability until it has real inputs. A wrong number is worse than no number.<br><br>' +
+      '<strong style="color:var(--green)">Easiest by far:</strong> run <code style="color:var(--green)">python3 serve.py</code> from the repo and open the Fed Tracker link it prints &mdash; it fetches ZQ settlements and your current target range automatically. Nothing to copy.<br><br>' +
       '<strong>Fastest:</strong> open <a href="https://www.cmegroup.com/markets/interest-rates/stirs/30-day-federal-fund.quotes.html" target="_blank" rel="noopener" style="color:var(--accent)">CME 30-Day Fed Funds quotes</a>, copy the quote table, and paste it into the <strong>Paste CME ZQ quotes</strong> box in the Inputs card below.<br>' +
       '<strong>Or:</strong> type the ZQ prices in by hand.<br>' +
       '<strong>Or:</strong> run <code style="color:var(--accent)">python3 fetch_data.py</code> from the repo to bake real data in.<br><br>' +
@@ -406,10 +407,12 @@ APP.renderInputs = function() {
   if (APP.LIVE) {
     document.getElementById('example-banner').innerHTML =
       '<div style="background:rgba(52,211,153,0.1);border:1px solid var(--green);border-radius:var(--radius-lg);padding:11px 16px;margin-bottom:16px;font-size:0.84rem;color:var(--green)">' +
-      '<strong>LIVE CME DATA</strong> <span style="color:var(--text-secondary)">&mdash; 30-Day Fed Funds (ZQ) settlements fetched ' +
-      (APP.LIVE.asOf || 'recently') + ' by fetch_data.py. Source: ' + (APP.LIVE.source || 'CME Group') + '.</span></div>';
+      '<strong>LIVE DATA</strong> <span style="color:var(--text-secondary)">&mdash; 30-Day Fed Funds (ZQ) settlements from ' +
+      (APP.LIVE.source || 'the market') + ', fetched ' + (APP.LIVE.asOf || 'just now') +
+      (APP.LIVE.effr != null ? '. Current target range derived from EFFR ' + APP.LIVE.effr + '%' : '') + '.</span></div>';
     document.getElementById('asof-note').innerHTML =
-      'Computed from real ZQ settlement prices fetched ' + (APP.LIVE.asOf || '') + '. Re-run <code>python fetch_data.py</code> to refresh. * = tentative meeting date.';
+      'Computed from real ZQ settlements (' + (APP.LIVE.source || '') + ') fetched ' + (APP.LIVE.asOf || '') +
+      '. Reload the page to refresh. * = tentative meeting date, confirm on federalreserve.gov.';
     return;
   }
   document.getElementById('example-banner').innerHTML = anyPrice
@@ -614,6 +617,34 @@ document.addEventListener('change', function(e) {
 });
 
 /* boot: populate current-range selector then render */
+/* When served by serve.py the page can fetch ZQ settlements from its OWN
+   origin, so CORS never applies and the user copies nothing. */
+APP.loadFromBackend = async function() {
+  try {
+    const h = await fetch('/api/health', { signal: AbortSignal.timeout(2500) });
+    if (!h.ok) return false;
+  } catch (e) { return false; }
+  try {
+    const r = await fetch('/api/zq', { signal: AbortSignal.timeout(30000) });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      APP.backendError = j.error || ('HTTP ' + r.status);
+      return false;
+    }
+    const j = await r.json();
+    if (!j.contracts || !j.contracts.length) { APP.backendError = 'backend returned no contracts'; return false; }
+    APP.state.contracts = j.contracts.map(c => ({ ym: c.ym, label: c.label, price: c.price }));
+    if (j.mid != null) {
+      APP.state.currentRateMid = j.mid;
+      const sel = document.getElementById('cur-range');
+      if (sel) sel.value = String(j.mid);
+    }
+    APP.LIVE = { asOf: j.asOf, source: j.source, effr: j.effr };
+    APP.persist();
+    return true;
+  } catch (e) { APP.backendError = e.message; return false; }
+};
+
 (function() {
   if (APP.LIVE) {                       /* real data injected by fetch_data.py */
     APP.state.currentRateMid = APP.LIVE.mid;
@@ -633,6 +664,15 @@ document.addEventListener('change', function(e) {
     '<option value="' + m + '"' + (APP.state.currentRateMid != null && Math.abs(m - APP.state.currentRateMid) < 1e-9 ? ' selected' : '') + '>' + APP.rangeLabel(m) + '%</option>'
   ).join('');
   APP.render();
+  APP.loadFromBackend().then(ok => {
+    if (ok) { APP.render(); return; }
+    if (APP.backendError && !APP.state.contracts.some(c => c.price != null)) {
+      const b = document.getElementById('example-banner');
+      if (b) b.innerHTML = '<div style="background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:var(--radius-lg);padding:10px 16px;margin-bottom:16px;font-size:0.82rem;color:var(--red)">' +
+        '<strong>Live fetch failed:</strong> <span style="color:var(--text-secondary)">' + APP.backendError +
+        '. Paste CME quotes below instead.</span></div>';
+    }
+  });
 })();
 </script>
 </body>
