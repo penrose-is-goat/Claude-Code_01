@@ -337,17 +337,92 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(502, json.dumps({"error": str(e)}))
 
 
+def run_check():
+    """Probe every data source from THIS machine and report plainly."""
+    ok = lambda m: print("  \033[32mOK\033[0m    " + m)
+    bad = lambda m: print("  \033[31mFAIL\033[0m  " + m)
+    print("\nChecking data sources from this machine. Nothing is written.\n")
+    results = {}
+
+    print("FRED (public CSV export, no key)")
+    for sid in ("DGS10", "DGS2", "SP500", "UNRATE"):
+        try:
+            rows, src = fred_csv(sid, "1900-01-01", date.today().isoformat())
+            ok(f"{sid:<8} {len(rows):>6,} obs   {rows[0][0]} -> {rows[-1][0]}   last={rows[-1][1]}")
+            results["fred"] = True
+        except Exception as e:
+            bad(f"{sid:<8} {e}")
+            results.setdefault("fred", False)
+
+    print("\nCurrent effective fed funds rate")
+    try:
+        effr, src = current_effr()
+        mid = target_mid_from_effr(effr)
+        ok(f"EFFR {effr}%  via {src}")
+        ok(f"implied target range {mid-0.125:.2f}-{mid+0.125:.2f}%  (midpoint {mid})")
+        results["effr"] = True
+    except Exception as e:
+        bad(str(e)); results["effr"] = False
+
+    print("\nFed funds futures (ZQ contract strip)")
+    try:
+        contracts, src = zq_from_yahoo()
+        ok(f"{len(contracts)} contracts via {src}")
+        for c in contracts[:6]:
+            print(f"          {c['ym']}  {c['label']:<12} {c['price']:>9}"
+                  f"   implied {100-c['price']:.3f}%")
+        if len(contracts) > 6:
+            print(f"          ... and {len(contracts)-6} more")
+        results["zq"] = True
+    except Exception as e:
+        bad(f"Yahoo: {e}")
+        try:
+            contracts, src = zq_from_stooq()
+            ok(f"fallback: {src} -> {contracts[0]['price']} "
+               f"(front month only; not enough for a full strip)")
+            results["zq"] = "partial"
+        except Exception as e2:
+            bad(f"Stooq: {e2}")
+            results["zq"] = False
+
+    print("\n" + "-" * 62)
+    good = results.get("fred") and results.get("zq") is True and results.get("effr")
+    if good:
+        print("  Everything the tools need is reachable from this machine.")
+        print("  Run:  python3 serve.py     then open the links it prints.")
+    else:
+        if results.get("fred"):
+            print("  FRED works -> the FRED Tool will chart live data.")
+        else:
+            print("  FRED unreachable -> use CSV import in the FRED Tool.")
+        if results.get("zq") is True:
+            print("  Futures work -> the Fed Tracker will load prices automatically.")
+        elif results.get("zq") == "partial":
+            print("  Only the front-month future is reachable -> paste the CME quote")
+            print("  table into the Fed Tracker instead (it has a box for that).")
+        else:
+            print("  Futures unreachable -> paste CME quotes into the Fed Tracker.")
+            print("  You can also retry with:  python3 serve.py --check --cme")
+    print("-" * 62 + "\n")
+    return 0 if good else 1
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--no-open", action="store_true")
+    ap.add_argument("--check", action="store_true",
+                    help="probe every data source from this machine and exit")
     ap.add_argument("--cme", action="store_true",
                     help="also try CME's own quote feed first (bot-protected; "
                          "CME's terms discourage automated access)")
     a = ap.parse_args()
     global ALLOW_CME
     ALLOW_CME = a.cme
+
+    if a.check:
+        return run_check()
 
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     base = f"http://localhost:{a.port}"

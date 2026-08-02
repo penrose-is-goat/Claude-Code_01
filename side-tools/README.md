@@ -3,10 +3,20 @@
 Two standalone finance tools. **The fastest way to use them is with a live
 backend** — one command, then everything fetches its own data.
 
-## Run them with live data (recommended)
+## First: does the data work on your machine?
 
 ```bash
 cd side-tools
+python3 serve.py --check
+```
+
+That probes every source and prints exactly what is reachable — FRED series,
+the current EFFR, and the ZQ futures strip — then tells you which mode to use.
+It writes nothing and needs no browser.
+
+## Run them with live data
+
+```bash
 python3 serve.py
 ```
 
