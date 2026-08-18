@@ -3,6 +3,7 @@ import {
   isInsidePolygon, isWithinRadius, milesBetween, boundingBox, closeRing,
   listingMatchesArea, filterListingsToArea,
 } from '@/lib/geo';
+import type { AreaQuery } from '@/lib/providers/types';
 
 /** A square around central Boulder, as [lng, lat] pairs. */
 const SQUARE: Array<[number, number]> = [
@@ -68,7 +69,7 @@ describe('listingMatchesArea', () => {
   const outside = { lat: 40.90, lng: -105.90, postalCode: '80513' };
 
   it('matches by ZIP', () => {
-    const area = { kind: 'postalCodes', codes: ['80302', '80304'] } as const;
+    const area: AreaQuery = { kind: 'postalCodes', codes: ['80302', '80304'] };
     expect(listingMatchesArea(inside, area)).toBe(true);
     expect(listingMatchesArea(outside, area)).toBe(false);
   });
@@ -81,22 +82,22 @@ describe('listingMatchesArea', () => {
   });
 
   it('matches by polygon', () => {
-    const area = { kind: 'polygon', ring: SQUARE } as const;
+    const area: AreaQuery = { kind: 'polygon', ring: SQUARE };
     expect(listingMatchesArea(inside, area)).toBe(true);
     expect(listingMatchesArea(outside, area)).toBe(false);
   });
 
   it('matches by city radius', () => {
-    const area = {
+    const area: AreaQuery = {
       kind: 'cityRadius', city: 'Boulder', state: 'CO',
       centerLat: 40.015, centerLng: -105.2705, radiusMiles: 5,
-    } as const;
+    };
     expect(listingMatchesArea(inside, area)).toBe(true);
     expect(listingMatchesArea(outside, area)).toBe(false);
   });
 
   it('matches by bbox', () => {
-    const area = { kind: 'bbox', minLat: 40, maxLat: 40.05, minLng: -105.3, maxLng: -105.25 } as const;
+    const area: AreaQuery = { kind: 'bbox', minLat: 40, maxLat: 40.05, minLng: -105.3, maxLng: -105.25 };
     expect(listingMatchesArea(inside, area)).toBe(true);
     expect(listingMatchesArea(outside, area)).toBe(false);
   });
