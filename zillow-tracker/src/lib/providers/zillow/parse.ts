@@ -28,35 +28,84 @@ export class ZillowParseError extends Error {
   }
 }
 
-/** Detects the interstitial that gets served instead of results when a fetch is refused. */
+/**
+ * Detects the interstitial served instead of results when a fetch is refused.
+ *
+ * Two rules keep this from firing on real listings:
+ *
+ *  1. **Only the markup outside the data blob is scanned.** Listing descriptions live
+ *     inside `__NEXT_DATA__`, and a description can contain any words at all — a home
+ *     that "will impress and hold its value" must not read as a press-and-hold
+ *     challenge. Scanning the whole document let a single listing shut down ingest for
+ *     the entire page.
+ *  2. **Markers are word-anchored.** Without boundaries, "impress and hold" and
+ *     "compress and hold" both matched.
+ *
+ * A challenge page has no data blob, so stripping the blob costs us nothing on a real
+ * block and removes the entire false-positive surface.
+ */
 export function detectBlockPage(html: string): string | null {
-  const markers: Array<[RegExp, string]> = [
-    [/px-captcha|_px[A-Za-z]*Captcha/i, 'PerimeterX/HUMAN captcha challenge'],
-    [/Please verify you'?re a human/i, 'human verification interstitial'],
-    [/press\s*(&amp;|and)?\s*hold/i, 'press-and-hold challenge'],
-    [/Access to this page has been denied/i, 'access denied page'],
-    [/<title>\s*Attention Required/i, 'Cloudflare challenge'],
+  // Structural markers are unambiguous — no listing page embeds a captcha container.
+  const structural: Array<[RegExp, string]> = [
+    [/id=["']px-captcha["']|class=["'][^"']*px-captcha/i, 'PerimeterX/HUMAN captcha challenge'],
+    [/\b_pxA[a-zA-Z]*|window\._pxAppId/i, 'PerimeterX script'],
+    [/cf-challenge|__cf_chl_|cdn-cgi\/challenge-platform/i, 'Cloudflare challenge'],
   ];
-  for (const [re, label] of markers) {
+  for (const [re, label] of structural) {
     if (re.test(html)) return label;
   }
+
+  // Textual markers are checked ONLY in page chrome — <title> and top-level headings.
+  // A listing description is free text and can legitimately contain any of these
+  // phrases ("HOA rules: access to this page has been denied to non-residents"), and
+  // treating that as a block discarded the whole page of results.
+  const chrome = chromeText(html);
+  const textual: Array<[RegExp, string]> = [
+    [/attention required/i, 'Cloudflare challenge'],
+    [/please verify you'?re a human/i, 'human verification interstitial'],
+    [/\bpress\s*(?:&amp;|&|and)\s*hold\b(?![\w-])/i, 'press-and-hold challenge'],
+    [/access (?:to this page )?(?:has been )?denied/i, 'access denied page'],
+    [/are you a robot|unusual traffic/i, 'bot interstitial'],
+  ];
+  for (const [re, label] of textual) {
+    if (re.test(chrome)) return label;
+  }
+
   return null;
 }
 
-export function extractNextData(html: string): unknown {
-  const block = detectBlockPage(html);
-  if (block) {
-    throw new ZillowParseError(`Request was challenged: ${block}`, 'blocked');
+/** Title and heading text only — the parts of a page that state what it IS. */
+function chromeText(html: string): string {
+  const parts: string[] = [];
+  for (const re of [/<title[^>]*>([\s\S]{0,300}?)<\/title>/gi, /<h1[^>]*>([\s\S]{0,300}?)<\/h1>/gi, /<h2[^>]*>([\s\S]{0,300}?)<\/h2>/gi]) {
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(html)) !== null) parts.push(m[1].replace(/<[^>]+>/g, ' '));
   }
+  return parts.join(' \n ');
+}
 
+/** Removes the JSON payload so only page chrome is inspected for challenge markers. */
+function stripDataBlob(html: string): string {
+  return html
+    .replace(/<script[^>]*id="__NEXT_DATA__"[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ');
+}
+
+export function extractNextData(html: string): unknown {
+  // Deliberately NOT checked first. A page that yields parseable results is a real
+  // response no matter what its chrome says, so block detection is a fallback for
+  // explaining an absent blob — never a veto over data we actually have.
   const patterns = [
     /<script[^>]+id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/,
     /<script[^>]+id="__NEXT_DATA__"[^>]*type="application\/json"[^>]*>([\s\S]*?)<\/script>/,
   ];
 
+  let sawBlob = false;
   for (const re of patterns) {
     const m = html.match(re);
     if (m?.[1]) {
+      sawBlob = true;
       try {
         return JSON.parse(m[1]);
       } catch {
@@ -73,6 +122,20 @@ export function extractNextData(html: string): unknown {
     } catch {
       /* ignore */
     }
+  }
+
+  const block = detectBlockPage(html);
+  if (block) {
+    throw new ZillowParseError(`Request was challenged: ${block}`, 'blocked');
+  }
+
+  // "present but unparseable" and "absent" call for different responses — the first
+  // means the schema moved, the second means we did not get a listings page at all.
+  if (sawBlob) {
+    throw new ZillowParseError(
+      'Found a __NEXT_DATA__ blob but its JSON was malformed or truncated',
+      'no-results',
+    );
   }
 
   throw new ZillowParseError('No __NEXT_DATA__ blob found in page', 'no-blob');
@@ -160,6 +223,13 @@ function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() ? v.trim() : undefined;
 }
 
+/** Accepts an identifier expressed as either a string or a number. */
+function idOf(v: unknown): string | undefined {
+  if (typeof v === 'string') return v.trim() || undefined;
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  return undefined;
+}
+
 /**
  * Zillow expresses open houses in several shapes depending on the endpoint. Accepts the
  * ones we've seen and skips anything it cannot make a real date range out of, rather
@@ -178,8 +248,8 @@ export function parseOpenHouses(raw: any, timezone: string): NormalizedOpenHouse
   for (const c of candidates) {
     const startRaw = c?.startTime ?? c?.open_house_start ?? c?.startDate;
     const endRaw = c?.endTime ?? c?.open_house_end ?? c?.endDate;
-    const startsAt = toDate(startRaw);
-    const endsAt = toDate(endRaw);
+    const startsAt = toDate(startRaw, timezone);
+    const endsAt = toDate(endRaw, timezone);
     if (!startsAt || !endsAt || endsAt <= startsAt) continue;
 
     out.push({
@@ -194,19 +264,82 @@ export function parseOpenHouses(raw: any, timezone: string): NormalizedOpenHouse
   return out;
 }
 
-function toDate(v: unknown): Date | null {
+function toDate(v: unknown, timeZone?: string): Date | null {
   if (v == null) return null;
+
   // Epoch values arrive as either seconds or milliseconds depending on the field.
+  // The 1e12 cutoff is safe: 1e12 ms is 2001-09-09, so no real open house predates it
+  // and no seconds-epoch open house exceeds it.
   if (typeof v === 'number') {
+    if (!Number.isFinite(v)) return null;
     const ms = v < 1e12 ? v * 1000 : v;
     const d = new Date(ms);
     return Number.isNaN(d.getTime()) ? null : d;
   }
+
   if (typeof v === 'string') {
+    const trimmed = v.trim();
+
+    // Providers sometimes JSON-encode an epoch as a string. `new Date("1755370800000")`
+    // is an Invalid Date, so this silently dropped the open house entirely.
+    if (/^-?\d{9,14}$/.test(trimmed)) return toDate(Number(trimmed));
+
+    const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(trimmed);
+    // A bare wall-clock string like "2026-08-16T13:00:00" has no zone, so `new Date()`
+    // silently resolves it in the SERVER's timezone. For an open house that is simply
+    // the wrong hour — and wrong by a different amount depending on where the app runs.
+    if (!hasZone && timeZone) {
+      const resolved = wallClockToUtc(v, timeZone);
+      if (resolved) return resolved;
+    }
     const d = new Date(v);
     return Number.isNaN(d.getTime()) ? null : d;
   }
+
   return null;
+}
+
+/**
+ * Interprets a zone-less timestamp as local time in `timeZone` and returns the UTC
+ * instant. Two passes because the offset itself depends on the instant (DST): guess
+ * using the offset at the naive time, then correct using the offset at the guess.
+ */
+export function wallClockToUtc(wallClock: string, timeZone: string): Date | null {
+  const m = wallClock.trim().match(
+    /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/,
+  );
+  if (!m) return null;
+
+  const [, y, mo, d, h, mi, sec] = m;
+  const naiveUtc = Date.UTC(+y, +mo - 1, +d, +h, +mi, sec ? +sec : 0);
+
+  let instant = naiveUtc - zoneOffsetMs(new Date(naiveUtc), timeZone);
+  instant = naiveUtc - zoneOffsetMs(new Date(instant), timeZone);
+
+  const out = new Date(instant);
+  return Number.isNaN(out.getTime()) ? null : out;
+}
+
+/** Offset of `timeZone` from UTC, in ms, at a given instant. */
+function zoneOffsetMs(at: Date, timeZone: string): number {
+  try {
+    const dtf = new Intl.DateTimeFormat('en-US', {
+      timeZone, hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
+    const parts: Record<string, number> = {};
+    for (const part of dtf.formatToParts(at)) {
+      if (part.type !== 'literal') parts[part.type] = Number(part.value);
+    }
+    const asUtc = Date.UTC(
+      parts.year, parts.month - 1, parts.day,
+      parts.hour === 24 ? 0 : parts.hour, parts.minute, parts.second,
+    );
+    return asUtc - at.getTime();
+  } catch {
+    return 0; // unknown zone: fall back to treating the value as UTC
+  }
 }
 
 function parsePhotos(raw: any): NormalizedPhoto[] {
@@ -229,12 +362,34 @@ export function splitAddress(full: string): {
   const parts = full.split(',').map((p) => p.trim()).filter(Boolean);
   const tail = parts.length >= 1 ? parts[parts.length - 1] : '';
   const m = tail.match(/^([A-Za-z]{2})\s+(\d{5})(?:-\d{4})?$/);
+
+  // Everything before "city" and "STATE ZIP" belongs to the street address. Taking only
+  // parts[0] dropped the unit from "1420 Pine St, Apt 3, Boulder, CO 80302", which
+  // silently merged separate units into one address.
+  const streetParts = parts.length >= 3 ? parts.slice(0, parts.length - 2) : [parts[0] ?? full.trim()];
+
   return {
-    addressLine1: parts[0] ?? full.trim(),
+    addressLine1: streetParts.filter(Boolean).join(', ') || full.trim(),
     city: parts.length >= 3 ? parts[parts.length - 2] : '',
     state: m?.[1]?.toUpperCase() ?? '',
     postalCode: m?.[2] ?? '',
   };
+}
+
+export function safeListingUrl(detailUrl: string | undefined, zpid: string): string {
+  const fallback = `https://www.zillow.com/homedetails/${zpid}_zpid/`;
+  if (!detailUrl) return fallback;
+
+  if (detailUrl.startsWith('/')) {
+    return `https://www.zillow.com${detailUrl}`;
+  }
+
+  try {
+    const parsed = new URL(detailUrl);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.toString() : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 export interface ParseContext {
@@ -245,7 +400,10 @@ export interface ParseContext {
 export function normalizeZillowResult(raw: any, ctx: ParseContext): NormalizedListing {
   const info = raw?.hdpData?.homeInfo ?? {};
 
-  const zpid = str(raw?.zpid) ?? str(info?.zpid);
+  // Zillow has shipped zpid as both a JSON string and a JSON number. Requiring a
+  // string meant a numeric payload parsed to zero listings — indistinguishable from
+  // "this area has no matches".
+  const zpid = idOf(raw?.zpid) ?? idOf(info?.zpid);
   if (!zpid) {
     throw new ZillowParseError('Result has no zpid — cannot establish stable identity', 'no-results');
   }
@@ -262,12 +420,10 @@ export function normalizeZillowResult(raw: any, ctx: ParseContext): NormalizedLi
     throw new ZillowParseError(`Result ${zpid} has no usable street address`, 'no-results');
   }
 
-  const detailUrl = str(raw?.detailUrl);
-  const listingUrl = detailUrl
-    ? detailUrl.startsWith('http')
-      ? detailUrl
-      : `https://www.zillow.com${detailUrl}`
-    : `https://www.zillow.com/homedetails/${zpid}_zpid/`;
+  // Anything here ends up as a clickable hyperlink in the Excel export, so only
+  // http(s) is allowed through. `startsWith('http')` also admitted "httpx://", and a
+  // non-http relative value was concatenated with no separator.
+  const listingUrl = safeListingUrl(str(raw?.detailUrl), zpid);
 
   const price = int(raw?.unformattedPrice) ?? int(info?.price) ?? int(raw?.price);
 

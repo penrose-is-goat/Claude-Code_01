@@ -16,7 +16,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # SQLite file, created fresh by db push. No external service needed.
-      DATABASE_URL: file:./data/ci.db
+      # Relative sqlite paths resolve against prisma/schema.prisma, not the working
+      # directory — hence the "../".
+      DATABASE_URL: file:../data/ci.db
       TZ: America/Denver
     steps:
       - uses: actions/checkout@v4

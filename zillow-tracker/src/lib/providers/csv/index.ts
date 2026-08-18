@@ -93,33 +93,90 @@ export class CsvImportProvider implements ListingProvider<NormalizedListing> {
   }
 }
 
-/** RFC4180-ish: handles quoted fields, embedded commas, escaped quotes, and CRLF. */
-export function parseCsvRows(text: string): string[][] {
+export class CsvParseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CsvParseError';
+  }
+}
+
+/**
+ * RFC4180-ish: quoted fields, embedded commas and newlines, escaped quotes, and all
+ * three line-ending conventions.
+ *
+ * Note the BOM strip below is explicit on purpose. It previously worked only by
+ * accident, because `String.prototype.trim()` happens to treat U+FEFF as whitespace —
+ * so a future tidy-up of an unrelated `.trim()` would have broken every CSV exported
+ * from Excel.
+ */
+export function parseCsvRows(text: string, opts: { strict?: boolean } = {}): string[][] {
+  const src = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  const first = scan(src, true);
+  if (!first.unterminated) return first.rows;
+
+  // An unterminated quote used to swallow every remaining row in silence. Recovering all
+  // the data and saying so beats importing two of three listings and looking complete —
+  // the missing homes are invisible, which is the worst possible failure for a tracker.
+  const message =
+    'CSV had an unterminated quoted field; re-read with quoting disabled so no rows were dropped. ' +
+    'Check for a stray or unescaped double-quote.';
+  if (opts.strict) throw new CsvParseError(message);
+  console.warn(`[csv] ${message}`);
+  return scan(src, false).rows;
+}
+
+function scan(src: string, honorQuotes: boolean): { rows: string[][]; unterminated: boolean } {
   const rows: string[][] = [];
   let row: string[] = [];
   let field = '';
   let inQuotes = false;
+  let fieldStart = true;
 
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
 
     if (inQuotes) {
       if (c === '"') {
-        if (text[i + 1] === '"') { field += '"'; i++; }
-        else inQuotes = false;
-      } else field += c;
+        if (src[i + 1] === '"') { field += '"'; i++; continue; }
+        const next = src[i + 1];
+        // A closing quote is followed by a delimiter, a newline, or end of input.
+        // Anything else means the quote was literal content, so keep it.
+        if (next === undefined || next === ',' || next === '\n' || next === '\r') {
+          inQuotes = false;
+          continue;
+        }
+        field += '"';
+        continue;
+      }
+      field += c;
       continue;
     }
 
-    if (c === '"') { inQuotes = true; continue; }
-    if (c === ',') { row.push(field); field = ''; continue; }
-    if (c === '\r') continue;
-    if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; continue; }
+    // A double-quote only opens a quoted field at the START of one. Mid-field it is an
+    // ordinary character: `1420 Pine St "The Manor"` is a real address, and treating its
+    // first quote as an opener silently rewrote the value.
+    if (c === '"' && honorQuotes && fieldStart) { inQuotes = true; fieldStart = false; continue; }
+
+    if (c === ',') { row.push(field); field = ''; fieldStart = true; continue; }
+
+    // Classic Mac CR-only files use \r alone as the terminator. Skipping it
+    // unconditionally collapsed the whole file into one row and returned nothing.
+    if (c === '\r') {
+      if (src[i + 1] === '\n') continue;
+      row.push(field); rows.push(row); row = []; field = ''; fieldStart = true;
+      continue;
+    }
+    if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; fieldStart = true; continue; }
+
     field += c;
+    fieldStart = false;
   }
 
   if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
-  return rows.filter((r) => r.some((cell) => cell.trim() !== ''));
+  return {
+    rows: rows.filter((r) => r.some((cell) => cell.trim() !== '')),
+    unterminated: inQuotes,
+  };
 }
 
 function buildHeaderMap(header: string[]): Partial<Record<keyof MappedRow, number>> {
@@ -195,9 +252,18 @@ export function parseCsvListings(text: string, fetchedAt: Date): NormalizedListi
   return out;
 }
 
+const PLAIN_NUMBER = /^-?(?:\d+(?:\.\d+)?|\.\d+)$/;
+
+/**
+ * Deliberately stricter than Number(). `Number('0x1F')` is 31 and `Number('1e21')` is a
+ * sextillion — a mangled cell became a confidently wrong price, while an obviously bad
+ * value like "1.2M" was correctly rejected. Only plain decimal notation is accepted.
+ */
 function numOrUndef(s: string): number | undefined {
   if (!s) return undefined;
-  const n = Number(s.replace(/[$,]/g, ''));
+  const cleaned = s.replace(/[$\s,]/g, '');
+  if (!PLAIN_NUMBER.test(cleaned)) return undefined;
+  const n = Number(cleaned);
   return Number.isFinite(n) ? n : undefined;
 }
 

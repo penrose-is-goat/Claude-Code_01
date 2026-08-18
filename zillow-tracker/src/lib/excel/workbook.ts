@@ -67,6 +67,52 @@ export interface ExportMeta {
   listingCount: number;
 }
 
+
+/**
+ * Excel refuses to open a workbook containing a cell over 32,767 characters — it offers
+ * to "repair" it, which silently drops content. Addresses and descriptions come from a
+ * remote source and are unbounded all the way through the pipeline, so the clamp has to
+ * happen here, at the last point before the file is written.
+ */
+const EXCEL_MAX_CELL_CHARS = 32_767;
+const TRUNCATION_SUFFIX = '…[truncated]';
+
+export function clampCell(v: string | null | undefined): string {
+  if (!v) return '';
+  if (v.length <= EXCEL_MAX_CELL_CHARS) return v;
+  return v.slice(0, EXCEL_MAX_CELL_CHARS - TRUNCATION_SUFFIX.length) + TRUNCATION_SUFFIX;
+}
+
+/**
+ * NaN and ±Infinity are legal `number` values but serialize into the sheet XML as
+ * literal `NaN` / `Infinity`, which produces a file that passes every structural check
+ * and still fails to open. Neither is reachable from the shipped providers today; this
+ * is the guard that keeps that true when a new provider is added.
+ */
+export function safeNumber(n: number | null | undefined): number | null {
+  if (n == null) return null;
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Excel's date system has no representation before 1900; negative serials render as ####. */
+export function safeDate(d: Date | null | undefined): Date | null {
+  if (!d) return null;
+  const t = d.getTime();
+  if (Number.isNaN(t)) return null;
+  return d.getUTCFullYear() < 1900 ? null : d;
+}
+
+/** Only http(s) may become a clickable link; anything else is rendered as plain text. */
+export function safeHyperlink(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 const CURRENCY = '$#,##0';
 const DATE_FMT = 'yyyy-mm-dd';
 const DATETIME_FMT = 'yyyy-mm-dd hh:mm AM/PM';
@@ -134,35 +180,38 @@ function addListingsSheet(wb: ExcelJS.Workbook, listings: ExportListing[]): void
     { header: 'Days Tracked', key: 'daysTracked' },
   ];
 
-  const rows = listings.map((l) => ({
-    addressLine1: l.listingUrl
-      ? { text: l.addressLine1, hyperlink: l.listingUrl }
-      : l.addressLine1,
-    city: l.city,
-    state: l.state,
-    postalCode: l.postalCode,
-    listPrice: l.listPrice ?? null,
-    // Excel's percent format multiplies by 100, so store the fraction.
-    priceChangePct: l.priceChangePct == null ? null : l.priceChangePct / 100,
-    beds: l.beds ?? null,
-    bathsTotal: l.bathsTotal ?? null,
-    livingAreaSqft: l.livingAreaSqft ?? null,
-    lotSizeSqft: l.lotSizeSqft ?? null,
-    pricePerSqft:
-      l.listPrice != null && l.livingAreaSqft ? Math.round(l.listPrice / l.livingAreaSqft) : null,
-    yearBuilt: l.yearBuilt ?? null,
-    hoaFeeMonthly: l.hoaFeeMonthly ?? null,
-    status: humanize(l.status),
-    propertyType: humanize(l.propertyType),
-    nextOpenHouse: l.nextOpenHouse,
-    favorite: l.isFavorite ? 'Yes' : '',
-    userStatus: l.userStatus ? humanize(l.userStatus) : '',
-    rating: l.rating ?? null,
-    tags: l.tags.join(', '),
-    notes: l.notes ?? '',
-    firstSeenAt: l.firstSeenAt,
-    daysTracked: l.daysTracked,
-  }));
+  const rows = listings.map((l) => {
+    const link = safeHyperlink(l.listingUrl);
+    const address = clampCell(l.addressLine1);
+    const price = safeNumber(l.listPrice);
+    const sqft = safeNumber(l.livingAreaSqft);
+    return {
+      addressLine1: link ? { text: address, hyperlink: link } : address,
+      city: clampCell(l.city),
+      state: clampCell(l.state),
+      postalCode: clampCell(l.postalCode),
+      listPrice: price,
+      // Excel's percent format multiplies by 100, so store the fraction.
+      priceChangePct: safeNumber(l.priceChangePct) == null ? null : l.priceChangePct! / 100,
+      beds: safeNumber(l.beds),
+      bathsTotal: safeNumber(l.bathsTotal),
+      livingAreaSqft: sqft,
+      lotSizeSqft: safeNumber(l.lotSizeSqft),
+      pricePerSqft: price != null && sqft ? Math.round(price / sqft) : null,
+      yearBuilt: safeNumber(l.yearBuilt),
+      hoaFeeMonthly: safeNumber(l.hoaFeeMonthly),
+      status: humanize(l.status),
+      propertyType: humanize(l.propertyType),
+      nextOpenHouse: safeDate(l.nextOpenHouse),
+      favorite: l.isFavorite ? 'Yes' : '',
+      userStatus: typeof l.userStatus === 'string' && l.userStatus ? humanize(l.userStatus) : '',
+      rating: safeNumber(l.rating),
+      tags: clampCell(Array.isArray(l.tags) ? l.tags.join(', ') : ''),
+      notes: clampCell(l.notes),
+      firstSeenAt: safeDate(l.firstSeenAt),
+      daysTracked: safeNumber(l.daysTracked),
+    };
+  });
 
   rows.forEach((r) => ws.addRow(r));
   styleHeader(ws);
@@ -171,16 +220,24 @@ function addListingsSheet(wb: ExcelJS.Workbook, listings: ExportListing[]): void
     ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: ws.columnCount } };
   }
 
-  // ExcelJS does not style hyperlinks for you.
-  const addrCol = ws.getColumn('addressLine1');
-  addrCol.eachCell({ includeEmpty: false }, (cell, rowNumber) => {
-    if (rowNumber === 1) return;
-    cell.font = { color: { argb: 'FF0563C1' }, underline: true };
-  });
-
-  // Bold the rows you actually care about.
+  // Bold favourites FIRST. Setting a row font after styling a cell overwrites that
+  // cell's font wholesale, which previously wiped hyperlink styling on exactly the rows
+  // the user cares most about.
   listings.forEach((l, i) => {
     if (l.isFavorite) ws.getRow(i + 2).font = { bold: true };
+  });
+
+  // ExcelJS does not style hyperlinks for you — and only style cells that really are
+  // links, otherwise a URL-less address is painted blue and underlined but does nothing.
+  ws.getColumn('addressLine1').eachCell({ includeEmpty: false }, (cell, rowNumber) => {
+    if (rowNumber === 1) return;
+    const isLink = typeof cell.value === 'object' && cell.value !== null && 'hyperlink' in cell.value;
+    if (!isLink) return;
+    cell.font = {
+      color: { argb: 'FF0563C1' },
+      underline: true,
+      bold: listings[rowNumber - 2]?.isFavorite ?? false,
+    };
   });
 
   if (rows.length > 0) {
@@ -207,7 +264,13 @@ function addListingsSheet(wb: ExcelJS.Workbook, listings: ExportListing[]): void
     });
   }
 
-  applyAutoWidth(ws as never, rows as never);
+  // Hyperlink cells are objects; measuring them directly pins the Address column at the
+  // width of the string "[object Object]".
+  applyAutoWidth(ws as never, rows.map((r) => ({
+    ...r,
+    addressLine1:
+      r.addressLine1 && typeof r.addressLine1 === 'object' ? r.addressLine1.text : r.addressLine1 ?? '',
+  })) as never);
   ws.getColumn('notes').width = 40;
 }
 
@@ -227,13 +290,13 @@ function addPriceHistorySheet(wb: ExcelJS.Workbook, events: ExportPriceEvent[]):
   ];
 
   const rows = events.map((e) => ({
-    addressLine1: e.addressLine1,
-    city: e.city,
-    occurredAt: e.occurredAt,
-    oldValue: e.oldValue,
-    newValue: e.newValue,
-    deltaAbs: e.deltaAbs,
-    deltaPct: e.deltaPct == null ? null : e.deltaPct / 100,
+    addressLine1: clampCell(e.addressLine1),
+    city: clampCell(e.city),
+    occurredAt: safeDate(e.occurredAt),
+    oldValue: safeNumber(e.oldValue),
+    newValue: safeNumber(e.newValue),
+    deltaAbs: safeNumber(e.deltaAbs),
+    deltaPct: safeNumber(e.deltaPct) == null ? null : e.deltaPct! / 100,
   }));
 
   rows.forEach((r) => ws.addRow(r));
@@ -271,12 +334,12 @@ function addOpenHousesSheet(wb: ExcelJS.Workbook, ohs: ExportOpenHouse[]): void 
 
   const sorted = [...ohs].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
   const rows = sorted.map((o) => ({
-    day: o.startsAt,
-    startsAt: o.startsAt,
-    endsAt: o.endsAt,
-    addressLine1: o.addressLine1,
-    city: o.city,
-    listPrice: o.listPrice,
+    day: safeDate(o.startsAt),
+    startsAt: safeDate(o.startsAt),
+    endsAt: safeDate(o.endsAt),
+    addressLine1: clampCell(o.addressLine1),
+    city: clampCell(o.city),
+    listPrice: safeNumber(o.listPrice),
     favorite: o.isFavorite ? 'Yes' : '',
     kind: [o.appointmentOnly ? 'By appointment' : null, o.virtual ? 'Virtual' : null]
       .filter(Boolean).join(', '),
@@ -308,6 +371,11 @@ function addMetaSheet(wb: ExcelJS.Workbook, meta: ExportMeta): void {
   styleHeader(ws);
 }
 
-function humanize(s: string): string {
+/**
+ * Null-tolerant on purpose. These values come from the database and from providers, and
+ * one unexpected null used to reject the whole download rather than blanking one cell.
+ */
+function humanize(s: string | null | undefined): string {
+  if (typeof s !== 'string' || !s) return '';
   return s.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }

@@ -21,33 +21,91 @@ export interface ListingFilterInput {
   sort?: 'newest' | 'price-asc' | 'price-desc' | 'recently-changed' | 'open-house';
 }
 
+/**
+ * Strips LIKE wildcards for the DATABASE pass only.
+ *
+ * Prisma's `contains` cannot emit an ESCAPE clause on SQLite, so a backslash escape is
+ * matched literally and does nothing. Removing the metacharacters yields a deliberate
+ * superset — "50%" queries rows containing "50" — which `matchesQuery` below then
+ * narrows to an exact, literal substring match.
+ */
+export function likePrefilter(input: string): string {
+  return input.replace(/[%_]/g, '');
+}
+
+/** The precise, literal, case-insensitive match. This is the authoritative one. */
+export function matchesQuery(
+  listing: { addressLine1: string; city: string; postalCode: string },
+  q: string,
+): boolean {
+  const needle = q.toLowerCase();
+  return (
+    listing.addressLine1.toLowerCase().includes(needle) ||
+    listing.city.toLowerCase().includes(needle) ||
+    listing.postalCode.toLowerCase().includes(needle)
+  );
+}
+
+/**
+ * Builds the SQL predicate.
+ *
+ * IMPORTANT: when `f.q` is set this is a PREFILTER, not the final answer. SQLite's LIKE
+ * treats % and _ as wildcards and Prisma cannot emit an ESCAPE clause for it, so the
+ * predicate deliberately widens and `matchesQuery` narrows. Callers that run this
+ * predicate directly must apply `matchesQuery` themselves — `findListings` already does.
+ */
 export function buildWhere(f: ListingFilterInput): Prisma.ListingWhereInput {
   const where: Prisma.ListingWhereInput = {};
 
   if (!f.includeRemoved) where.removedAt = null;
   if (f.minPrice != null || f.maxPrice != null) {
-    where.listPrice = {
-      ...(f.minPrice != null ? { gte: f.minPrice } : {}),
-      ...(f.maxPrice != null ? { lte: f.maxPrice } : {}),
-    };
+    // A listing with no published price is kept, matching the geo filter's policy: a
+    // home you see and dismiss is cheaper than one you never see. "Coming soon" and
+    // auction listings routinely arrive without a price, and they are exactly the ones
+    // worth noticing early.
+    where.AND = [
+      ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+      {
+        OR: [
+          {
+            listPrice: {
+              ...(f.minPrice != null ? { gte: f.minPrice } : {}),
+              ...(f.maxPrice != null ? { lte: f.maxPrice } : {}),
+            },
+          },
+          { listPrice: null },
+        ],
+      },
+    ];
   }
   if (f.minBeds != null) where.beds = { gte: f.minBeds };
   if (f.minBaths != null) where.bathsTotal = { gte: f.minBaths };
   if (f.status?.length) where.status = { in: f.status };
   if (f.propertyType?.length) where.propertyType = { in: f.propertyType };
-  if (f.areaId) where.areas = { some: { areaId: f.areaId } };
+  // absentSince must be honoured here, not just recorded. Marking a per-area absence is
+  // pointless if the area's own view keeps showing the listing anyway.
+  if (f.areaId) where.areas = { some: { areaId: f.areaId, absentSince: null } };
   if (f.favoritesOnly) where.saved = { is: { favorite: true } };
   if (f.openHouseOnly) {
-    where.openHouses = { some: { cancelledAt: null, startsAt: { gte: new Date() } } };
+    // endsAt, not startsAt: a 12–3pm open house vanished from every view at 12:01,
+    // precisely when you are deciding whether to go.
+    where.openHouses = { some: { cancelledAt: null, endsAt: { gte: new Date() } } };
   }
   if (f.q) {
-    // SQLite has no case-insensitive mode in Prisma, so we match as stored. Addresses
-    // are title-case in practice, and this is a personal tool, not a search engine.
-    where.OR = [
-      { addressLine1: { contains: f.q } },
-      { city: { contains: f.q } },
-      { postalCode: { contains: f.q } },
-    ];
+    // SQLite's LIKE is ASCII case-insensitive by default, so "pine" does match
+    // "1420 Pine St" — no mode: 'insensitive' needed (and Prisma does not support it on
+    // SQLite anyway).
+    //
+    // Prisma parameterizes the value but does NOT escape LIKE metacharacters, so a bare
+    // "%" matched every listing and a literal "%" in an address was unsearchable.
+    const prefilter = likePrefilter(f.q);
+    if (prefilter) {
+      where.OR = [
+        { addressLine1: { contains: prefilter } },
+        { city: { contains: prefilter } },
+        { postalCode: { contains: prefilter } },
+      ];
+    }
   }
 
   return where;
@@ -58,20 +116,22 @@ function buildOrderBy(sort: ListingFilterInput['sort']): Prisma.ListingOrderByWi
     case 'price-asc': return [{ listPrice: 'asc' }];
     case 'price-desc': return [{ listPrice: 'desc' }];
     case 'recently-changed': return [{ lastChangedAt: 'desc' }];
+    // Listings without an upcoming open house sort last rather than being dropped.
+    case 'open-house': return [{ lastChangedAt: 'desc' }];
     case 'newest':
     default: return [{ firstSeenAt: 'desc' }];
   }
 }
 
 export async function findListings(f: ListingFilterInput, take = 200) {
-  return prisma.listing.findMany({
+  const rows = await prisma.listing.findMany({
     where: buildWhere(f),
     orderBy: buildOrderBy(f.sort),
     take,
     include: {
       saved: true,
       openHouses: {
-        where: { cancelledAt: null, startsAt: { gte: new Date() } },
+        where: { cancelledAt: null, endsAt: { gte: new Date() } },
         orderBy: { startsAt: 'asc' },
       },
       events: {
@@ -81,6 +141,10 @@ export async function findListings(f: ListingFilterInput, take = 200) {
       },
     },
   });
+
+  // The SQL pass is a superset when the query contains LIKE metacharacters; this is
+  // where "%"-as-a-literal actually gets enforced.
+  return f.q ? rows.filter((r) => matchesQuery(r, f.q!)) : rows;
 }
 
 export type ListingWithRelations = Awaited<ReturnType<typeof findListings>>[number];
@@ -101,7 +165,7 @@ export async function getListing(id: string) {
 export async function getUpcomingOpenHouses(daysAhead = 14) {
   const until = new Date(Date.now() + daysAhead * 864e5);
   return prisma.openHouse.findMany({
-    where: { cancelledAt: null, startsAt: { gte: new Date(), lte: until }, listing: { removedAt: null } },
+    where: { cancelledAt: null, endsAt: { gte: new Date() }, startsAt: { lte: until }, listing: { removedAt: null } },
     orderBy: { startsAt: 'asc' },
     include: { listing: { include: { saved: true } } },
   });
@@ -133,7 +197,7 @@ export async function getStats() {
     prisma.listing.count({ where: { removedAt: null } }),
     prisma.listing.count({ where: { removedAt: null, status: 'ACTIVE' } }),
     prisma.savedListing.count({ where: { favorite: true } }),
-    prisma.openHouse.count({ where: { cancelledAt: null, startsAt: { gte: new Date() } } }),
+    prisma.openHouse.count({ where: { cancelledAt: null, endsAt: { gte: new Date() } } }),
     getUnseenEventCount(),
     prisma.pollRun.findFirst({ orderBy: { startedAt: 'desc' } }),
   ]);

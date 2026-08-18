@@ -136,6 +136,11 @@ docker compose up --build     # web on :3000, worker polling every 15 min
 
 Both services share `./data/app.db` via a bind mount. Backup is `cp data/app.db somewhere`.
 
+One gotcha worth knowing if you change `DATABASE_URL`: Prisma resolves a **relative**
+SQLite path against `prisma/schema.prisma`, not the project root. `file:./data/app.db`
+therefore lands in `prisma/data/` — which is why `.env` uses `file:../data/app.db`. The
+Docker services pass an absolute path and are unaffected.
+
 ---
 
 ## Tests

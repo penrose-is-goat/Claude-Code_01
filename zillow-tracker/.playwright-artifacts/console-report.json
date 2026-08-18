@@ -1,0 +1,30 @@
+{
+  "/areas": {
+    "console": [
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "location": "http://localhost:3111/favicon.ico:0"
+      }
+    ],
+    "pageErrors": [],
+    "failedRequests": [
+      "GET http://localhost:3111/?_rsc=DH4TnPPnL2oSdj6K — net::ERR_ABORTED",
+      "GET http://localhost:3111/open-houses?_rsc=DH4TnPPnL2oSdj6K — net::ERR_ABORTED",
+      "GET http://localhost:3111/saved?_rsc=DH4TnPPnL2oSdj6K — net::ERR_ABORTED",
+      "GET http://localhost:3111/settings?_rsc=DH4TnPPnL2oSdj6K — net::ERR_ABORTED",
+      "GET http://localhost:3111/listings?_rsc=DH4TnPPnL2oSdj6K — net::ERR_ABORTED"
+    ]
+  },
+  "/settings": {
+    "console": [],
+    "pageErrors": [],
+    "failedRequests": [
+      "GET http://localhost:3111/saved?_rsc=3OjXOvR16xTJgvu1 — net::ERR_ABORTED",
+      "GET http://localhost:3111/?_rsc=3OjXOvR16xTJgvu1 — net::ERR_ABORTED",
+      "GET http://localhost:3111/areas?_rsc=3OjXOvR16xTJgvu1 — net::ERR_ABORTED",
+      "GET http://localhost:3111/listings?_rsc=3OjXOvR16xTJgvu1 — net::ERR_ABORTED",
+      "GET http://localhost:3111/open-houses?_rsc=3OjXOvR16xTJgvu1 — net::ERR_ABORTED"
+    ]
+  }
+}

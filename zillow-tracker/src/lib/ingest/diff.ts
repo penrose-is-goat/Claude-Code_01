@@ -35,6 +35,16 @@ const ON_MARKET: ReadonlySet<ListingStatus> = new Set<ListingStatus>([
   'COMING_SOON',
 ]);
 
+/** Definitively off-market. Deliberately excludes UNKNOWN — see diffStatus. */
+const OFF_MARKET: ReadonlySet<ListingStatus> = new Set<ListingStatus>([
+  'PENDING',
+  'CONTINGENT',
+  'SOLD',
+  'WITHDRAWN',
+  'EXPIRED',
+  'OFF_MARKET',
+]);
+
 /** The previous state we need in order to diff. Mirrors the stored Listing row. */
 export interface PriorState {
   status: ListingStatus;
@@ -47,6 +57,16 @@ export interface PriorState {
 export function diffListing(
   prev: PriorState | null,
   next: NormalizedListing,
+  /**
+   * Reference instant for "has this open house already happened".
+   *
+   * Defaults to the listing's own `fetchedAt` rather than the wall clock, which is what
+   * makes this function genuinely pure: the same (prev, next) pair yields the same
+   * events forever. Reading Date.now() internally meant a re-run days later silently
+   * stopped reporting a cancellation, and a backfill wrote a cancellation to the
+   * database that the event feed then never showed.
+   */
+  now: Date = next.fetchedAt,
 ): ListingEventInput[] {
   if (prev === null) {
     return [
@@ -67,7 +87,7 @@ export function diffListing(
 
   events.push(...diffPrice(prev, next));
   events.push(...diffStatus(prev, next));
-  events.push(...diffOpenHouses(prev.openHouses, next.openHouses));
+  events.push(...diffOpenHouses(prev.openHouses, next.openHouses, now));
 
   if (next.photos.length > prev.photoCount) {
     events.push({
@@ -95,9 +115,17 @@ function diffPrice(prev: PriorState, next: NormalizedListing): ListingEventInput
   const after = next.listPrice ?? null;
   if (before == null || after == null || before === after) return [];
 
+  // NaN and ±Infinity are legal `number` values. Left unguarded they flowed into the
+  // event message as "$NaN" / "$∞" and into Prisma as non-finite columns. Neither
+  // shipped provider can produce one today; this keeps that true for the next one.
+  if (!Number.isFinite(before) || !Number.isFinite(after)) return [];
+
   const deltaAbs = after - before;
-  const deltaPct = before === 0 ? 0 : (deltaAbs / before) * 100;
+  // A percentage change from zero is undefined, not 0%. Reporting "+0%" on a listing
+  // that went from $0 to $500,000 actively misleads.
+  const deltaPct = before === 0 ? null : (deltaAbs / before) * 100;
   const direction = deltaAbs < 0 ? 'dropped' : 'increased';
+  const pctText = deltaPct == null ? '' : ` (${deltaAbs < 0 ? '' : '+'}${round2(deltaPct)}%)`;
 
   return [
     {
@@ -105,10 +133,8 @@ function diffPrice(prev: PriorState, next: NormalizedListing): ListingEventInput
       oldValue: String(before),
       newValue: String(after),
       deltaAbs,
-      deltaPct: round2(deltaPct),
-      message: `Price ${direction} ${usd(Math.abs(deltaAbs))} (${
-        deltaAbs < 0 ? '' : '+'
-      }${round2(deltaPct)}%) — ${usd(before)} to ${usd(after)}`,
+      deltaPct: deltaPct == null ? undefined : round2(deltaPct),
+      message: `Price ${direction} ${usd(Math.abs(deltaAbs))}${pctText} — ${usd(before)} to ${usd(after)}`,
     },
   ];
 }
@@ -127,7 +153,12 @@ function diffStatus(prev: PriorState, next: NormalizedListing): ListingEventInpu
 
   // Coming back to market after pending/contingent is the single most actionable signal
   // in the whole app — a deal fell through and almost nobody else is watching for it.
-  if (!ON_MARKET.has(prev.status) && ON_MARKET.has(next.status)) {
+  //
+  // Requires a KNOWN off-market prior status. mapStatus returns UNKNOWN for any token it
+  // does not recognize, so one upstream rename would flip a whole area to UNKNOWN and
+  // then fire "Back on market" for every listing at once the moment the map was fixed —
+  // destroying the credibility of the app's highest-signal alert.
+  if (OFF_MARKET.has(prev.status) && ON_MARKET.has(next.status)) {
     events.push({
       type: 'BACK_ON_MARKET',
       oldValue: prev.status,
@@ -146,6 +177,7 @@ function diffStatus(prev: PriorState, next: NormalizedListing): ListingEventInpu
 function diffOpenHouses(
   before: NormalizedOpenHouse[],
   after: NormalizedOpenHouse[],
+  now: Date,
 ): ListingEventInput[] {
   const beforeMap = new Map(before.map((o) => [openHouseKey(o), o]));
   const afterMap = new Map(after.map((o) => [openHouseKey(o), o]));
@@ -157,7 +189,13 @@ function diffOpenHouses(
       continue;
     }
     const old = beforeMap.get(key)!;
-    if (old.appointmentOnly !== oh.appointmentOnly || old.virtual !== oh.virtual) {
+    // timezone included: every open-house view renders with it, so correcting it moves
+    // the displayed hour. Omitting it made that correction invisible to the user.
+    if (
+      old.appointmentOnly !== oh.appointmentOnly ||
+      old.virtual !== oh.virtual ||
+      old.timezone !== oh.timezone
+    ) {
       events.push({
         type: 'OPEN_HOUSE_CHANGED',
         oldValue: describeOpenHouse(old),
@@ -170,7 +208,7 @@ function diffOpenHouses(
   for (const [key, oh] of beforeMap) {
     if (afterMap.has(key)) continue;
     // A past open house simply ageing out of the feed is not a cancellation.
-    if (oh.endsAt.getTime() < Date.now()) continue;
+    if (oh.endsAt.getTime() < now.getTime()) continue;
     events.push({
       type: 'OPEN_HOUSE_CANCELLED',
       oldValue: describeOpenHouse(oh),

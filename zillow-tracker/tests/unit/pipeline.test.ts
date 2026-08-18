@@ -176,7 +176,9 @@ describe('pipeline — run 3 (endings)', () => {
 
   it('does NOT delist the absent listing on its first miss', async () => {
     const l = await db.listing.findFirstOrThrow({ where: { sourceListingId: '2007' } });
-    expect(l.missedRunCount).toBe(1);
+    const link = await db.listingArea.findFirstOrThrow({ where: { listingId: l.id, areaId: AREA_ID } });
+    expect(link.missedRunCount).toBe(1);
+    expect(link.absentSince).toBeNull();
     expect(l.removedAt).toBeNull();
   });
 
@@ -186,7 +188,9 @@ describe('pipeline — run 3 (endings)', () => {
     expect(result.delisted).toBe(1);
 
     const l = await db.listing.findFirstOrThrow({ where: { sourceListingId: '2007' } });
-    expect(l.missedRunCount).toBe(2);
+    const link = await db.listingArea.findFirstOrThrow({ where: { listingId: l.id, areaId: AREA_ID } });
+    expect(link.missedRunCount).toBe(2);
+    expect(link.absentSince).not.toBeNull();
     expect(l.removedAt).not.toBeNull();
 
     const evt = await db.listingEvent.findFirst({ where: { listingId: l.id, type: 'DELISTED' } });

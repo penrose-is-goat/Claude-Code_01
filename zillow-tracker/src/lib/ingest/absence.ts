@@ -23,7 +23,25 @@ export const ABSENCE_RULES = {
 export interface RunContext {
   status: 'RUNNING' | 'SUCCESS' | 'PARTIAL' | 'FAILED';
   listingsSeen: number;
+  /** Immediately preceding run. Kept for callers with no history to offer. */
   previousListingsSeen: number | null;
+  /**
+   * Counts from the last few runs. Strongly preferred over `previousListingsSeen`.
+   *
+   * With only the previous run to compare against, a truncation becomes its own
+   * baseline on the very next poll: 100 -> 50 is correctly distrusted, but the following
+   * 50 -> 50 looks perfectly healthy, and the run after that delists 50 homes that never
+   * left the market. Comparing against the high-water mark of a window keeps the
+   * original count in view until the drop is durable enough to be real.
+   */
+  recentListingsSeen?: number[];
+  /**
+   * Verdict from checkCanary for this run. A run that failed its canary must not evict
+   * anything: if a source swaps its entire result set for a different one, the counts
+   * can look healthy — or even grow — while every listing you were tracking silently
+   * disappears. Eviction and trust have to be the same decision.
+   */
+  canaryOk?: boolean;
   startedAt: Date;
 }
 
@@ -37,9 +55,18 @@ export interface RunContext {
 export function runCanEvictListings(run: RunContext): boolean {
   if (run.status !== 'SUCCESS') return false;
   if (run.listingsSeen === 0) return false;
-  if (run.previousListingsSeen == null) return true;
-  if (run.previousListingsSeen === 0) return true;
-  return run.listingsSeen / run.previousListingsSeen >= ABSENCE_RULES.minCountRatio;
+  if (run.canaryOk === false) return false;
+
+  const baseline = baselineFor(run);
+  if (baseline == null || baseline === 0) return true;
+  return run.listingsSeen / baseline >= ABSENCE_RULES.minCountRatio;
+}
+
+/** High-water mark of the recent window, falling back to the previous run alone. */
+export function baselineFor(run: RunContext): number | null {
+  const history = run.recentListingsSeen?.filter((n) => Number.isFinite(n) && n >= 0);
+  if (history && history.length > 0) return Math.max(...history);
+  return run.previousListingsSeen;
 }
 
 export interface AbsenceDecision {
@@ -96,9 +123,11 @@ export function checkCanary(opts: {
     return { ok: false, reason: 'Run returned zero listings — source may have changed shape' };
   }
 
+  // Threshold lowered from 10 to 3. A hand-drawn block of six houses is a completely
+  // normal area for this app, and it previously got no drop detection whatsoever.
   if (
     opts.previousListingsSeen != null &&
-    opts.previousListingsSeen >= 10 &&
+    opts.previousListingsSeen >= 3 &&
     opts.listingsSeen / opts.previousListingsSeen < 0.5
   ) {
     return {
@@ -107,8 +136,20 @@ export function checkCanary(opts: {
     };
   }
 
+  // An established area with no canaries means the mechanism is switched off. That is
+  // itself worth reporting: it is how the check silently became dead code before.
+  if (opts.expectedSourceIds.length === 0) {
+    if (opts.previousListingsSeen != null && opts.previousListingsSeen > 0) {
+      return {
+        ok: false,
+        reason: 'No canary listings supplied for an area with history — canary check is disabled',
+      };
+    }
+    return { ok: true };
+  }
+
   const missing = opts.expectedSourceIds.filter((id) => !opts.seenSourceIds.has(id));
-  if (opts.expectedSourceIds.length > 0 && missing.length === opts.expectedSourceIds.length) {
+  if (missing.length === opts.expectedSourceIds.length) {
     return {
       ok: false,
       reason: `None of ${missing.length} known-good canary listings were returned`,

@@ -83,13 +83,14 @@ model Listing {
   providerDaysOnMarket Int?
   statusChangedAt      DateTime?
 
-  firstSeenAt    DateTime  @default(now())
-  lastSeenAt     DateTime  @default(now())
-  lastChangedAt  DateTime  @default(now())
-  missedRunCount Int       @default(0)
-  removedAt      DateTime?
-  contentHash    String
-  raw            String
+  firstSeenAt   DateTime  @default(now())
+  lastSeenAt    DateTime  @default(now())
+  lastChangedAt DateTime  @default(now())
+  /// Set only when the listing is absent from EVERY area tracking it. Per-area absence
+  /// lives on ListingArea.
+  removedAt     DateTime?
+  contentHash   String
+  raw           String
 
   areas      ListingArea[]
   snapshots  ListingSnapshot[]
@@ -103,15 +104,25 @@ model Listing {
   @@index([postalCode, status])
 }
 
+/// Absence is tracked HERE, not on Listing.
+///
+/// Areas poll on independent schedules and can legitimately disagree about whether they
+/// can see a listing. With one counter on Listing they fought over it: an area that
+/// still saw the home kept resetting the counter so another area could never delist it,
+/// and an area polling twice inside another's interval could mark a listing removed
+/// seconds after the first reported it active — hiding it from every view at once.
 model ListingArea {
-  listingId String
-  areaId    String
-  matchedAt DateTime @default(now())
+  listingId      String
+  areaId         String
+  matchedAt      DateTime  @default(now())
+  missedRunCount Int       @default(0)
+  absentSince    DateTime?
 
   listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
   area    Area    @relation(fields: [areaId], references: [id], onDelete: Cascade)
 
   @@id([listingId, areaId])
+  @@index([areaId, absentSince])
 }
 
 /// Append-only, written ONLY when contentHash changes. This is what keeps the database

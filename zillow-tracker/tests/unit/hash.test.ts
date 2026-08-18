@@ -19,11 +19,18 @@ describe('normalizeStreet', () => {
 
   it('is punctuation and case insensitive', () => {
     expect(normalizeStreet('1420 Pine St.')).toBe(normalizeStreet('1420 pine st'));
-    expect(normalizeStreet('3300 Folsom St #12')).toBe('3300 folsom st 12');
+    expect(normalizeStreet('3300 Folsom St #12')).toBe('3300 folsom st unit 12');
   });
 
   it('leaves unknown tokens alone rather than guessing', () => {
     expect(normalizeStreet('12 Wibble Foo')).toBe('12 wibble foo');
+  });
+
+  it('folds every unit syntax to one token', () => {
+    const forms = ['1420 Pine St Apt 3', '1420 Pine St Unit 3', '1420 Pine St #3', '1420 Pine St, Apt. 3'];
+    const normalized = forms.map(normalizeStreet);
+    expect(new Set(normalized).size).toBe(1);
+    expect(normalized[0]).toBe('1420 pine st unit 3');
   });
 });
 

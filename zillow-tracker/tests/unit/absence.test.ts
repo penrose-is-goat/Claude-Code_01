@@ -72,7 +72,8 @@ describe('evaluateAbsence', () => {
 describe('checkCanary', () => {
   it('passes a normal run', () => {
     expect(checkCanary({
-      listingsSeen: 40, previousListingsSeen: 42, expectedSourceIds: [], seenSourceIds: new Set(),
+      listingsSeen: 40, previousListingsSeen: 42,
+      expectedSourceIds: ['a'], seenSourceIds: new Set(['a']),
     }).ok).toBe(true);
   });
 
@@ -104,9 +105,18 @@ describe('checkCanary', () => {
     }).ok).toBe(true);
   });
 
-  it('does not flag small absolute numbers as a collapse', () => {
+  it('flags a collapse even in a small area', () => {
+    // The threshold used to require a 10-listing baseline, so a hand-drawn block of six
+    // houses — a completely normal area here — got no drop detection at all.
     expect(checkCanary({
-      listingsSeen: 3, previousListingsSeen: 8, expectedSourceIds: [], seenSourceIds: new Set(),
-    }).ok).toBe(true);
+      listingsSeen: 3, previousListingsSeen: 8,
+      expectedSourceIds: ['a'], seenSourceIds: new Set(['a']),
+    }).ok).toBe(false);
+  });
+
+  it('reports an established area that supplied no canaries at all', () => {
+    expect(checkCanary({
+      listingsSeen: 40, previousListingsSeen: 40, expectedSourceIds: [], seenSourceIds: new Set(),
+    }).ok).toBe(false);
   });
 });
