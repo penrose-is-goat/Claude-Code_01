@@ -160,3 +160,24 @@ No test touches the network.
 | `POLL_TOKEN` | `dev-local-token` | Bearer token for `POST /api/jobs/poll` |
 | `POLL_CRON` | `*/15 * * * *` | Worker schedule |
 | `TZ` | `America/Denver` | Timezone for open-house display |
+
+---
+
+## Splitting this into its own repository
+
+This lives in a subdirectory of a larger repo. To give it a standalone repository with
+its full history intact (three commits, not a squash):
+
+```bash
+# from a clone of the parent repo
+git subtree split --prefix=zillow-tracker -b zillow-tracker-standalone
+
+gh repo create zillow-tracker --private          # or create it in the GitHub UI
+git push git@github.com:<you>/zillow-tracker.git zillow-tracker-standalone:main
+```
+
+The split branch has `zillow-tracker/` contents at the repo root, so `npm install` works
+immediately after cloning. The one thing to adjust afterwards is the CI workflow, which
+lives at `.github/workflows/zillow-tracker.yml` in the parent and assumes a
+`working-directory: zillow-tracker` — in a standalone repo, drop that `defaults` block
+and the `paths:` filters.
