@@ -9,12 +9,18 @@ Runs locally with Docker Compose. Single user, SQLite, no accounts.
 ```bash
 npm install
 npm run db:push          # create the database
-npm run seed             # add three demo areas
-npm run poll             # pull data (mock provider — no credentials needed)
+npm run seed             # three Boulder ZIP areas — edit to your own
+npm run poll             # tries Zillow live, falls back to the captured snapshot
 npm run dev              # http://localhost:3000
 ```
 
-That gets you a fully working app in about a minute, with realistic demo data.
+On a machine with normal internet access `npm run poll` hits Zillow directly. Where
+outbound access is blocked it records the real failure (visible in the Runs log on the
+Settings page) and falls back to the captured snapshot — it never silently substitutes
+one for the other.
+
+**Set your own neighborhoods** by editing the ZIP codes in `prisma/seed.ts`, or on the
+Areas page. The seeded Boulder ZIPs are just where the sample capture came from.
 
 ---
 
@@ -33,12 +39,18 @@ RESO-shaped listing type behind a provider interface. Three providers ship:
 
 | Provider | Open houses | Credentials | Durability |
 |---|---|---|---|
-| **`mock`** (default) | Yes | None | Permanent — it's fixtures |
-| **`zillow`** | Yes | None (logged out) | Best-effort; may be challenged |
+| **`zillow`** (default) | Yes | None (logged out) | Best-effort; may be challenged |
+| **`snapshot`** | No | None | Replays real captured listings |
 | **`csv`** | No | None | Permanent — it's your own file |
 
-**`mock` is the default on purpose.** Every feature here works fully against it, so you
-can evaluate the app before deciding what to feed it.
+**There is no mock provider and no generated data.** `snapshot` replays *real* listings
+captured from public listing pages — real addresses, prices, beds, baths, square footage
+— stored in `data/snapshots/` with their provenance: when they were captured, from which
+source pages, and, importantly, **what was missing**. Fields the sources did not publish
+(coordinates, per-listing open-house windows, year built) are left null rather than
+filled in with plausible-looking values, and the provider declares
+`supportsOpenHouses: false` rather than inventing an address-to-time pairing it never
+observed.
 
 **The `zillow` provider is off by default.** It reads public, logged-out pages — no
 account, no cookies, ever. It makes one request per area per run, paces them at least

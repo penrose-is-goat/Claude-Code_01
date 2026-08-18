@@ -76,6 +76,20 @@ try {
 
 console.log(`  Received ${(html.length / 1024).toFixed(0)} KB`);
 
+// Capture the real page so the parser test stops relying on a hand-written sample.
+// This environment cannot reach zillow.com, so the committed fixture was constructed
+// from the documented schema rather than captured. Running this on a machine that CAN
+// reach it replaces that with the real thing.
+try {
+  const { writeFileSync, mkdirSync } = await import('node:fs');
+  mkdirSync('fixtures/zillow', { recursive: true });
+  writeFileSync('fixtures/zillow/live-capture.html', html);
+  console.log('  Saved fixtures/zillow/live-capture.html — run `npm test` to exercise');
+  console.log('  the parser against this real page instead of the constructed sample.');
+} catch (err) {
+  console.log(`  (could not save capture: ${err.message})`);
+}
+
 // Reuse the real parser rather than a copy, so this verifies the shipping code path.
 register('tsx/esm', pathToFileURL('./'));
 const { parseSearchPage, detectBlockPage } = await import('../src/lib/providers/zillow/parse.ts');

@@ -12,9 +12,9 @@ import type { NormalizedListing, NormalizedOpenHouse } from '@/lib/providers/nor
 
 function listing(over: Partial<NormalizedListing> = {}): NormalizedListing {
   return {
-    providerId: 'mock',
+    providerId: 'snapshot',
     sourceListingId: '1',
-    addressLine1: '1420 Pine St',
+    addressLine1: '4072 Crystal Ct',
     city: 'Boulder',
     state: 'CO',
     postalCode: '80302',

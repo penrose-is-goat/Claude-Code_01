@@ -1,5 +1,5 @@
 import type { ListingProvider, ProviderId } from './types';
-import { MockProvider } from './mock';
+import { SnapshotProvider } from './snapshot';
 import { ZillowPublicProvider } from './zillow';
 import { CsvImportProvider } from './csv';
 
@@ -21,8 +21,8 @@ export function getProvider(id: ProviderId): ListingProvider<any> {
 
 function create(id: ProviderId): ListingProvider<any> {
   switch (id) {
-    case 'mock':
-      return new MockProvider();
+    case 'snapshot':
+      return new SnapshotProvider();
     case 'zillow':
       return new ZillowPublicProvider();
     case 'csv':
@@ -36,4 +36,4 @@ export function resetRegistry(): void {
   registry.clear();
 }
 
-export const ALL_PROVIDER_IDS: ProviderId[] = ['mock', 'zillow', 'csv'];
+export const ALL_PROVIDER_IDS: ProviderId[] = ['zillow', 'snapshot', 'csv'];

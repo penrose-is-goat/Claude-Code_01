@@ -1,57 +1,52 @@
 import { PrismaClient } from '@prisma/client';
 
 /**
- * Creates the demo areas. Deliberately includes one of each kind so the "query coarse,
- * filter fine" path is exercised the moment you press Run poll.
+ * Seeds the areas from the real capture in data/snapshots/.
+ *
+ * `zillow` is the primary provider so a fresh install goes straight at live data on a
+ * machine that can reach it. `snapshot` is listed second as the offline fallback: it
+ * replays real captured listings and invents nothing, so the app is inspectable even
+ * where outbound HTTPS is blocked.
  */
 const prisma = new PrismaClient();
 
 const AREAS = [
   {
     id: 'area-central-boulder',
-    name: 'Central Boulder',
+    name: 'Central Boulder (80302)',
     kind: 'POSTAL_CODES',
-    postalCodes: JSON.stringify(['80302', '80304']),
-    providerIds: JSON.stringify(['mock']),
+    postalCodes: JSON.stringify(['80302']),
+    providerIds: JSON.stringify(['zillow', 'snapshot']),
     pollCron: '*/15 * * * *',
   },
   {
-    id: 'area-boulder-radius',
-    name: 'Boulder — 5 mile radius',
-    kind: 'CITY_RADIUS',
-    city: 'Boulder',
-    state: 'CO',
-    centerLat: 40.015,
-    centerLng: -105.2705,
-    radiusMiles: 5,
-    providerIds: JSON.stringify(['mock']),
-    pollCron: '*/30 * * * *',
+    id: 'area-north-boulder',
+    name: 'North Boulder (80304)',
+    kind: 'POSTAL_CODES',
+    postalCodes: JSON.stringify(['80304']),
+    providerIds: JSON.stringify(['zillow', 'snapshot']),
+    pollCron: '*/15 * * * *',
   },
   {
-    id: 'area-newlands-polygon',
-    name: 'Newlands (drawn)',
-    kind: 'POLYGON',
-    // [lng, lat] pairs, GeoJSON order.
-    polygon: JSON.stringify([
-      [-105.2950, 40.0250], [-105.2650, 40.0250],
-      [-105.2650, 40.0450], [-105.2950, 40.0450],
-    ]),
-    providerIds: JSON.stringify(['mock']),
-    pollCron: '0 * * * *',
+    id: 'area-south-boulder',
+    name: 'South/East Boulder (80303)',
+    kind: 'POSTAL_CODES',
+    postalCodes: JSON.stringify(['80303']),
+    providerIds: JSON.stringify(['zillow', 'snapshot']),
+    pollCron: '*/30 * * * *',
   },
 ];
 
 async function main() {
   for (const area of AREAS) {
     await prisma.area.upsert({ where: { id: area.id }, create: area, update: area });
-    console.log(`  area: ${area.name} (${area.kind})`);
+    console.log(`  ${area.name}`);
   }
-  console.log(`\nSeeded ${AREAS.length} areas. Next: npm run poll`);
+  console.log(`\nSeeded ${AREAS.length} areas.`);
+  console.log('Edit the ZIP codes on the Areas page (or here) to match your own neighborhoods.');
+  console.log('Next: npm run poll');
 }
 
 main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
+  .catch((e) => { console.error(e); process.exit(1); })
   .finally(() => prisma.$disconnect());

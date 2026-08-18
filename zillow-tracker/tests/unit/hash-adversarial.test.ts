@@ -17,7 +17,7 @@ const key = (over: Partial<typeof BASE>) => addressKey({ ...BASE, ...over });
 
 function listing(over: Partial<NormalizedListing> = {}): NormalizedListing {
   return {
-    providerId: 'mock',
+    providerId: 'snapshot',
     sourceListingId: '1',
     addressLine1: '1420 Pine St',
     city: 'Boulder',

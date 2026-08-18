@@ -4,7 +4,7 @@ import type { NormalizedListing } from '@/lib/providers/normalized';
 
 function listing(over: Partial<NormalizedListing> = {}): NormalizedListing {
   return {
-    providerId: 'mock', sourceListingId: '1', addressLine1: '1420 Pine St', city: 'Boulder',
+    providerId: 'snapshot', sourceListingId: '1', addressLine1: '1420 Pine St', city: 'Boulder',
     state: 'CO', postalCode: '80302', status: 'ACTIVE', propertyType: 'SINGLE_FAMILY',
     listPrice: 800000, photos: [], openHouses: [], raw: {},
     fetchedAt: new Date('2026-08-15T12:00:00Z'), ...over,

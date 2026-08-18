@@ -10,6 +10,19 @@ import { buildSearchUrl, slugify } from '@/lib/providers/zillow';
 const fixture = (name: string) =>
   readFileSync(fileURLToPath(new URL(`../../fixtures/zillow/${name}`, import.meta.url)), 'utf8');
 
+/**
+ * Prefers a REAL captured page when one exists (written by `npm run verify-live` on a
+ * machine with internet access) and falls back to the constructed sample otherwise.
+ * See fixtures/zillow/README.md for why the committed sample is not a real capture.
+ */
+function searchPage(): { html: string; real: boolean } {
+  try {
+    return { html: fixture('live-capture.html'), real: true };
+  } catch {
+    return { html: fixture('search-page.html'), real: false };
+  }
+}
+
 const CTX = { timezone: 'America/Denver', fetchedAt: new Date('2026-08-15T12:00:00Z') };
 
 describe('block detection', () => {
@@ -34,6 +47,14 @@ describe('block detection', () => {
 
 describe('parseSearchPage', () => {
   const result = parseSearchPage(fixture('search-page.html'), CTX);
+
+  it('reports whether it is running against a real captured page', () => {
+    const { real } = searchPage();
+    if (!real) {
+      console.warn('[zillow-parse] using the constructed sample; run `npm run verify-live` on a networked machine to capture a real page');
+    }
+    expect(typeof real).toBe('boolean');
+  });
 
   it('parses every well-formed listing', () => {
     expect(result.listings).toHaveLength(3);

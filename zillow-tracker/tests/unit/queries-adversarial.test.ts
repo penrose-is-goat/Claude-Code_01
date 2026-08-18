@@ -15,7 +15,7 @@ let dir: string;
 let db: PrismaClient;
 
 const row = (over: Record<string, unknown>) => ({
-  providerId: 'mock', sourceListingId: String(Math.random()), sourceKey: String(Math.random()),
+  providerId: 'snapshot', sourceListingId: String(Math.random()), sourceKey: String(Math.random()),
   addressKey: 'k', addressLine1: '1420 Pine St', city: 'Boulder', state: 'CO', postalCode: '80302',
   status: 'ACTIVE', propertyType: 'SINGLE_FAMILY', listPrice: 800000,
   contentHash: 'h', raw: '{}', photos: '[]', ...over,

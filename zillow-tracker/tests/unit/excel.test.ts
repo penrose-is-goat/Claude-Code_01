@@ -5,7 +5,7 @@ import { computeWidth } from '@/lib/excel/autoWidth';
 
 function listing(over: Partial<ExportListing> = {}): ExportListing {
   return {
-    addressLine1: '1420 Pine St', city: 'Boulder', state: 'CO', postalCode: '80302',
+    addressLine1: '4072 Crystal Ct', city: 'Boulder', state: 'CO', postalCode: '80302',
     status: 'ACTIVE', propertyType: 'SINGLE_FAMILY', listPrice: 875000, beds: 3,
     bathsTotal: 2, livingAreaSqft: 1840, lotSizeSqft: 7360, yearBuilt: 1972,
     hoaFeeMonthly: null, listingUrl: 'https://www.zillow.com/homedetails/1_zpid/',
@@ -16,18 +16,18 @@ function listing(over: Partial<ExportListing> = {}): ExportListing {
 }
 
 const priceEvent: ExportPriceEvent = {
-  addressLine1: '1420 Pine St', city: 'Boulder', occurredAt: new Date('2026-08-10T00:00:00Z'),
+  addressLine1: '4072 Crystal Ct', city: 'Boulder', occurredAt: new Date('2026-08-10T00:00:00Z'),
   oldValue: 925000, newValue: 875000, deltaAbs: -50000, deltaPct: -5.4,
 };
 
 const openHouse: ExportOpenHouse = {
-  addressLine1: '1420 Pine St', city: 'Boulder', listPrice: 875000,
+  addressLine1: '4072 Crystal Ct', city: 'Boulder', listPrice: 875000,
   startsAt: new Date('2026-08-16T19:00:00Z'), endsAt: new Date('2026-08-16T22:00:00Z'),
   appointmentOnly: false, virtual: false, isFavorite: true,
 };
 
 const meta = {
-  exportedAt: new Date('2026-08-15T12:00:00Z'), providerIds: ['mock'],
+  exportedAt: new Date('2026-08-15T12:00:00Z'), providerIds: ['snapshot'],
   areaNames: ['Central Boulder'], filterSummary: 'price <= 1000000', listingCount: 1,
 };
 
@@ -74,12 +74,12 @@ describe('buildWorkbook', () => {
     const wb = await load(await buildWorkbook({ listings: [listing()], priceEvents: [], openHouses: [], meta }));
     const cell = wb.getWorksheet('Listings')!.getRow(2).getCell(1);
     expect((cell.value as { hyperlink?: string }).hyperlink).toBe('https://www.zillow.com/homedetails/1_zpid/');
-    expect((cell.value as { text?: string }).text).toBe('1420 Pine St');
+    expect((cell.value as { text?: string }).text).toBe('4072 Crystal Ct');
   });
 
   it('falls back to plain text when a listing has no URL', async () => {
     const wb = await load(await buildWorkbook({ listings: [listing({ listingUrl: null })], priceEvents: [], openHouses: [], meta }));
-    expect(wb.getWorksheet('Listings')!.getRow(2).getCell(1).value).toBe('1420 Pine St');
+    expect(wb.getWorksheet('Listings')!.getRow(2).getCell(1).value).toBe('4072 Crystal Ct');
   });
 
   it('freezes the header row and the address column', async () => {
@@ -144,7 +144,7 @@ describe('computeWidth', () => {
   });
 
   it('grows with content', () => {
-    expect(computeWidth('Address', ['1420 Pine Street, Boulder'])).toBeGreaterThan(computeWidth('Address', ['1 A St']));
+    expect(computeWidth('Address', ['4072 Crystal Ctreet, Boulder'])).toBeGreaterThan(computeWidth('Address', ['1 A St']));
   });
 
   it('ignores nulls', () => {

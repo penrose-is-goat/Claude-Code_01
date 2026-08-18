@@ -59,7 +59,7 @@ export async function runAllAreas(
   const results: Array<PollResult & { areaName: string; providerId: string }> = [];
 
   for (const area of areas) {
-    const providerIds = safeJson<ProviderId[]>(area.providerIds, ['mock']);
+    const providerIds = safeJson<ProviderId[]>(area.providerIds, ['zillow']);
     const spec: AreaSpec = {
       id: area.id,
       name: area.name,

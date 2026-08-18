@@ -55,7 +55,7 @@ beforeEach(async () => {
 let seq = 0;
 function mk(over: Partial<NormalizedListing> = {}): NormalizedListing {
   return {
-    providerId: 'mock',
+    providerId: 'snapshot',
     sourceListingId: `L${seq++}`,
     addressLine1: '1420 Pine St',
     city: 'Boulder',
@@ -75,7 +75,7 @@ function mk(over: Partial<NormalizedListing> = {}): NormalizedListing {
 const POISON = Symbol.for('poison');
 
 class TestProvider implements ListingProvider<NormalizedListing> {
-  readonly id = 'mock' as const;
+  readonly id = 'snapshot' as const;
   readonly displayName = 'Test';
   readonly capabilities: ProviderCapabilities = {
     supportsOpenHouses: true, supportsPolygonQuery: true, supportsRadiusQuery: true,
