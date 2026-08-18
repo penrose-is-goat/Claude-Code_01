@@ -1,0 +1,57 @@
+name: zillow-tracker
+
+on:
+  push:
+    branches: [main]
+    paths: ['zillow-tracker/**', '.github/workflows/zillow-tracker.yml']
+  pull_request:
+    paths: ['zillow-tracker/**', '.github/workflows/zillow-tracker.yml']
+
+defaults:
+  run:
+    working-directory: zillow-tracker
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # SQLite file, created fresh by db push. No external service needed.
+      DATABASE_URL: file:./data/ci.db
+      TZ: America/Denver
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: zillow-tracker/package-lock.json
+
+      - run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Create database
+        run: |
+          mkdir -p data
+          npx prisma db push --skip-generate
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit and integration tests
+        run: npx vitest run
+
+      - name: Production build
+        run: npx next build
+
+      # Guards the ToS/safety posture against accidental regression: the Zillow provider
+      # must stay logged-out, and no test may reach the network.
+      - name: Assert no login or credential handling in the Zillow provider
+        run: |
+          if grep -rniE 'cookie|password|login|signin|session[_-]?token|document\.cookie' src/lib/providers/zillow/; then
+            echo "::error::Zillow provider must remain logged-out — no cookie or credential handling"
+            exit 1
+          fi
+          echo "OK: Zillow provider contains no login or cookie handling"
