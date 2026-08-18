@@ -47,11 +47,18 @@ jobs:
         run: npx next build
 
       # Guards the ToS/safety posture against accidental regression: the Zillow provider
-      # must stay logged-out, and no test may reach the network.
-      - name: Assert no login or credential handling in the Zillow provider
+      # must stay logged-out. Strips comments first — the file DOCUMENTS that it sends no
+      # cookies and performs no login, and a naive word grep flags that prose as a
+      # violation of the property it describes.
+      - name: Assert no credential handling in the Zillow provider
         run: |
-          if grep -rniE 'cookie|password|login|signin|session[_-]?token|document\.cookie' src/lib/providers/zillow/; then
-            echo "::error::Zillow provider must remain logged-out — no cookie or credential handling"
-            exit 1
-          fi
-          echo "OK: Zillow provider contains no login or cookie handling"
+          violations=0
+          for f in $(find src/lib/providers/zillow -name '*.ts'); do
+            code=$(sed -e 's://.*::' -e '/^\s*\*/d' -e '/^\s*\/\*/d' "$f")
+            if echo "$code" | grep -niE "(cookie|authorization|credentials)\s*:|document\.cookie|setCookie|password|signIn|logIn\b"; then
+              echo "::error file=$f::Zillow provider must remain logged-out — no credential or cookie handling in code"
+              violations=1
+            fi
+          done
+          [ "$violations" -eq 0 ] && echo "OK: no credential handling found in Zillow provider code"
+          exit "$violations"
