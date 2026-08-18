@@ -253,7 +253,10 @@ export async function updateSaved(
 
   return prisma.savedListing.upsert({
     where: { listingId },
-    create: { listingId, addressKey: listing.addressKey, favorite: true, ...payload },
+    // favorite: false on create. Writing a note is not the same act as starring, and
+    // creating the row as a favorite meant the star silently disagreed with /saved —
+    // then offered "Add to favorites" for a button that would actually remove it.
+    create: { listingId, addressKey: listing.addressKey, favorite: false, ...payload },
     update: payload,
   });
 }

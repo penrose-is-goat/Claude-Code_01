@@ -13,6 +13,13 @@
   --bad: #a51d2d;
 }
 
+:root {
+  /* Badge colours are separate tokens because a badge sits on a coloured fill and a
+     status pill sits on --surface: the light-theme values fail contrast in dark mode. */
+  --on-accent: #ffffff;
+  --warn: #b45309;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #16161a;
@@ -23,6 +30,10 @@
     --accent: #8ab4f8;
     --good: #4ade80;
     --bad: #f87171;
+    /* #fff on #8ab4f8 is 2.11:1. Dark text on that same blue is ~9:1. */
+    --on-accent: #16161a;
+    /* #b45309 on #1f1f24 is 3.27:1; amber-400 clears 4.5:1. */
+    --warn: #fbbf24;
   }
 }
 
@@ -62,3 +73,52 @@ input, select, textarea, button {
 button { cursor: pointer; }
 button:hover { border-color: var(--accent); }
 a { color: var(--accent); }
+
+
+/*
+ * Listing detail layout.
+ *
+ * The two-column grid was `minmax(0, 2fr) minmax(260px, 1fr)` with no breakpoint. At
+ * 375px that computes to roughly 55px + 260px: the main column collapses to a sliver,
+ * its content overflows, and the sticky sidebar paints on top of the price and the
+ * price-history table. Single column below 900px, and the sidebar stops being sticky
+ * because there is nothing to stick beside.
+ */
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.detail-aside {
+  display: grid;
+  gap: 16px;
+}
+
+@media (min-width: 900px) {
+  .detail-grid {
+    grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+  }
+  .detail-aside {
+    position: sticky;
+    top: 16px;
+  }
+}
+
+/* Long addresses and descriptions must wrap rather than force the page sideways. */
+.detail-grid, .detail-grid * { min-width: 0; }
+.detail-grid p, .detail-grid dd { overflow-wrap: anywhere; }
+
+
+/* Anchors that should look like buttons, without nesting a <button> inside an <a>. */
+.btn-link {
+  display: inline-block;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 9px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.btn-link:hover { border-color: var(--accent); }

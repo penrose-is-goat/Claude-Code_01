@@ -44,7 +44,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     <span
                       aria-label={`${unseen} unseen updates`}
                       style={{
-                        marginLeft: 6, background: 'var(--accent)', color: '#fff',
+                        marginLeft: 6, background: 'var(--accent)', color: 'var(--on-accent)',
                         borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700,
                       }}
                     >

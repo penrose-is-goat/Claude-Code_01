@@ -28,8 +28,8 @@ export default async function ListingDetail({ params }: { params: Promise<{ id: 
           <>
             <FavoriteButton listingId={listing.id} initial={listing.saved?.favorite ?? false} />
             {listing.listingUrl && (
-              <a href={listing.listingUrl} target="_blank" rel="noopener noreferrer">
-                <button>View on source ↗</button>
+              <a href={listing.listingUrl} target="_blank" rel="noopener noreferrer" className="btn-link">
+                View on source ↗
               </a>
             )}
           </>
@@ -43,7 +43,7 @@ export default async function ListingDetail({ params }: { params: Promise<{ id: 
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(260px, 1fr)', gap: 20, alignItems: 'start' }}>
+      <div className="detail-grid">
         <div style={{ display: 'grid', gap: 20, minWidth: 0 }}>
           <section className="card" style={{ padding: 16 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
@@ -152,7 +152,7 @@ export default async function ListingDetail({ params }: { params: Promise<{ id: 
           </section>
         </div>
 
-        <aside style={{ display: 'grid', gap: 16, position: 'sticky', top: 16 }}>
+        <aside className="detail-aside">
           <section className="card" style={{ padding: 16 }}>
             <h2 style={{ fontSize: 14, fontWeight: 700, marginTop: 0, marginBottom: 12 }}>My notes</h2>
             <SavedNotesEditor

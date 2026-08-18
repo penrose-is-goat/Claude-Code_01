@@ -12,7 +12,7 @@ export default async function SavedPage() {
       <PageHeader
         title="Saved"
         subtitle={`${listings.length} favorite${listings.length === 1 ? '' : 's'}`}
-        actions={<a href="/api/export/xlsx?favorites=1"><button>Export favorites to Excel</button></a>}
+        actions={<a href="/api/export/xlsx?favorites=1&includeRemoved=1" className="btn-link">Export favorites to Excel</a>}
       />
 
       {listings.length === 0 ? (

@@ -35,8 +35,8 @@ export function Stat({ label, value, hint }: { label: string; value: string | nu
 const STATUS_COLORS: Record<string, string> = {
   ACTIVE: 'var(--good)',
   COMING_SOON: 'var(--accent)',
-  PENDING: '#b45309',
-  CONTINGENT: '#b45309',
+  PENDING: 'var(--warn)',
+  CONTINGENT: 'var(--warn)',
   SOLD: 'var(--muted)',
 };
 

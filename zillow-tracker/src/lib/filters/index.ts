@@ -32,6 +32,10 @@ export function parseFilters(sp: SearchParams): ListingFilterInput {
     areaId: one(sp.areaId) || undefined,
     openHouseOnly: one(sp.openHouse) === '1',
     favoritesOnly: one(sp.favorites) === '1',
+    // Carried through the query string so the Excel export matches the page. /saved
+    // shows delisted favorites deliberately; without this the export dropped them and
+    // said nothing, so the file quietly disagreed with the screen.
+    includeRemoved: one(sp.includeRemoved) === '1',
     sort: (one(sp.sort) as ListingFilterInput['sort']) || 'newest',
   };
 }
@@ -47,5 +51,7 @@ export function describeFilters(f: ListingFilterInput): string {
   if (f.propertyType?.length) parts.push(`type ${f.propertyType.map(humanize).join('/')}`);
   if (f.openHouseOnly) parts.push('has upcoming open house');
   if (f.favoritesOnly) parts.push('favorites only');
+  if (f.areaId) parts.push(`area ${f.areaId}`);
+  if (f.includeRemoved) parts.push('including delisted');
   return parts.join(', ');
 }

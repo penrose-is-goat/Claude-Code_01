@@ -29,10 +29,14 @@ export default async function ListingsPage({ searchParams }: { searchParams: Pro
       <PageHeader
         title="Listings"
         subtitle={`${listings.length} match${listings.length === 1 ? '' : 'es'}${summary ? ` — ${summary}` : ''}`}
-        actions={<a href={exportUrl}><button>Export to Excel</button></a>}
+        actions={<a href={exportUrl} className="btn-link">Export to Excel</a>}
       />
 
-      <form className="card" style={{ padding: 14, marginBottom: 16, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+      <form
+        key={qs.toString()}
+        className="card"
+        style={{ padding: 14, marginBottom: 16, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}
+      >
         <Field label="Search"><input name="q" defaultValue={filters.q ?? ''} placeholder="Address, city, ZIP" style={{ width: 180 }} /></Field>
         <Field label="Min price"><input name="minPrice" type="number" defaultValue={filters.minPrice ?? ''} style={{ width: 110 }} /></Field>
         <Field label="Max price"><input name="maxPrice" type="number" defaultValue={filters.maxPrice ?? ''} style={{ width: 110 }} /></Field>
@@ -75,7 +79,7 @@ export default async function ListingsPage({ searchParams }: { searchParams: Pro
           <span style={{ fontSize: 13 }}>Favorites</span>
         </label>
         <button type="submit">Apply</button>
-        <Link href="/listings"><button type="button">Reset</button></Link>
+        <Link href="/listings" className="btn-link">Reset</Link>
       </form>
 
       {listings.length === 0 ? (

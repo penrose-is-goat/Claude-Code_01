@@ -146,8 +146,9 @@ Docker services pass an absolute path and are unaffected.
 ## Tests
 
 ```bash
-npm test          # 148 tests
+npm test              # 288 unit + integration tests
 npm run typecheck
+npm run verify-ui     # browser regression checks (app must be running)
 ```
 
 Covers the diff engine, content hashing and address normalization, absence and canary
@@ -156,6 +157,21 @@ rules, geo filtering, CSV parsing, the Zillow parser against committed HTML fixt
 integration test against a real SQLite database running all three mock scenarios.
 
 No test touches the network.
+
+`verify-ui` drives a real browser against a running app and re-checks the UI defects
+found in testing: the detail page collapsing at phone width, the tags field deleting
+typed commas, the notes editor reporting success after a rejected save, a note silently
+starring a listing, Reset leaving stale form values, and badge contrast in dark mode.
+
+### Known limitations
+
+- A tag containing a comma is split in two — the tags field is comma-separated with no
+  escape. Rename the tag rather than fighting it.
+- Pressing Apply writes every filter field into the URL, including empty ones. The URLs
+  are noisy; the behaviour is correct.
+- A self-intersecting drawn area falls back to its convex hull (with a warning) rather
+  than applying even-odd fill, which would silently drop listings inside the shape you
+  drew.
 
 ## Configuration
 
