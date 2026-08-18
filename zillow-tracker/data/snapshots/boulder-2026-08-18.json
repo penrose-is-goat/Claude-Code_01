@@ -1,0 +1,49 @@
+{
+  "$comment": "REAL listing data. Not fabricated, not a fixture.",
+  "provenance": {
+    "capturedAt": "2026-08-18T13:30:00Z",
+    "method": "web search over public real-estate listing pages",
+    "sources": [
+      "https://www.zillow.com/boulder-co-80304/",
+      "https://www.zillow.com/boulder-co-80304/houses/",
+      "https://www.redfin.com/zipcode/80302",
+      "https://www.redfin.com/zipcode/80303",
+      "https://www.zillow.com/boulder-co/open-house/"
+    ],
+    "marketContext": {
+      "medianListPrice80304": 1590000,
+      "medianSalePriceBoulder": 915000,
+      "saleToListRatioMay2026": 0.9792,
+      "pctListingsWithPriceReductions": 0.6016,
+      "note": "Aggregates reported by Zillow/Redfin/Houzeo market pages, Aug 2026."
+    },
+    "openHouseCounts": {
+      "boulder-co": 61, "boulder-county-co": 84, "central-boulder": 26,
+      "north-boulder": 8, "east-boulder": 4, "old-north-boulder": 1,
+      "80304": 13, "80306": 4, "80301": 0
+    },
+    "knownGaps": [
+      "lat/lng were not available from the source pages and are deliberately left null rather than invented. The geo layer keeps coordinate-less listings rather than dropping them.",
+      "Open-house counts and time windows are real, but the source did not pair a specific window to a specific address. Per-listing openHouses is therefore empty rather than fabricated. Use the live zillow provider to populate it.",
+      "yearBuilt, lot size and HOA were not exposed for most rows and are null."
+    ]
+  },
+  "listings": [
+    { "sourceListingId": "80304-1095-terrace-cir-s", "addressLine1": "1095 Terrace Cir S", "city": "Boulder", "state": "CO", "postalCode": "80304", "listPrice": 1395000, "beds": 4, "bathsTotal": 3, "livingAreaSqft": 4396, "propertyType": "SINGLE_FAMILY" },
+    { "sourceListingId": "80304-1127-juniper-ave", "addressLine1": "1127 Juniper Ave", "city": "Boulder", "state": "CO", "postalCode": "80304", "listPrice": 3250000, "beds": 4, "bathsTotal": 5, "livingAreaSqft": 4969, "propertyType": "SINGLE_FAMILY" },
+    { "sourceListingId": "80304-2590-norwood-ave", "addressLine1": "2590 Norwood Ave", "city": "Boulder", "state": "CO", "postalCode": "80304", "listPrice": 1749000, "beds": 6, "bathsTotal": 4, "livingAreaSqft": 4147, "propertyType": "SINGLE_FAMILY" },
+    { "sourceListingId": "80304-2550-balsam-dr", "addressLine1": "2550 Balsam Dr", "city": "Boulder", "state": "CO", "postalCode": "80304", "listPrice": 2800000, "beds": 4, "bathsTotal": 4, "livingAreaSqft": 3022, "propertyType": "SINGLE_FAMILY" },
+    { "sourceListingId": "80304-114-balsam-ln", "addressLine1": "114 Balsam Ln", "city": "Boulder", "state": "CO", "postalCode": "80304", "listPrice": 1600000, "beds": 5, "bathsTotal": 4, "livingAreaSqft": 3712, "propertyType": "SINGLE_FAMILY" },
+    { "sourceListingId": "80304-2015-kalmia-ave", "addressLine1": "2015 Kalmia Avenue", "city": "Boulder", "state": "CO", "postalCode": "80304", "listPrice": 3250000, "beds": 4, "bathsTotal": 4, "livingAreaSqft": 4044, "propertyType": "SINGLE_FAMILY" },
+    { "sourceListingId": "80304-245-linden-dr", "addressLine1": "245 Linden Dr", "city": "Boulder", "state": "CO", "postalCode": "80304", "listPrice": 4250000, "beds": 4, "bathsTotal": 5, "livingAreaSqft": 6269, "propertyType": "SINGLE_FAMILY" },
+    { "sourceListingId": "80304-4072-crystal-ct", "addressLine1": "4072 Crystal Ct", "city": "Boulder", "state": "CO", "postalCode": "80304", "listPrice": 789000, "beds": 3, "bathsTotal": 2, "livingAreaSqft": 1398, "propertyType": "SINGLE_FAMILY" },
+    { "sourceListingId": "80302-1430-18th-st-13", "addressLine1": "1430 18th St #13", "city": "Boulder", "state": "CO", "postalCode": "80302", "listPrice": 369950, "beds": 1, "bathsTotal": 1, "livingAreaSqft": 495, "propertyType": "CONDO" },
+    { "sourceListingId": "80302-2227-canyon-blvd-306a", "addressLine1": "2227 Canyon Blvd Unit 306A", "city": "Boulder", "state": "CO", "postalCode": "80302", "listPrice": 295000, "beds": 1, "bathsTotal": 1, "livingAreaSqft": 702, "propertyType": "CONDO" },
+    { "sourceListingId": "80302-39-spring-ln", "addressLine1": "39 Spring Ln", "city": "Boulder", "state": "CO", "postalCode": "80302", "listPrice": 925000, "beds": 3, "bathsTotal": 2, "livingAreaSqft": 2734, "propertyType": "SINGLE_FAMILY" },
+    { "sourceListingId": "80302-933-university-ave", "addressLine1": "933 University Ave", "city": "Boulder", "state": "CO", "postalCode": "80302", "listPrice": 1676000, "beds": 5, "bathsTotal": 2, "livingAreaSqft": 2896, "propertyType": "SINGLE_FAMILY" },
+    { "sourceListingId": "80303-3000-colorado-ave-h231", "addressLine1": "3000 Colorado Ave Unit H231", "city": "Boulder", "state": "CO", "postalCode": "80303", "listPrice": 249000, "beds": 0, "bathsTotal": 1, "livingAreaSqft": 504, "propertyType": "CONDO" },
+    { "sourceListingId": "80303-805-29th-st-202", "addressLine1": "805 29th St #202", "city": "Boulder", "state": "CO", "postalCode": "80303", "listPrice": 380000, "beds": 2, "bathsTotal": 1, "livingAreaSqft": 864, "propertyType": "CONDO" },
+    { "sourceListingId": "80303-950-34th-st", "addressLine1": "950 34th St", "city": "Boulder", "state": "CO", "postalCode": "80303", "listPrice": null, "beds": 5, "bathsTotal": 4, "livingAreaSqft": 1545, "propertyType": "SINGLE_FAMILY" },
+    { "sourceListingId": "80303-181-pawnee-dr", "addressLine1": "181 Pawnee Dr", "city": "Boulder", "state": "CO", "postalCode": "80303", "listPrice": 1300000, "beds": 5, "bathsTotal": 3, "livingAreaSqft": 3326, "propertyType": "SINGLE_FAMILY" }
+  ]
+}

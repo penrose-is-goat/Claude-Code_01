@@ -1,9 +1,21 @@
 node_modules
 .next
-data/
-*.db
-*.db-journal
 .env.local
 exports/
 .DS_Store
 tsconfig.tsbuildinfo
+.playwright-artifacts/
+
+# The SQLite database and its sidecars — but NOT data/snapshots/, which holds the real
+# captured listing data the app and its tests run on. A bare `data/` here silently
+# excluded that dataset from the repo, so CI had no data to run against.
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+/data/*
+!/data/snapshots/
+
+# Prisma resolves relative sqlite paths against the schema file, so a misconfigured
+# DATABASE_URL lands the database here instead of /data.
+prisma/data/
