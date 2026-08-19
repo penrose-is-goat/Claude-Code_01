@@ -1,0 +1,3 @@
+# Generated Excel exports. The app produces these on demand; they are output, not
+# source, and must not drift into the repo.
+*.xlsx
