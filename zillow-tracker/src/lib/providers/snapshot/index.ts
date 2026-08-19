@@ -20,7 +20,14 @@ import { wallClockToUtc } from '../zillow/parse';
  * it exercises the false-positive guards that matter most.
  */
 
-const SNAPSHOT_DIR = process.env.SNAPSHOT_DIR ?? join(process.cwd(), 'data', 'snapshots');
+/**
+ * Top-level `snapshots/`, deliberately NOT inside `data/`.
+ *
+ * `data/` holds the SQLite database, which is disposable runtime state that gets wiped
+ * and rebuilt. The captures are source data checked into the repo. Keeping them in the
+ * same directory meant clearing runtime state destroyed the dataset.
+ */
+const SNAPSHOT_DIR = process.env.SNAPSHOT_DIR ?? join(process.cwd(), 'snapshots');
 
 export interface SnapshotProvenance {
   capturedAt: string;

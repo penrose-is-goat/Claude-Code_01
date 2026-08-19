@@ -17,7 +17,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "next lint",
-    "verify-ui": "node scripts/verify-ui.mjs"
+    "verify-ui": "node scripts/verify-ui.mjs",
+    "go": "bash start.sh",
+    "setup": "npm install && prisma generate && prisma db push --skip-generate && tsx prisma/seed.ts && tsx scripts/poll.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.1.0",

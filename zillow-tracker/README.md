@@ -7,12 +7,15 @@ workbook.
 Runs locally with Docker Compose. Single user, SQLite, no accounts.
 
 ```bash
-npm install
-npm run db:push          # create the database
-npm run seed             # three Boulder ZIP areas — edit to your own
-npm run poll             # tries Zillow live, falls back to the captured snapshot
-npm run dev              # http://localhost:3000
+./start.sh
 ```
+
+That is the whole thing. It installs, builds the database, loads real listings and open
+houses, and starts the app — then open **http://localhost:3000/open-houses**.
+
+On Windows, or if you prefer npm: `npm run go`.
+
+Re-running `./start.sh` is safe; it refreshes the data each time.
 
 On a machine with normal internet access `npm run poll` hits Zillow directly. Where
 outbound access is blocked it records the real failure (visible in the Runs log on the
