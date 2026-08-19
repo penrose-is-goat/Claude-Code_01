@@ -15,9 +15,11 @@ import type {
 
 /** Zillow has moved this blob around over the years; try the known homes in order. */
 const RESULT_PATHS: string[][] = [
-  ['props', 'pageProps', 'searchPageState', 'cat1', 'searchResults', 'listResults'],
   ['props', 'pageProps', 'searchPageState', 'cat1', 'searchResults', 'mapResults'],
+  ['props', 'pageProps', 'searchPageState', 'cat1', 'searchResults', 'listResults'],
+  ['cat1', 'searchResults', 'mapResults'],
   ['cat1', 'searchResults', 'listResults'],
+  ['searchResults', 'mapResults'],
   ['searchResults', 'listResults'],
 ];
 
@@ -106,11 +108,8 @@ export function extractNextData(html: string): unknown {
     const m = html.match(re);
     if (m?.[1]) {
       sawBlob = true;
-      try {
-        return JSON.parse(m[1]);
-      } catch {
-        // fall through to the next pattern
-      }
+      const parsed = parseBlob(m[1]);
+      if (parsed !== undefined) return parsed;
     }
   }
 
@@ -141,6 +140,42 @@ export function extractNextData(html: string): unknown {
   throw new ZillowParseError('No __NEXT_DATA__ blob found in page', 'no-blob');
 }
 
+/**
+ * Parses the blob, tolerating HTML-entity encoding.
+ *
+ * Zillow serves the payload with entities escaped (`&quot;`, `&amp;`), which makes a
+ * direct JSON.parse throw. Working Zillow clients unescape before parsing for exactly
+ * this reason — pyzill calls html.unescape() ahead of json.loads(). Without this the
+ * parser fails on the very first real page and reports it as a malformed blob, which
+ * looks like a schema change rather than an encoding detail.
+ *
+ * Raw is attempted first so a correctly-served blob is never altered.
+ */
+function parseBlob(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    // fall through and try again with entities decoded
+  }
+  try {
+    return JSON.parse(decodeEntities(text));
+  } catch {
+    return undefined;
+  }
+}
+
+const ENTITIES: Record<string, string> = {
+  '&quot;': '"', '&amp;': '&', '&lt;': '<', '&gt;': '>',
+  '&apos;': "'", '&#39;': "'", '&#34;': '"', '&nbsp;': ' ',
+};
+
+export function decodeEntities(text: string): string {
+  return text
+    .replace(/&(?:quot|amp|lt|gt|apos|nbsp|#39|#34);/g, (m) => ENTITIES[m] ?? m)
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec)));
+}
+
 function dig(root: unknown, path: string[]): unknown {
   let cur: any = root;
   for (const key of path) {
@@ -150,16 +185,48 @@ function dig(root: unknown, path: string[]): unknown {
   return cur;
 }
 
-export function extractResults(blob: unknown): any[] {
+export interface ExtractResult {
+  rows: any[];
+  /** Rows discarded for having no usable id. Surfaced so the run can be marked PARTIAL. */
+  dropped: number;
+}
+
+export function extractResults(blob: unknown): ExtractResult {
+  // mapResults carries the full result set (up to Zillow's 500 cap); listResults is the
+  // narrower sidebar view. Reading listResults alone silently under-collects — you get
+  // the page you can see rather than the area you asked for. Both are merged and deduped
+  // by zpid so coverage does not depend on which one a given page populates.
+  const merged = new Map<string, any>();
+  let sawAnyArray = false;
+  let dropped = 0;
+
   for (const path of RESULT_PATHS) {
     const found = dig(blob, path);
-    if (Array.isArray(found) && found.length > 0) return found;
+    if (!Array.isArray(found)) continue;
+    sawAnyArray = true;
+    for (const row of found) {
+      const key =
+        row?.zpid != null ? String(row.zpid)
+        : row?.hdpData?.homeInfo?.zpid != null ? String(row.hdpData.homeInfo.zpid)
+        : null;
+      if (key == null) {
+        // Counted, not silently swallowed: a page where many rows lack an id means the
+        // shape moved, and the run should show up as PARTIAL rather than clean.
+        dropped++;
+        continue;
+      }
+      // Prefer the richer record when the same home appears in both arrays.
+      const existing = merged.get(key);
+      if (!existing || Object.keys(row).length > Object.keys(existing).length) {
+        merged.set(key, row);
+      }
+    }
   }
+
+  if (merged.size > 0) return { rows: [...merged.values()], dropped };
   // An empty-but-present results array is a legitimate "no matches", not a break.
-  for (const path of RESULT_PATHS) {
-    const found = dig(blob, path);
-    if (Array.isArray(found)) return found;
-  }
+  if (sawAnyArray) return { rows: [], dropped };
+
   throw new ZillowParseError(
     'Could not locate search results in page data — Zillow may have changed its schema',
     'no-results',
@@ -462,12 +529,12 @@ export function parseSearchPage(html: string, ctx: ParseContext): {
   skipped: number;
 } {
   const blob = extractNextData(html);
-  const results = extractResults(blob);
+  const { rows, dropped } = extractResults(blob);
 
   const listings: NormalizedListing[] = [];
-  let skipped = 0;
+  let skipped = dropped;
 
-  for (const r of results) {
+  for (const r of rows) {
     try {
       listings.push(normalizeZillowResult(r, ctx));
     } catch {

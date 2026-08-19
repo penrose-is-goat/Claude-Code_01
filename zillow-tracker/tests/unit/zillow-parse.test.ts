@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import {
   parseSearchPage, extractNextData, detectBlockPage, splitAddress,
   mapStatus, mapPropertyType, parseOpenHouses, ZillowParseError,
+  decodeEntities,
 } from '@/lib/providers/zillow/parse';
 import { buildSearchUrl, slugify } from '@/lib/providers/zillow';
 
@@ -191,5 +192,76 @@ describe('search URL building', () => {
 
   it('slugifies multi-word cities', () => {
     expect(slugify('Colorado Springs')).toBe('colorado-springs');
+  });
+});
+
+/**
+ * Regressions found by cross-checking against pyzill (github.com/johnbalvin/pyzill), a
+ * library that actually issues requests to Zillow. Both bugs were invisible to the
+ * hand-written fixture in this repo, and either would have broken the live provider on
+ * its first contact with a real page.
+ */
+describe('validated against a working Zillow client', () => {
+  const row = (zpid: number, street: string, price: number) => ({
+    zpid,
+    address: `${street}, Boulder, CO 80304`,
+    unformattedPrice: price,
+    statusType: 'FOR_SALE',
+    hdpData: { homeInfo: {
+      zpid, streetAddress: street, city: 'Boulder', state: 'CO', zipcode: '80304',
+      price, homeType: 'SINGLE_FAMILY', homeStatus: 'FOR_SALE',
+    } },
+  });
+
+  const blob = {
+    props: { pageProps: { searchPageState: { cat1: { searchResults: {
+      // The sidebar view: a strict subset.
+      listResults: [row(111, '4072 Crystal Ct', 789000)],
+      // The full result set for the searched area.
+      mapResults: [
+        row(111, '4072 Crystal Ct', 789000),
+        row(222, '245 Linden Dr', 4250000),
+        row(333, '1127 Juniper Ave', 3250000),
+      ],
+    } } } } },
+  };
+
+  const wrap = (inner: string) =>
+    `<html><body><script id="__NEXT_DATA__" type="application/json">${inner}</script></body></html>`;
+  const raw = JSON.stringify(blob);
+
+  it('reads mapResults, not just the narrower listResults', () => {
+    // pyzill: "use mapResults which contains all the listings from all paginations;
+    // listResults is more for the right side bar". Preferring listResults returned the
+    // page you can see rather than the area you asked for.
+    const { listings } = parseSearchPage(wrap(raw), CTX);
+    expect(listings).toHaveLength(3);
+    expect(listings.map((l) => l.addressLine1).sort()).toEqual([
+      '1127 Juniper Ave', '245 Linden Dr', '4072 Crystal Ct',
+    ]);
+  });
+
+  it('deduplicates a home appearing in both result arrays', () => {
+    const { listings } = parseSearchPage(wrap(raw), CTX);
+    expect(listings.filter((l) => l.sourceListingId === '111')).toHaveLength(1);
+  });
+
+  it('parses a blob whose entities are HTML-escaped, as Zillow serves it', () => {
+    // pyzill calls html.unescape() before json.loads(). Without that a real page throws
+    // and is misreported as a schema change.
+    const escaped = raw
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const { listings } = parseSearchPage(wrap(escaped), CTX);
+    expect(listings).toHaveLength(3);
+    expect(listings.find((l) => l.sourceListingId === '222')?.listPrice).toBe(4250000);
+  });
+
+  it('still parses an unescaped blob unchanged', () => {
+    expect(parseSearchPage(wrap(raw), CTX).listings).toHaveLength(3);
+  });
+
+  it('decodes numeric and hex entities too', () => {
+    expect(decodeEntities('&#34;a&#x26;b&#34;')).toBe('"a&b"');
   });
 });
