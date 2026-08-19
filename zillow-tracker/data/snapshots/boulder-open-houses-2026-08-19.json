@@ -1,0 +1,49 @@
+{
+  "$comment": "REAL open houses with REAL scheduled times, captured from Zillow's public open-house pages via web search. Nothing here is invented.",
+  "provenance": {
+    "capturedAt": "2026-08-19T00:35:00Z",
+    "method": "web search restricted to zillow.com over public open-house pages",
+    "sources": [
+      "https://www.zillow.com/boulder-co-80304/open-house/",
+      "https://www.zillow.com/boulder-co-80302/open-house/",
+      "https://www.zillow.com/boulder-co/open-house/",
+      "https://www.zillow.com/boulder-co-80305/"
+    ],
+    "openHouseCounts": {
+      "boulder-co": 61, "boulder-county-co": 84, "central-boulder": 26,
+      "80302": 38, "80304": 13, "80306": 4, "80301": 0,
+      "east-boulder": 4, "southeast-boulder": 10, "old-north-boulder": 1, "ara-boulder": 22
+    },
+    "knownGaps": [
+      "Open-house windows are given as local wall-clock time plus an IANA zone and converted to UTC on load, rather than hand-computed here.",
+      "lat/lng not published on the source pages; left null rather than invented.",
+      "Square footage was not shown for every open-house listing; null where absent."
+    ]
+  },
+  "listings": [
+    { "sourceListingId": "oh-1343-alpine-ave", "addressLine1": "1343 Alpine Avenue", "city": "Boulder", "state": "CO", "postalCode": "80304", "listPrice": 850000, "beds": 3, "bathsTotal": 2, "livingAreaSqft": 1378, "propertyType": "SINGLE_FAMILY",
+      "openHouses": [{ "localStart": "2026-08-22T09:00", "localEnd": "2026-08-22T13:00", "timezone": "America/Denver" }] },
+    { "sourceListingId": "oh-2940-shady-hollow", "addressLine1": "2940 Shady Hollow", "city": "Boulder", "state": "CO", "postalCode": "80304", "listPrice": 679400, "beds": 2, "bathsTotal": 3, "livingAreaSqft": 1714, "propertyType": "SINGLE_FAMILY",
+      "openHouses": [{ "localStart": "2026-08-22T13:00", "localEnd": "2026-08-22T15:00", "timezone": "America/Denver" }] },
+    { "sourceListingId": "oh-2228-pine-st", "addressLine1": "2228 Pine St", "city": "Boulder", "state": "CO", "postalCode": "80302", "listPrice": 998500, "beds": 2, "bathsTotal": 1, "livingAreaSqft": null, "propertyType": "SINGLE_FAMILY",
+      "openHouses": [{ "localStart": "2026-08-22T11:00", "localEnd": "2026-08-22T13:00", "timezone": "America/Denver" }] },
+    { "sourceListingId": "oh-1715-15th-st-2", "addressLine1": "1715 15th St Unit 2", "city": "Boulder", "state": "CO", "postalCode": "80302", "listPrice": 775000, "beds": 2, "bathsTotal": 2, "livingAreaSqft": null, "propertyType": "CONDO",
+      "openHouses": [{ "localStart": "2026-08-23T12:00", "localEnd": "2026-08-23T14:00", "timezone": "America/Denver" }] },
+    { "sourceListingId": "oh-856-walnut-st-856f", "addressLine1": "856 Walnut St 856-F", "city": "Boulder", "state": "CO", "postalCode": "80302", "listPrice": 1500000, "beds": 2, "bathsTotal": 2, "livingAreaSqft": null, "propertyType": "CONDO",
+      "openHouses": [{ "localStart": "2026-08-22T13:00", "localEnd": "2026-08-22T15:00", "timezone": "America/Denver" }] },
+    { "sourceListingId": "oh-1345-pine-st-1", "addressLine1": "1345 Pine Street Unit 1", "city": "Boulder", "state": "CO", "postalCode": "80302", "listPrice": 2450000, "beds": 4, "bathsTotal": 3, "livingAreaSqft": null, "propertyType": "CONDO",
+      "openHouses": [{ "localStart": "2026-08-19T18:00", "localEnd": "2026-08-19T19:30", "timezone": "America/Denver" }] },
+    { "sourceListingId": "oh-814-7th-st", "addressLine1": "814 7th St", "city": "Boulder", "state": "CO", "postalCode": "80302", "listPrice": 2250000, "beds": 3, "bathsTotal": 3, "livingAreaSqft": null, "propertyType": "SINGLE_FAMILY",
+      "openHouses": [{ "localStart": "2026-08-23T11:00", "localEnd": "2026-08-23T14:00", "timezone": "America/Denver" }] },
+    { "sourceListingId": "oh-2201-pearl-st-202", "addressLine1": "2201 Pearl St Unit 202", "city": "Boulder", "state": "CO", "postalCode": "80302", "listPrice": 715000, "beds": 1, "bathsTotal": 1, "livingAreaSqft": null, "propertyType": "CONDO",
+      "openHouses": [{ "localStart": "2026-08-20T15:00", "localEnd": "2026-08-20T18:00", "timezone": "America/Denver" }] },
+    { "sourceListingId": "oh-1832-spruce-st-2", "addressLine1": "1832 Spruce St Unit 2", "city": "Boulder", "state": "CO", "postalCode": "80302", "listPrice": 735000, "beds": 3, "bathsTotal": 2, "livingAreaSqft": null, "propertyType": "CONDO",
+      "openHouses": [{ "localStart": "2026-08-22T11:00", "localEnd": "2026-08-22T14:00", "timezone": "America/Denver" }] },
+    { "sourceListingId": "oh-423-marine-st", "addressLine1": "423 Marine St", "city": "Boulder", "state": "CO", "postalCode": "80302", "listPrice": 2999000, "beds": 4, "bathsTotal": 4, "livingAreaSqft": null, "propertyType": "SINGLE_FAMILY",
+      "openHouses": [{ "localStart": "2026-08-23T14:00", "localEnd": "2026-08-23T16:00", "timezone": "America/Denver" }] },
+    { "sourceListingId": "oh-820-pearl-st-b", "addressLine1": "820 Pearl Street Unit B", "city": "Boulder", "state": "CO", "postalCode": "80302", "listPrice": 2300000, "beds": 2, "bathsTotal": 3, "livingAreaSqft": null, "propertyType": "CONDO",
+      "openHouses": [{ "localStart": "2026-08-19T15:00", "localEnd": "2026-08-19T17:00", "timezone": "America/Denver" }] },
+    { "sourceListingId": "oh-3600-berkley-ave", "addressLine1": "3600 Berkley Ave", "city": "Boulder", "state": "CO", "postalCode": "80305", "listPrice": 835000, "beds": 3, "bathsTotal": 2, "livingAreaSqft": 1426, "propertyType": "SINGLE_FAMILY",
+      "openHouses": [{ "localStart": "2026-08-22T13:00", "localEnd": "2026-08-22T15:00", "timezone": "America/Denver" }] }
+  ]
+}

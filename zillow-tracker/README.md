@@ -40,8 +40,20 @@ RESO-shaped listing type behind a provider interface. Three providers ship:
 | Provider | Open houses | Credentials | Durability |
 |---|---|---|---|
 | **`zillow`** (default) | Yes | None (logged out) | Best-effort; may be challenged |
-| **`snapshot`** | No | None | Replays real captured listings |
+| **`snapshot`** | **Yes** | None | Replays real captured listings |
 | **`csv`** | No | None | Permanent — it's your own file |
+
+### It tracks Zillow, it does not copy it
+
+Every refresh **rebuilds** the listing store from what the source reports right now
+rather than accumulating a standing local replica, and every listing deep-links back to
+its own Zillow page. Two things deliberately survive a rebuild: your saved listings
+(favourites, notes, ratings — your data, re-linked by address) and the change history
+(observations like "this price moved on this date", which is the entire point of a
+tracker). Descriptions and photos are not stored.
+
+`npm run poll` rebuilds; `npm run poll -- --merge` keeps the old accumulate behaviour for
+comparing two captures.
 
 **There is no mock provider and no generated data.** `snapshot` replays *real* listings
 captured from public listing pages — real addresses, prices, beds, baths, square footage

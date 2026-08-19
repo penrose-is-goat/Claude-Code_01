@@ -26,7 +26,9 @@ export async function POST(request: Request) {
   const areaId = url.searchParams.get('areaId') ?? undefined;
 
   try {
-    const results = await runAllAreas(prisma, { areaId });
+    // Same tracker semantics as the CLI: refresh replaces, it does not accumulate.
+    const rebuild = url.searchParams.get('merge') !== '1';
+    const results = await runAllAreas(prisma, { areaId, rebuild });
     return NextResponse.json({ ok: true, results });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

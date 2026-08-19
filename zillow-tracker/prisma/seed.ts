@@ -29,9 +29,9 @@ const AREAS = [
   },
   {
     id: 'area-south-boulder',
-    name: 'South/East Boulder (80303)',
+    name: 'South/East Boulder (80303, 80305)',
     kind: 'POSTAL_CODES',
-    postalCodes: JSON.stringify(['80303']),
+    postalCodes: JSON.stringify(['80303', '80305']),
     providerIds: JSON.stringify(['zillow', 'snapshot']),
     pollCron: '*/30 * * * *',
   },

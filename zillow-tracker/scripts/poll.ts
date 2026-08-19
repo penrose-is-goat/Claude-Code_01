@@ -5,7 +5,11 @@ import { runAllAreas } from '../src/lib/ingest/runner';
 const prisma = new PrismaClient();
 
 async function main() {
-  const results = await runAllAreas(prisma);
+  // Rebuild by default: this is a tracker, so each refresh reflects the market as it is
+  // now rather than accumulating a standing local copy. Pass --merge to keep the old
+  // behaviour when comparing two captures.
+  const rebuild = !process.argv.includes('--merge');
+  const results = await runAllAreas(prisma, { rebuild });
 
   if (results.length === 0) {
     console.log('No active areas. Run `npm run seed` first.');

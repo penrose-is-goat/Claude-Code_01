@@ -4,6 +4,7 @@ import type { NormalizedListing, PropertyType } from '../normalized';
 import type {
   FetchOptions, HealthCheckResult, ListingProvider, ProviderCapabilities, ProviderPage,
 } from '../types';
+import { wallClockToUtc } from '../zillow/parse';
 
 /**
  * Replays real listing data captured from public listing pages.
@@ -30,6 +31,15 @@ export interface SnapshotProvenance {
   openHouseCounts?: Record<string, number>;
 }
 
+interface SnapshotOpenHouse {
+  /** Local wall-clock, e.g. "2026-08-22T09:00". Converted using `timezone` on load. */
+  localStart: string;
+  localEnd: string;
+  timezone: string;
+  appointmentOnly?: boolean;
+  virtual?: boolean;
+}
+
 interface SnapshotRow {
   sourceListingId: string;
   addressLine1: string;
@@ -45,6 +55,7 @@ interface SnapshotRow {
   lng?: number | null;
   yearBuilt?: number | null;
   listingUrl?: string | null;
+  openHouses?: SnapshotOpenHouse[];
 }
 
 export interface SnapshotFile {
@@ -56,9 +67,9 @@ export class SnapshotProvider implements ListingProvider<NormalizedListing> {
   readonly id = 'snapshot' as const;
   readonly displayName = 'Captured snapshot (real data)';
   readonly capabilities: ProviderCapabilities = {
-    // The capture did not pair open-house windows to specific addresses, so this
-    // provider declares it cannot supply them rather than inventing the join.
-    supportsOpenHouses: false,
+    // Zillow's public open-house pages do pair a window to an address, and the capture
+    // carries those pairs, so this is now genuinely supported.
+    supportsOpenHouses: true,
     supportsPolygonQuery: false,
     supportsRadiusQuery: false,
     supportsPostalCodeQuery: true,
@@ -129,13 +140,27 @@ export class SnapshotProvider implements ListingProvider<NormalizedListing> {
     const files = await this.list();
     if (files.length === 0) throw new Error(`No snapshot files found in ${this.dir}`);
 
-    // Default to the most recent capture; an explicit index allows replaying an older
-    // one, which is how a real before/after comparison is driven.
-    const chosen = this.index >= 0 ? files[Math.min(this.index, files.length - 1)] : files[files.length - 1];
-    const parsed = JSON.parse(await readFile(join(this.dir, chosen), 'utf8')) as SnapshotFile;
+    // An explicit index replays a single capture, which is how a real before/after
+    // comparison is driven. Otherwise every capture is merged, because separate files
+    // cover different slices (for-sale sweeps vs open-house sweeps) of the same market.
+    const chosenFiles = this.index >= 0 ? [files[Math.min(this.index, files.length - 1)]] : files;
 
+    const byId = new Map<string, NormalizedListing>();
+    let newest: SnapshotProvenance | null = null;
+
+    for (const file of chosenFiles) {
+      const parsed = JSON.parse(await readFile(join(this.dir, file), 'utf8')) as SnapshotFile;
+      if (!newest || parsed.provenance.capturedAt > newest.capturedAt) newest = parsed.provenance;
+      for (const row of this.toListings(parsed)) byId.set(row.sourceListingId, row);
+    }
+
+    this.loaded = { rows: [...byId.values()], provenance: newest! };
+    return this.loaded;
+  }
+
+  private toListings(parsed: SnapshotFile): NormalizedListing[] {
     const fetchedAt = new Date(parsed.provenance.capturedAt);
-    const rows = parsed.listings.map<NormalizedListing>((r) => ({
+    return parsed.listings.map<NormalizedListing>((r) => ({
       providerId: 'snapshot',
       sourceListingId: r.sourceListingId,
       addressLine1: r.addressLine1,
@@ -152,16 +177,39 @@ export class SnapshotProvider implements ListingProvider<NormalizedListing> {
       bathsTotal: r.bathsTotal ?? undefined,
       livingAreaSqft: r.livingAreaSqft ?? undefined,
       yearBuilt: r.yearBuilt ?? undefined,
-      listingUrl: r.listingUrl ?? undefined,
+      // Always link back to Zillow. This app tracks listings; it does not host them,
+      // so every row is a pointer to the source rather than a replacement for it.
+      listingUrl: r.listingUrl ?? zillowAddressUrl(r),
       photos: [],
-      openHouses: [],
+      openHouses: (r.openHouses ?? []).flatMap((o) => {
+        // Wall-clock plus zone, converted with the same helper the live parser uses,
+        // rather than UTC computed by hand at capture time.
+        const startsAt = wallClockToUtc(o.localStart, o.timezone);
+        const endsAt = wallClockToUtc(o.localEnd, o.timezone);
+        if (!startsAt || !endsAt || endsAt <= startsAt) return [];
+        return [{
+          startsAt, endsAt, timezone: o.timezone,
+          appointmentOnly: o.appointmentOnly ?? false,
+          virtual: o.virtual ?? false,
+        }];
+      }),
       raw: r,
       fetchedAt,
     }));
-
-    this.loaded = { rows, provenance: parsed.provenance };
-    return this.loaded;
   }
+}
+
+/**
+ * Zillow's address-search URL. Works without a zpid, so a listing captured from a
+ * search page still deep-links to its own Zillow page.
+ */
+export function zillowAddressUrl(r: {
+  addressLine1: string; city: string; state: string; postalCode: string;
+}): string {
+  const slug = [r.addressLine1, r.city, `${r.state} ${r.postalCode}`]
+    .map((part) => part.trim().replace(/\s+/g, '-'))
+    .join(',-');
+  return `https://www.zillow.com/homes/${encodeURI(slug)}_rb/`;
 }
 
 function normalizeType(s: string): PropertyType {

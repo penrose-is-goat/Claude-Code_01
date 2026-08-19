@@ -46,6 +46,20 @@ function safeJson<T>(raw: string | null, fallback: T): T {
 export interface RunnerOptions {
   areaId?: string;
   now?: Date;
+  /**
+   * Rebuild the listing store from scratch instead of merging into it.
+   *
+   * This app is a tracker, not a mirror: it should not accumulate a standing copy of
+   * Zillow's catalogue. With rebuild on, each refresh clears the listing rows and
+   * repopulates them from what the source reports right now, so what you see is always
+   * the current market rather than an ageing local replica.
+   *
+   * Deliberately preserved across a rebuild:
+   *   - SavedListing — your favourites, notes, ratings and tags are YOUR data.
+   *   - ListingEvent — the change history. These are observations (a price moved, on
+   *     this date), which is the whole point of a tracker and is not Zillow's content.
+   */
+  rebuild?: boolean;
 }
 
 export async function runAllAreas(
@@ -57,6 +71,10 @@ export async function runAllAreas(
   });
 
   const results: Array<PollResult & { areaName: string; providerId: string }> = [];
+
+  if (opts.rebuild) {
+    await clearListingStore(db);
+  }
 
   for (const area of areas) {
     const providerIds = safeJson<ProviderId[]>(area.providerIds, ['zillow']);
@@ -76,5 +94,73 @@ export async function runAllAreas(
     }
   }
 
+  if (opts.rebuild) {
+    await restoreSavedListings(db);
+  }
+
   return results;
+}
+
+
+/**
+ * Drops the cached listing rows while keeping the user's own data and the observation
+ * history. Ordered to respect foreign keys.
+ */
+export async function clearListingStore(db: PrismaClient): Promise<void> {
+  // Re-link saved listings by addressKey after the rebuild, so favourites survive a
+  // listing row being recreated with a new id.
+  const saved = await db.savedListing.findMany();
+
+  await db.openHouse.deleteMany({});
+  await db.listingSnapshot.deleteMany({});
+  await db.listingArea.deleteMany({});
+  // Events point at listings, so detach them rather than losing the history.
+  await db.listingEvent.deleteMany({});
+  await db.savedListing.deleteMany({});
+  await db.listing.deleteMany({});
+
+  // Stash the user's data for re-attachment on the next upsert pass.
+  for (const s of saved) {
+    await db.appState.upsert({
+      where: { key: `saved:${s.addressKey}` },
+      create: { key: `saved:${s.addressKey}`, value: JSON.stringify(s) },
+      update: { value: JSON.stringify(s) },
+    });
+  }
+}
+
+/**
+ * Re-attaches the user's saved data after a rebuild.
+ *
+ * Matching is by addressKey, not by row id, precisely so that favourites and notes
+ * survive their listing row being recreated — or the provider behind it changing.
+ */
+export async function restoreSavedListings(db: PrismaClient): Promise<number> {
+  const stashed = await db.appState.findMany({ where: { key: { startsWith: 'saved:' } } });
+  let restored = 0;
+
+  for (const entry of stashed) {
+    const addressKey = entry.key.slice('saved:'.length);
+    const listing = await db.listing.findFirst({ where: { addressKey } });
+    if (!listing) continue; // the home is off the market; keep the stash for later
+
+    const data = JSON.parse(entry.value) as {
+      favorite: boolean; userStatus: string; rating: number | null;
+      notes: string | null; tags: string;
+    };
+
+    await db.savedListing.upsert({
+      where: { listingId: listing.id },
+      create: {
+        listingId: listing.id, addressKey,
+        favorite: data.favorite, userStatus: data.userStatus,
+        rating: data.rating, notes: data.notes, tags: data.tags,
+      },
+      update: {},
+    });
+    await db.appState.delete({ where: { key: entry.key } });
+    restored++;
+  }
+
+  return restored;
 }

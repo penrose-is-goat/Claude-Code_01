@@ -61,7 +61,10 @@ beforeAll(async () => {
   });
 
   const { raw } = await new SnapshotProvider().fetchPage({ area: area.query });
-  real = raw;
+  // The provider returns every capture; the pipeline geo-filters to the area. The
+  // baseline has to match what should actually land, not everything on disk.
+  const zips = ['80302', '80303', '80304'];
+  real = raw.filter((l) => zips.includes(l.postalCode));
 });
 
 afterAll(async () => {
@@ -70,17 +73,21 @@ afterAll(async () => {
 });
 
 describe('ingesting the real captured snapshot', () => {
+  // Counts are derived from the captures on disk rather than hardcoded, so adding a new
+  // capture does not falsify a test that is still describing correct behaviour.
   it('loads every captured listing', async () => {
     const result = await pollArea(db, new SnapshotProvider(), area);
     expect(result.status).toBe('SUCCESS');
-    expect(result.listingsSeen).toBe(16);
-    expect(result.listingsNew).toBe(16);
-    expect(await db.listing.count()).toBe(16);
+    expect(real.length).toBeGreaterThan(0);
+    expect(result.listingsSeen).toBe(real.length);
+    expect(result.listingsNew).toBe(real.length);
+    expect(await db.listing.count()).toBe(real.length);
   });
 
   it('keeps the real prices intact, including the one with no published price', async () => {
+    const expectedPriced = real.filter((l) => l.listPrice != null).length;
     const priced = await db.listing.findMany({ where: { listPrice: { not: null } } });
-    expect(priced).toHaveLength(15);
+    expect(priced).toHaveLength(expectedPriced);
 
     const cheapest = await db.listing.findFirstOrThrow({ where: { listPrice: 249000 } });
     expect(cheapest.addressLine1).toBe('3000 Colorado Ave Unit H231');
@@ -97,13 +104,29 @@ describe('ingesting the real captured snapshot', () => {
     expect(withCoords).toBe(0);
   });
 
-  it('does not invent open houses', async () => {
-    expect(await db.openHouse.count()).toBe(0);
+  it('carries the real open-house windows captured from Zillow', async () => {
+    const expected = real.reduce((n, l) => n + l.openHouses.length, 0);
+    expect(expected).toBeGreaterThan(0);
+    expect(await db.openHouse.count()).toBe(expected);
+
+    // A specific one, to prove the local-time conversion lands on the right instant:
+    // 1343 Alpine Avenue is open Sat 9am–1pm Boulder time.
+    const alpine = await db.listing.findFirst({ where: { addressLine1: '1343 Alpine Avenue' } });
+    if (alpine) {
+      const oh = await db.openHouse.findFirstOrThrow({ where: { listingId: alpine.id } });
+      const hour = Number(oh.startsAt.toLocaleString('en-US', { hour: 'numeric', hour12: false, timeZone: 'America/Denver' }));
+      expect(hour).toBe(9);
+    }
+  });
+
+  it('deep-links every listing back to Zillow rather than replacing it', async () => {
+    const listings = await db.listing.findMany();
+    expect(listings.every((l) => l.listingUrl?.startsWith('https://www.zillow.com/'))).toBe(true);
   });
 
   it('announces each listing exactly once', async () => {
     const events = await db.listingEvent.findMany({ where: { type: 'NEW_LISTING' } });
-    expect(events).toHaveLength(16);
+    expect(events).toHaveLength(real.length);
   });
 });
 
@@ -183,8 +206,10 @@ describe('absence handling when the source returns fewer rows', () => {
 describe('area filtering against real ZIP codes', () => {
   it('narrows to a single real ZIP', async () => {
     const narrow: AreaSpec = { id: AREA_ID, name: '80304 only', query: { kind: 'postalCodes', codes: ['80304'] } };
+    const expected = real.filter((l) => l.postalCode === '80304').length;
     const result = await pollArea(db, new SnapshotProvider(), narrow);
-    expect(result.listingsSeen).toBe(8);
+    expect(result.listingsSeen).toBe(expected);
+    expect(expected).toBeGreaterThan(0);
   });
 
   it('gives every real address a distinct identity key', async () => {
