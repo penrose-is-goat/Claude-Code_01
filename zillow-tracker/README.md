@@ -13,7 +13,30 @@ Runs locally with Docker Compose. Single user, SQLite, no accounts.
 That is the whole thing. It installs, builds the database, loads real listings and open
 houses, and starts the app — then open **http://localhost:3000/open-houses**.
 
-On Windows, or if you prefer npm: `npm run go`.
+### Windows
+
+PowerShell (Windows key, type `powershell`). Node.js 20+ must be installed first —
+[nodejs.org](https://nodejs.org), take the LTS build, then **close and reopen PowerShell**
+so it picks Node up.
+
+```powershell
+cd $HOME\Documents
+git clone -b claude/zillow-tracker-strategy-xkva7i https://github.com/penrose-is-goat/Claude-Code_01
+cd Claude-Code_01\zillow-tracker
+npm run setup
+npm run dev
+```
+
+**If npm fails with "running scripts is disabled on this system":** that is PowerShell's
+execution policy refusing npm's `.ps1` wrapper — nothing to do with this project. Either
+call `npm.cmd run setup` instead, or allow it once with:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+Do not run PowerShell as Administrator for this; it starts in `C:\Windows\system32`,
+which is not writable, and the clone fails.
 
 Re-running `./start.sh` is safe; it refreshes the data each time.
 
