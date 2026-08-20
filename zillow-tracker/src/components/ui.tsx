@@ -63,7 +63,7 @@ export function PriceDelta({ deltaAbs, deltaPct }: { deltaAbs: number | null; de
   );
 }
 
-export function Empty({ title, hint }: { title: string; hint?: string }) {
+export function Empty({ title, hint }: { title: string; hint?: React.ReactNode }) {
   return (
     <div className="card" style={{ padding: 40, textAlign: 'center' }}>
       <div style={{ fontSize: 15, fontWeight: 600 }}>{title}</div>

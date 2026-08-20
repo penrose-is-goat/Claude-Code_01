@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { findListings, getAreas } from '@/lib/db/queries';
+import { findListings } from '@/lib/db/queries';
 import { parseFilters, describeFilters, type SearchParams } from '@/lib/filters';
 import {
   AddressCell, Empty, PageHeader, PriceDelta, StatusBadge, formatOpenHouse, humanize, usd,
@@ -14,7 +14,7 @@ const TYPES = ['SINGLE_FAMILY', 'CONDO', 'TOWNHOUSE', 'MULTI_FAMILY', 'LAND'];
 export default async function ListingsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   const filters = parseFilters(sp);
-  const [listings, areas] = await Promise.all([findListings(filters), getAreas()]);
+  const listings = await findListings(filters);
 
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(sp)) {
@@ -37,7 +37,7 @@ export default async function ListingsPage({ searchParams }: { searchParams: Pro
         className="card"
         style={{ padding: 14, marginBottom: 16, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}
       >
-        <Field label="Search"><input name="q" defaultValue={filters.q ?? ''} placeholder="Address, city, ZIP" style={{ width: 180 }} /></Field>
+        <Field label="Search"><input name="q" defaultValue={filters.q ?? ''} placeholder="Address, city, postal code" style={{ width: 180 }} /></Field>
         <Field label="Min price"><input name="minPrice" type="number" defaultValue={filters.minPrice ?? ''} style={{ width: 110 }} /></Field>
         <Field label="Max price"><input name="maxPrice" type="number" defaultValue={filters.maxPrice ?? ''} style={{ width: 110 }} /></Field>
         <Field label="Beds"><input name="minBeds" type="number" min="0" defaultValue={filters.minBeds ?? ''} style={{ width: 70 }} /></Field>
@@ -54,14 +54,6 @@ export default async function ListingsPage({ searchParams }: { searchParams: Pro
             {TYPES.map((t) => <option key={t} value={t}>{humanize(t)}</option>)}
           </select>
         </Field>
-        {areas.length > 0 && (
-          <Field label="Area">
-            <select name="areaId" defaultValue={filters.areaId ?? ''}>
-              <option value="">All</option>
-              {areas.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
-          </Field>
-        )}
         <Field label="Sort">
           <select name="sort" defaultValue={filters.sort}>
             <option value="newest">Newest</option>
@@ -83,7 +75,12 @@ export default async function ListingsPage({ searchParams }: { searchParams: Pro
       </form>
 
       {listings.length === 0 ? (
-        <Empty title="No listings match" hint="Loosen the filters, or run a poll to bring in data." />
+        <Empty
+          title="No listings match"
+          hint={
+            <>Loosen the filters, or <Link href="/">run a search</Link> to start tracking a new area.</>
+          }
+        />
       ) : (
         <div className="card table-scroll">
           <table>

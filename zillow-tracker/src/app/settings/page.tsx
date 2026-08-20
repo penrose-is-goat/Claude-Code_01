@@ -33,7 +33,7 @@ export default async function SettingsPage() {
         <div className="card table-scroll">
           <table>
             <thead>
-              <tr><th>Provider</th><th>Open houses</th><th>Photos</th><th>ZIP query</th><th>Rate limit</th><th>Status</th></tr>
+              <tr><th>Provider</th><th>Open houses</th><th>Photos</th><th>Postal code query</th><th>Rate limit</th><th>Status</th></tr>
             </thead>
             <tbody>
               {providers.map((p) => (
@@ -63,13 +63,13 @@ export default async function SettingsPage() {
           <div className="card table-scroll">
             <table>
               <thead>
-                <tr><th>Started</th><th>Area</th><th>Provider</th><th>Result</th><th>Seen</th><th>New</th><th>Events</th><th>Requests</th><th>Canary</th></tr>
+                <tr><th>Started</th><th>Search</th><th>Provider</th><th>Result</th><th>Seen</th><th>New</th><th>Events</th><th>Requests</th><th>Canary</th></tr>
               </thead>
               <tbody>
                 {runs.map((r) => (
                   <tr key={r.id}>
                     <td className="muted" style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{r.startedAt.toLocaleString('en-US')}</td>
-                    <td>{r.area?.name ?? '—'}</td>
+                    <td>{r.search?.name ?? '—'}</td>
                     <td>{humanize(r.providerId)}</td>
                     <td className={r.status === 'SUCCESS' ? 'good' : r.status === 'FAILED' ? 'bad' : undefined}>
                       {humanize(r.status)}

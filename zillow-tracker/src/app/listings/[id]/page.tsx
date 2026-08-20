@@ -174,7 +174,7 @@ export default async function ListingDetail({ params }: { params: Promise<{ id: 
               {listing.mlsId && <Fact label="MLS #" value={listing.mlsId} />}
               <Fact label="First seen" value={formatDate(listing.firstSeenAt)} />
               <Fact label="Last seen" value={formatDate(listing.lastSeenAt)} />
-              <Fact label="Areas" value={listing.areas.map((a) => a.area.name).join(', ') || '—'} />
+              <Fact label="Tracked by" value={listing.searches.map((s) => s.search.name).join(', ') || '—'} />
             </dl>
           </section>
         </aside>

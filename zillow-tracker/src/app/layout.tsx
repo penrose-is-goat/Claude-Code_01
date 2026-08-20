@@ -11,11 +11,11 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic';
 
 const NAV = [
-  { href: '/', label: "What's New" },
+  { href: '/', label: 'Search' },
   { href: '/listings', label: 'Listings' },
   { href: '/open-houses', label: 'Open Houses' },
   { href: '/saved', label: 'Saved' },
-  { href: '/areas', label: 'Areas' },
+  { href: '/searches', label: 'Saved Searches' },
   { href: '/settings', label: 'Settings' },
 ];
 
