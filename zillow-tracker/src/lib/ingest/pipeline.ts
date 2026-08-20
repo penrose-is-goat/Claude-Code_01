@@ -28,7 +28,7 @@ const CANARY_SAMPLE_SIZE = 5;
 
 type PollStatus = 'SUCCESS' | 'PARTIAL' | 'FAILED';
 
-export interface AreaSpec {
+export interface SearchSpec {
   id: string;
   name: string;
   query: AreaQuery;
@@ -48,10 +48,10 @@ export interface PollResult {
   errorMessage?: string;
 }
 
-export async function pollArea(
+export async function pollSearch(
   db: PrismaClient,
   provider: ListingProvider<any>,
-  area: AreaSpec,
+  area: SearchSpec,
   opts: { now?: Date } = {},
 ): Promise<PollResult> {
   const now = opts.now ?? new Date();
@@ -61,7 +61,7 @@ export async function pollArea(
   // next poll: 100 -> 50 is distrusted, but 50 -> 50 looks perfectly healthy, and the
   // run after that happily delists 50 homes that never left the market.
   const recentRuns = await db.pollRun.findMany({
-    where: { areaId: area.id, providerId: provider.id, status: { in: ['SUCCESS', 'PARTIAL'] } },
+    where: { searchId: area.id, providerId: provider.id, status: { in: ['SUCCESS', 'PARTIAL'] } },
     orderBy: { startedAt: 'desc' },
     take: BASELINE_RUN_WINDOW,
   });
@@ -79,7 +79,7 @@ export async function pollArea(
         providerId: provider.id,
         removedAt: null,
         status: { in: ['ACTIVE', 'COMING_SOON'] },
-        areas: { some: { areaId: area.id, absentSince: null } },
+        searches: { some: { searchId: area.id, absentSince: null } },
       },
       orderBy: { firstSeenAt: 'asc' },
       take: CANARY_SAMPLE_SIZE,
@@ -88,7 +88,7 @@ export async function pollArea(
   ).map((l) => l.sourceListingId);
 
   const run = await db.pollRun.create({
-    data: { areaId: area.id, providerId: provider.id, status: 'RUNNING', startedAt: now },
+    data: { searchId: area.id, providerId: provider.id, status: 'RUNNING', startedAt: now },
   });
 
   try {
@@ -143,7 +143,7 @@ export async function pollArea(
       where: { sourceKey: { in: inArea.map((l) => `${l.providerId}:${l.sourceListingId}`) } },
       include: {
         openHouses: { where: { cancelledAt: null } },
-        areas: { where: { areaId: area.id } },
+        searches: { where: { searchId: area.id } },
       },
     });
     const existingByKey = new Map(existingRows.map((r) => [r.sourceKey, r]));
@@ -166,8 +166,8 @@ export async function pollArea(
         where: { id: { in: untouched } },
         data: { lastSeenAt: now, removedAt: null },
       });
-      await db.listingArea.updateMany({
-        where: { areaId: area.id, listingId: { in: untouched } },
+      await db.listingSearch.updateMany({
+        where: { searchId: area.id, listingId: { in: untouched } },
         data: { missedRunCount: 0, absentSince: null },
       });
     }
@@ -221,7 +221,7 @@ interface UpsertContext {
 
 type ExistingListing = Awaited<ReturnType<typeof fetchExisting>>;
 
-async function fetchExisting(db: PrismaClient, sourceKey: string, areaId: string) {
+async function fetchExisting(db: PrismaClient, sourceKey: string, searchId: string) {
   return db.listing.findUnique({
     where: { sourceKey },
     include: {
@@ -229,7 +229,7 @@ async function fetchExisting(db: PrismaClient, sourceKey: string, areaId: string
       // every later edit re-emit OPEN_HOUSE_CANCELLED for the same event, and made a
       // reinstated open house silent because the stale row was still present.
       openHouses: { where: { cancelledAt: null } },
-      areas: { where: { areaId } },
+      searches: { where: { searchId } },
     },
   });
 }
@@ -237,7 +237,7 @@ async function fetchExisting(db: PrismaClient, sourceKey: string, areaId: string
 export async function upsertListing(
   db: PrismaClient,
   listing: NormalizedListing,
-  areaId: string,
+  searchId: string,
   pollRunId: string,
   now: Date,
   ctx: UpsertContext = {},
@@ -247,10 +247,10 @@ export async function upsertListing(
   const addrKey = addressKey(listing);
 
   const existing =
-    ctx.existing !== undefined ? ctx.existing : await fetchExisting(db, sourceKey, areaId);
+    ctx.existing !== undefined ? ctx.existing : await fetchExisting(db, sourceKey, searchId);
 
-  const areaLink = existing?.areas[0];
-  const wasAbsentHere = Boolean(areaLink?.absentSince);
+  const searchLink = existing?.searches[0];
+  const wasAbsentHere = Boolean(searchLink?.absentSince);
   const wasRemoved = Boolean(existing?.removedAt);
 
   // Fast path: nothing meaningful changed. Touch lastSeenAt and stop — this is what
@@ -270,7 +270,7 @@ export async function upsertListing(
       });
     }
 
-    const alreadyLinked = Boolean(areaLink);
+    const alreadyLinked = Boolean(searchLink);
 
     // The overwhelmingly common case: unchanged, already linked, nothing to announce.
     // Hand it to the caller to flush in bulk rather than opening a transaction per row.
@@ -284,7 +284,7 @@ export async function upsertListing(
         where: { id: existing.id },
         data: { lastSeenAt: now, removedAt: null },
       });
-      await linkArea(tx, existing.id, areaId, now);
+      await linkSearch(tx, existing.id, searchId, now);
       await writeEvents(tx, existing.id, events, pollRunId, now);
     });
 
@@ -339,7 +339,7 @@ export async function upsertListing(
     });
 
     await syncOpenHouses(tx, saved.id, listing, now);
-    await linkArea(tx, saved.id, areaId, now);
+    await linkSearch(tx, saved.id, searchId, now);
     await writeEvents(tx, saved.id, events, pollRunId, now);
   });
 
@@ -399,13 +399,13 @@ function serializable(l: NormalizedListing): unknown {
   return { ...l, raw: undefined };
 }
 
-/** Links a listing to an area and clears any absence recorded for THAT area. */
-async function linkArea(
-  db: TxClient, listingId: string, areaId: string, now: Date,
+/** Links a listing to a search and clears any absence recorded for THAT search. */
+async function linkSearch(
+  db: TxClient, listingId: string, searchId: string, now: Date,
 ): Promise<void> {
-  await db.listingArea.upsert({
-    where: { listingId_areaId: { listingId, areaId } },
-    create: { listingId, areaId, matchedAt: now },
+  await db.listingSearch.upsert({
+    where: { listingId_searchId: { listingId, searchId } },
+    create: { listingId, searchId, matchedAt: now },
     update: { missedRunCount: 0, absentSince: null },
   });
 }
@@ -462,18 +462,18 @@ async function writeEvents(
 }
 
 /**
- * Handles listings this area did NOT see. Absence accrues per AREA — see the note on
- * the ListingArea model for why a single per-listing counter was wrong in both
- * directions once more than one area was in play.
+ * Handles listings this search did NOT see. Absence accrues per SEARCH — see the note
+ * on the ListingSearch model for why a single per-listing counter was wrong in both
+ * directions once more than one search was in play.
  *
- * A listing is only marked removed once every area tracking it has given up on it.
+ * A listing is only marked removed once every search tracking it has given up on it.
  */
 async function reconcileAbsent(
-  db: PrismaClient, providerId: string, areaId: string, seenIds: Set<string>,
+  db: PrismaClient, providerId: string, searchId: string, seenIds: Set<string>,
   run: RunContext, pollRunId: string, now: Date,
 ): Promise<number> {
-  const links = await db.listingArea.findMany({
-    where: { areaId, listing: { providerId } },
+  const links = await db.listingSearch.findMany({
+    where: { searchId, listing: { providerId } },
     include: {
       listing: { select: { id: true, sourceListingId: true, addressLine1: true, removedAt: true } },
     },
@@ -493,8 +493,8 @@ async function reconcileAbsent(
       decision.missedRunCount === link.missedRunCount && !decision.shouldMarkDelisted;
     if (unchanged) continue;
 
-    await db.listingArea.update({
-      where: { listingId_areaId: { listingId: link.listingId, areaId } },
+    await db.listingSearch.update({
+      where: { listingId_searchId: { listingId: link.listingId, searchId } },
       data: {
         missedRunCount: decision.missedRunCount,
         absentSince: decision.shouldMarkDelisted ? now : link.absentSince,
@@ -503,9 +503,9 @@ async function reconcileAbsent(
 
     if (!decision.shouldMarkDelisted) continue;
 
-    // Only announce it as gone if no other area can still see it.
-    const stillVisibleElsewhere = await db.listingArea.count({
-      where: { listingId: link.listingId, areaId: { not: areaId }, absentSince: null },
+    // Only announce it as gone if no other search can still see it.
+    const stillVisibleElsewhere = await db.listingSearch.count({
+      where: { listingId: link.listingId, searchId: { not: searchId }, absentSince: null },
     });
     if (stillVisibleElsewhere > 0) continue;
     if (link.listing.removedAt) continue;
