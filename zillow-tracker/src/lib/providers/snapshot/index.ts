@@ -79,7 +79,6 @@ export class SnapshotProvider implements ListingProvider<NormalizedListing> {
     supportsOpenHouses: true,
     supportsPolygonQuery: false,
     supportsRadiusQuery: false,
-    supportsPostalCodeQuery: true,
     supportsPhotos: false,
     supportsPriceHistory: false,
     rateLimit: null,

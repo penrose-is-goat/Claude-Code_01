@@ -55,7 +55,6 @@ export class CsvImportProvider implements ListingProvider<NormalizedListing> {
     supportsOpenHouses: false, // most exports simply don't carry open-house times
     supportsPolygonQuery: false,
     supportsRadiusQuery: false,
-    supportsPostalCodeQuery: false,
     supportsPhotos: false,
     supportsPriceHistory: false,
     rateLimit: null,

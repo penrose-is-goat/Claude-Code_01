@@ -10,7 +10,6 @@ export interface ProviderCapabilities {
   supportsOpenHouses: boolean;
   supportsPolygonQuery: boolean;
   supportsRadiusQuery: boolean;
-  supportsPostalCodeQuery: boolean;
   supportsPhotos: boolean;
   supportsPriceHistory: boolean;
   /** null = unmetered (mock, csv). Used to pace runs. */
@@ -18,11 +17,16 @@ export interface ProviderCapabilities {
 }
 
 /**
- * What the user drew or typed. Providers translate this into their own query language,
- * usually by coarsening it (polygon -> bounding box -> covering ZIPs).
+ * What the user drew or typed, coarsened for a provider that speaks its own query
+ * language rather than raw geometry.
+ *
+ * No ZIP/postal-code variant, deliberately: the user chose "city + radius" or "draw on
+ * the map" and explicitly rejected ZIP codes, so nothing in this interface accepts one.
+ * A provider's URL builder MAY still use a ZIP or city slug as an internal query-string
+ * detail (Zillow's public search URLs are ZIP- or city-slug-based) — that is an
+ * implementation choice made after this type, never something a person types in.
  */
 export type AreaQuery =
-  | { kind: 'postalCodes'; codes: string[] }
   | { kind: 'cityRadius'; city: string; state: string; centerLat?: number; centerLng?: number; radiusMiles: number }
   | { kind: 'polygon'; ring: Array<[number, number]> }
   | { kind: 'bbox'; minLat: number; minLng: number; maxLat: number; maxLng: number };

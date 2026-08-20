@@ -164,24 +164,22 @@ export function boundingBox(ring: Array<[number, number]>): {
 /**
  * Does this listing actually belong to this area?
  *
- * A listing with no coordinates can't be tested geometrically. Rather than drop it, we
- * fall back to the ZIP code where we have one, and otherwise keep it — a listing you
- * see and dismiss is a much cheaper mistake than one you never see at all.
+ * Every remaining AreaQuery kind is geometric (no ZIP/postal-code variant — see the
+ * comment on AreaQuery). A listing with no coordinates can't be tested geometrically at
+ * all, so rather than drop it we keep it — a listing you see and dismiss is a much
+ * cheaper mistake than one you never see at all. This matters more than it used to now
+ * that a provider (snapshot captures, some CSV exports) may never publish coordinates:
+ * with no ZIP fallback left, "keep it" is the only thing standing between that listing
+ * and silently vanishing from every area.
  */
 export function listingMatchesArea(
-  listing: Pick<NormalizedListing, 'lat' | 'lng' | 'postalCode'>,
+  listing: Pick<NormalizedListing, 'lat' | 'lng'>,
   area: AreaQuery,
 ): boolean {
   const hasCoords = listing.lat != null && listing.lng != null;
   const p: LatLng | null = hasCoords ? { lat: listing.lat!, lng: listing.lng! } : null;
 
   switch (area.kind) {
-    case 'postalCodes':
-      // Same policy as the geometric cases below: if we cannot test it, keep it. A
-      // listing you see and dismiss is cheaper than one you never see.
-      if (!listing.postalCode) return true;
-      return area.codes.some((c) => c.slice(0, 5) === listing.postalCode.slice(0, 5));
-
     case 'polygon':
       if (!p) return true;
       return isInsidePolygon(p, area.ring);
@@ -204,7 +202,7 @@ export function listingMatchesArea(
   }
 }
 
-export function filterListingsToArea<T extends Pick<NormalizedListing, 'lat' | 'lng' | 'postalCode'>>(
+export function filterListingsToArea<T extends Pick<NormalizedListing, 'lat' | 'lng'>>(
   listings: T[],
   area: AreaQuery,
 ): T[] {

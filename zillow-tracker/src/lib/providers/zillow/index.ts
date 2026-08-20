@@ -44,7 +44,6 @@ export class ZillowPublicProvider implements ListingProvider<NormalizedListing> 
     supportsOpenHouses: true,
     supportsPolygonQuery: false, // we coarsen to city/ZIP, then filter locally
     supportsRadiusQuery: false,
-    supportsPostalCodeQuery: true,
     supportsPhotos: true,
     supportsPriceHistory: false,
     rateLimit: { requestsPerRun: 4, minIntervalMs: 1500 },
@@ -155,19 +154,16 @@ export function buildSearchUrl(area: AreaQuery, page = 1, openHouseOnly = false)
   const paged = page > 1 ? `${page}_p/` : '';
 
   switch (area.kind) {
-    case 'postalCodes': {
-      const zip = area.codes[0];
-      if (!zip) throw new Error('postalCodes area has no codes');
-      return `${base}/${zip}/${suffix}${paged}`;
-    }
     case 'cityRadius': {
+      // Zillow's own slug, not anything the user typed — the user gave us a place name
+      // and a radius; this is just how that gets spelled in Zillow's URL scheme.
       const slug = `${slugify(area.city)}-${area.state.toLowerCase()}`;
       return `${base}/${slug}/${suffix}${paged}`;
     }
     case 'polygon':
     case 'bbox':
       throw new Error(
-        'Zillow provider cannot query a polygon or bbox directly — resolve it to ZIP codes first',
+        'Zillow provider cannot query a polygon or bbox directly — resolve it to a city/state first',
       );
   }
 }

@@ -14,7 +14,7 @@ export interface ListingFilterInput {
   minBaths?: number;
   status?: string[];
   propertyType?: string[];
-  areaId?: string;
+  searchId?: string;
   openHouseOnly?: boolean;
   favoritesOnly?: boolean;
   includeRemoved?: boolean;
@@ -82,9 +82,9 @@ export function buildWhere(f: ListingFilterInput): Prisma.ListingWhereInput {
   if (f.minBaths != null) where.bathsTotal = { gte: f.minBaths };
   if (f.status?.length) where.status = { in: f.status };
   if (f.propertyType?.length) where.propertyType = { in: f.propertyType };
-  // absentSince must be honoured here, not just recorded. Marking a per-area absence is
-  // pointless if the area's own view keeps showing the listing anyway.
-  if (f.areaId) where.areas = { some: { areaId: f.areaId, absentSince: null } };
+  // absentSince must be honoured here, not just recorded. Marking a per-search absence is
+  // pointless if the search's own view keeps showing the listing anyway.
+  if (f.searchId) where.searches = { some: { searchId: f.searchId, absentSince: null } };
   if (f.favoritesOnly) where.saved = { is: { favorite: true } };
   if (f.openHouseOnly) {
     // endsAt, not startsAt: a 12–3pm open house vanished from every view at 12:01,
@@ -154,7 +154,7 @@ export async function getListing(id: string) {
     where: { id },
     include: {
       saved: true,
-      areas: { include: { area: true } },
+      searches: { include: { search: true } },
       openHouses: { orderBy: { startsAt: 'asc' } },
       events: { orderBy: { occurredAt: 'desc' } },
       snapshots: { orderBy: { capturedAt: 'asc' } },
@@ -213,12 +213,13 @@ export async function getPriceDrops(days = 30) {
   });
 }
 
+/** @deprecated Use `getSavedSearches` from `lib/db/searches` — kept only until callers migrate. */
 export async function getAreas() {
-  return prisma.area.findMany({ orderBy: { name: 'asc' } });
+  return prisma.savedSearch.findMany({ orderBy: { name: 'asc' } });
 }
 
 export async function getRuns(limit = 20) {
-  return prisma.pollRun.findMany({ orderBy: { startedAt: 'desc' }, take: limit, include: { area: true } });
+  return prisma.pollRun.findMany({ orderBy: { startedAt: 'desc' }, take: limit, include: { search: true } });
 }
 
 export async function toggleFavorite(listingId: string): Promise<boolean> {
