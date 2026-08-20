@@ -33,7 +33,7 @@ export default async function SettingsPage() {
         <div className="card table-scroll">
           <table>
             <thead>
-              <tr><th>Provider</th><th>Open houses</th><th>Photos</th><th>Postal code query</th><th>Rate limit</th><th>Status</th></tr>
+              <tr><th>Provider</th><th>Open houses</th><th>Photos</th><th>Polygon query</th><th>Rate limit</th><th>Status</th></tr>
             </thead>
             <tbody>
               {providers.map((p) => (
@@ -41,7 +41,7 @@ export default async function SettingsPage() {
                   <td style={{ fontWeight: 600 }}>{p.displayName}</td>
                   <td>{p.capabilities.supportsOpenHouses ? <span className="good">Yes</span> : <span className="muted">No</span>}</td>
                   <td>{p.capabilities.supportsPhotos ? 'Yes' : <span className="muted">No</span>}</td>
-                  <td>{p.capabilities.supportsPostalCodeQuery ? 'Yes' : <span className="muted">No</span>}</td>
+                  <td>{p.capabilities.supportsPolygonQuery ? 'Yes' : <span className="muted">No</span>}</td>
                   <td className="muted" style={{ fontSize: 12 }}>
                     {p.capabilities.rateLimit
                       ? `${p.capabilities.rateLimit.requestsPerRun} req/run, ${p.capabilities.rateLimit.minIntervalMs}ms apart`

@@ -1,10 +1,4 @@
 import { NextResponse } from 'next/server';
-// TODO(backend): expects src/lib/db/searches.ts to export:
-//   getSavedSearches(): Promise<SavedSearchRecord[]>
-//   createSavedSearch(input: SavedSearchInput): Promise<SavedSearchRecord>
-// where SavedSearchInput is the type of that name in src/lib/search/types.ts, and
-// SavedSearchRecord additionally carries id/active/createdAt/lastRunAt with `query`
-// and `resolved` already parsed back from their stored JSON text.
 import { getSavedSearches, createSavedSearch } from '@/lib/db/searches';
 import { SavedSearchInputSchema } from '../_lib/searchQuerySchema';
 

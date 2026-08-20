@@ -111,6 +111,116 @@ a { color: var(--accent); }
 .detail-grid p, .detail-grid dd { overflow-wrap: anywhere; }
 
 
+/*
+ * Search dashboard.
+ *
+ * `.dashboard-hero` centers and widens the search box before any results exist — the
+ * empty state is the front door, so it gets room to breathe. Once a search has run the
+ * caller drops this class and the same form collapses to a slim bar (see `compact` on
+ * SearchForm).
+ */
+.dashboard-hero {
+  max-width: 720px;
+  margin: 6vh auto 0;
+  padding: 0 4px;
+}
+
+.search-mode-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.search-tab {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 5px 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.search-tab-active {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+
+.search-place-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.search-place-input {
+  flex: 1 1 260px;
+  font-size: 16px;
+  padding: 12px 14px;
+}
+.search-radius-field {
+  display: grid;
+  gap: 4px;
+}
+.search-radius-field select { padding: 12px 10px; }
+
+.search-filters {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.search-type-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.chip {
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.chip-active {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.search-submit {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+  font-weight: 600;
+  padding: 9px 20px;
+}
+.search-submit:hover { opacity: 0.92; border-color: var(--accent); }
+.search-submit:disabled { opacity: 0.6; cursor: default; }
+
+.listing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.listing-card {
+  padding: 14px;
+  text-decoration: none;
+  color: var(--text);
+  display: block;
+}
+.listing-card:hover { border-color: var(--accent); }
+
+.saved-search-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
 /* Anchors that should look like buttons, without nesting a <button> inside an <a>. */
 .btn-link {
   display: inline-block;

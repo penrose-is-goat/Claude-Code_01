@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PrismaClient } from '@prisma/client';
-import { pollArea, type AreaSpec } from '@/lib/ingest/pipeline';
+import { pollSearch, type SearchSpec } from '@/lib/ingest/pipeline';
 import type { NormalizedListing, NormalizedOpenHouse } from '@/lib/providers/normalized';
 import type {
   FetchOptions, HealthCheckResult, ListingProvider, ProviderCapabilities, ProviderPage,
@@ -22,8 +22,13 @@ let db: PrismaClient;
 const AREA_A = 'adv-area-a';
 const AREA_B = 'adv-area-b';
 
-const areaA: AreaSpec = { id: AREA_A, name: 'A', query: { kind: 'postalCodes', codes: ['80302'] } };
-const areaB: AreaSpec = { id: AREA_B, name: 'B', query: { kind: 'postalCodes', codes: ['80302'] } };
+// A wide-open bbox, standing in for "wherever" — these tests are about ingest
+// mechanics (transactions, absence accounting, event generation), not geometry, so the
+// query just needs to keep every synthetic listing (`mk()` below never sets lat/lng,
+// and a coordinate-less listing is kept by every AreaQuery kind — see geo/index.ts).
+const EVERYWHERE = { kind: 'bbox', minLat: -90, maxLat: 90, minLng: -180, maxLng: 180 } as const;
+const areaA: SearchSpec = { id: AREA_A, name: 'A', query: EVERYWHERE };
+const areaB: SearchSpec = { id: AREA_B, name: 'B', query: EVERYWHERE };
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'ztracker-adv-'));
@@ -32,8 +37,9 @@ beforeAll(async () => {
     env: { ...process.env, DATABASE_URL: url }, cwd: process.cwd(), stdio: 'pipe',
   });
   db = new PrismaClient({ datasources: { db: { url } } });
-  await db.area.create({ data: { id: AREA_A, name: 'A', kind: 'POSTAL_CODES', postalCodes: JSON.stringify(['80302']) } });
-  await db.area.create({ data: { id: AREA_B, name: 'B', kind: 'POSTAL_CODES', postalCodes: JSON.stringify(['80302']) } });
+  const stub = (id: string) => JSON.stringify({ location: { kind: 'drawn', ring: [[0, 0], [1, 0], [1, 1]] }, filters: {} });
+  await db.savedSearch.create({ data: { id: AREA_A, name: 'A', query: stub(AREA_A) } });
+  await db.savedSearch.create({ data: { id: AREA_B, name: 'B', query: stub(AREA_B) } });
 }, 120_000);
 
 afterAll(async () => {
@@ -46,7 +52,7 @@ beforeEach(async () => {
   await db.listingEvent.deleteMany();
   await db.listingSnapshot.deleteMany();
   await db.openHouse.deleteMany();
-  await db.listingArea.deleteMany();
+  await db.listingSearch.deleteMany();
   await db.savedListing.deleteMany();
   await db.listing.deleteMany();
   await db.pollRun.deleteMany();
@@ -79,7 +85,7 @@ class TestProvider implements ListingProvider<NormalizedListing> {
   readonly displayName = 'Test';
   readonly capabilities: ProviderCapabilities = {
     supportsOpenHouses: true, supportsPolygonQuery: true, supportsRadiusQuery: true,
-    supportsPostalCodeQuery: true, supportsPhotos: true, supportsPriceHistory: false,
+    supportsPhotos: true, supportsPriceHistory: false,
     rateLimit: null,
   };
   constructor(public batch: NormalizedListing[]) {}
@@ -113,7 +119,7 @@ const eventsFor = async (sourceListingId: string) => {
 describe('P1 a crash mid-upsert permanently swallows the events', () => {
   it('a crash mid-upsert rolls back, so the price drop survives to the retry', async () => {
     const l = mk({ sourceListingId: 'crash-1', listPrice: 800000 });
-    await pollArea(db, new TestProvider([l]), areaA);
+    await pollSearch(db, new TestProvider([l]), areaA);
 
     const dropped = { ...l, listPrice: 700000 };
     let armed = true;
@@ -141,7 +147,7 @@ describe('P1 a crash mid-upsert permanently swallows the events', () => {
       },
     }) as PrismaClient;
 
-    const failed = await pollArea(flaky, new TestProvider([dropped]), areaA);
+    const failed = await pollSearch(flaky, new TestProvider([dropped]), areaA);
     expect(failed.status).toBe('FAILED');
 
     // The row must NOT carry the new price, because the event that explains it was
@@ -151,7 +157,7 @@ describe('P1 a crash mid-upsert permanently swallows the events', () => {
     expect(mid.listPrice).toBe(800000);
 
     // Retry on a healthy client — the user still gets told.
-    await pollArea(db, new TestProvider([dropped]), areaA);
+    await pollSearch(db, new TestProvider([dropped]), areaA);
     expect(await eventsFor('crash-1')).toContain('PRICE_CHANGE');
     const after = await db.listing.findFirstOrThrow({ where: { sourceListingId: 'crash-1' } });
     expect(after.listPrice).toBe(700000);
@@ -159,7 +165,7 @@ describe('P1 a crash mid-upsert permanently swallows the events', () => {
 });
 
 // ---------------------------------------------------------------------------
-// P2 — pollArea hardcodes RunContext.status: 'SUCCESS' even when rows failed to
+// P2 — pollSearch hardcodes RunContext.status: 'SUCCESS' even when rows failed to
 // normalize, so absence.ts's "never evict on a PARTIAL run" rule is bypassed by
 // the one caller it exists for.
 // ---------------------------------------------------------------------------
@@ -167,17 +173,17 @@ describe('P2 a PARTIAL run still evicts listings', () => {
   it('BUG: rows that failed to PARSE are delisted as if they had left the market', async () => {
     const good = Array.from({ length: 8 }, (_, i) => mk({ sourceListingId: `p2-good-${i}` }));
     const iffy = Array.from({ length: 2 }, (_, i) => mk({ sourceListingId: `p2-iffy-${i}` }));
-    await pollArea(db, new TestProvider([...good, ...iffy]), areaA);
+    await pollSearch(db, new TestProvider([...good, ...iffy]), areaA);
 
     // From now on the provider emits those 2 rows in a shape normalize() rejects.
     const poisoned = iffy.map((l) => ({ ...l, [POISON]: true })) as NormalizedListing[];
-    const r2 = await pollArea(db, new TestProvider([...good, ...poisoned]), areaA);
-    const r3 = await pollArea(db, new TestProvider([...good, ...poisoned]), areaA);
+    const r2 = await pollSearch(db, new TestProvider([...good, ...poisoned]), areaA);
+    const r3 = await pollSearch(db, new TestProvider([...good, ...poisoned]), areaA);
 
     expect(r2.status).toBe('PARTIAL');
     expect(r3.status).toBe('PARTIAL');
     // absence.ts: "if (run.status !== 'SUCCESS') return false" — a PARTIAL run must not
-    // be allowed to conclude anything is gone. pollArea never tells it the run is partial.
+    // be allowed to conclude anything is gone. pollSearch never tells it the run is partial.
     expect(r2.delisted + r3.delisted).toBe(0);
     expect(await db.listing.count({ where: { removedAt: { not: null } } })).toBe(0);
   });
@@ -192,30 +198,30 @@ describe('P3 absence is decided per area but stored per listing', () => {
     const shared = mk({ sourceListingId: 'p3-shared' });
     const bOnly = Array.from({ length: 5 }, (_, i) => mk({ sourceListingId: `p3-b-${i}` }));
 
-    await pollArea(db, new TestProvider([shared, ...bOnly]), areaA);
-    await pollArea(db, new TestProvider([shared, ...bOnly]), areaB);
+    await pollSearch(db, new TestProvider([shared, ...bOnly]), areaA);
+    await pollSearch(db, new TestProvider([shared, ...bOnly]), areaB);
 
     for (let i = 0; i < 3; i++) {
-      await pollArea(db, new TestProvider([shared, ...bOnly]), areaA);
-      await pollArea(db, new TestProvider([...bOnly]), areaB);
+      await pollSearch(db, new TestProvider([shared, ...bOnly]), areaA);
+      await pollSearch(db, new TestProvider([...bOnly]), areaB);
     }
 
     // Absence is now recorded per AREA, so A's polls no longer reset B's counter.
-    const linkB = await db.listingArea.findFirstOrThrow({
-      where: { areaId: AREA_B, listing: { sourceListingId: 'p3-shared' } },
+    const linkB = await db.listingSearch.findFirstOrThrow({
+      where: { searchId: AREA_B, listing: { sourceListingId: 'p3-shared' } },
     });
     expect(linkB.absentSince).not.toBeNull();
 
     // ...and area B's own view honours it.
     const visibleInB = await db.listing.findMany({
-      where: { areas: { some: { areaId: AREA_B, absentSince: null } } },
+      where: { searches: { some: { searchId: AREA_B, absentSince: null } } },
     });
     expect(visibleInB.map((l) => l.sourceListingId)).not.toContain('p3-shared');
 
     // Area A still sees it, so it is NOT globally delisted — that would hide a listing
     // that one of your areas can still legitimately offer you.
-    const linkA = await db.listingArea.findFirstOrThrow({
-      where: { areaId: AREA_A, listing: { sourceListingId: 'p3-shared' } },
+    const linkA = await db.listingSearch.findFirstOrThrow({
+      where: { searchId: AREA_A, listing: { sourceListingId: 'p3-shared' } },
     });
     expect(linkA.absentSince).toBeNull();
     const listing = await db.listing.findFirstOrThrow({ where: { sourceListingId: 'p3-shared' } });
@@ -226,15 +232,15 @@ describe('P3 absence is decided per area but stored per listing', () => {
     const shared = mk({ sourceListingId: 'p3b-shared' });
     const bOnly = Array.from({ length: 5 }, (_, i) => mk({ sourceListingId: `p3b-b-${i}` }));
 
-    await pollArea(db, new TestProvider([shared, ...bOnly]), areaA);
-    await pollArea(db, new TestProvider([shared, ...bOnly]), areaB);
+    await pollSearch(db, new TestProvider([shared, ...bOnly]), areaA);
+    await pollSearch(db, new TestProvider([shared, ...bOnly]), areaB);
 
     // Areas carry their own pollCron. B runs twice inside one of A's intervals.
-    await pollArea(db, new TestProvider([...bOnly]), areaB);
-    await pollArea(db, new TestProvider([...bOnly]), areaB);
+    await pollSearch(db, new TestProvider([...bOnly]), areaB);
+    await pollSearch(db, new TestProvider([...bOnly]), areaB);
 
     const row = await db.listing.findFirstOrThrow({ where: { sourceListingId: 'p3b-shared' } });
-    // missedRunCount and removedAt live on the Listing row, not on ListingArea, so area
+    // missedRunCount and removedAt live on the Listing row, not on ListingSearch, so area
     // B's verdict removes the listing from area A's view too — and from favourites lists,
     // the open-house page and the default query, all of which filter removedAt: null.
     expect(row.removedAt).toBeNull();
@@ -242,7 +248,7 @@ describe('P3 absence is decided per area but stored per listing', () => {
 
     // ...and the next poll of area A silently un-removes it, leaving an unretracted
     // "No longer listed" entry in the event feed and the Excel history sheet.
-    await pollArea(db, new TestProvider([shared, ...bOnly]), areaA);
+    await pollSearch(db, new TestProvider([shared, ...bOnly]), areaA);
     const after = await db.listing.findFirstOrThrow({ where: { sourceListingId: 'p3b-shared' } });
     expect(after.removedAt).toBeNull();
   });
@@ -258,13 +264,13 @@ describe('P4 resurrection is silent', () => {
     const others = Array.from({ length: 9 }, (_, i) => mk({ sourceListingId: `p4-o-${i}` }));
     const target = mk({ sourceListingId: 'p4-target' });
 
-    await pollArea(db, new TestProvider([target, ...others]), areaA);
-    await pollArea(db, new TestProvider([...others]), areaA);
-    await pollArea(db, new TestProvider([...others]), areaA);
+    await pollSearch(db, new TestProvider([target, ...others]), areaA);
+    await pollSearch(db, new TestProvider([...others]), areaA);
+    await pollSearch(db, new TestProvider([...others]), areaA);
     expect(await eventsFor('p4-target')).toContain('DELISTED');
 
     // It comes back a day later, same price, same everything.
-    await pollArea(db, new TestProvider([target, ...others]), areaA);
+    await pollSearch(db, new TestProvider([target, ...others]), areaA);
     const row = await db.listing.findFirstOrThrow({ where: { sourceListingId: 'p4-target' } });
     expect(row.removedAt).toBeNull(); // it is silently un-removed...
 
@@ -281,16 +287,16 @@ describe('P4 resurrection is silent', () => {
 describe('P5 open-house cancellation repeats', () => {
   it('BUG: OPEN_HOUSE_CANCELLED is re-emitted on every later change to the listing', async () => {
     const withOh = mk({ sourceListingId: 'p5', openHouses: [oh()] });
-    await pollArea(db, new TestProvider([withOh]), areaA);
+    await pollSearch(db, new TestProvider([withOh]), areaA);
 
     const noOh = { ...withOh, openHouses: [] };
-    await pollArea(db, new TestProvider([noOh]), areaA);
+    await pollSearch(db, new TestProvider([noOh]), areaA);
     expect(await eventsFor('p5')).toContain('OPEN_HOUSE_CANCELLED');
 
     // Any later change re-runs the diff, and upsertListing's `prior` is built from
     // `include: { openHouses: true }` — which still contains the cancelled row.
-    await pollArea(db, new TestProvider([{ ...noOh, listPrice: 750000 }]), areaA);
-    await pollArea(db, new TestProvider([{ ...noOh, listPrice: 740000 }]), areaA);
+    await pollSearch(db, new TestProvider([{ ...noOh, listPrice: 750000 }]), areaA);
+    await pollSearch(db, new TestProvider([{ ...noOh, listPrice: 740000 }]), areaA);
 
     const cancels = (await eventsFor('p5')).filter((t) => t === 'OPEN_HOUSE_CANCELLED');
     expect(cancels).toHaveLength(1);
@@ -299,9 +305,9 @@ describe('P5 open-house cancellation repeats', () => {
   it('BUG: an open house that is reinstated produces no OPEN_HOUSE_ADDED', async () => {
     const o = oh();
     const withOh = mk({ sourceListingId: 'p5b', openHouses: [o] });
-    await pollArea(db, new TestProvider([withOh]), areaA);
-    await pollArea(db, new TestProvider([{ ...withOh, openHouses: [] }]), areaA);
-    await pollArea(db, new TestProvider([withOh]), areaA);
+    await pollSearch(db, new TestProvider([withOh]), areaA);
+    await pollSearch(db, new TestProvider([{ ...withOh, openHouses: [] }]), areaA);
+    await pollSearch(db, new TestProvider([withOh]), areaA);
 
     const stored = await db.openHouse.findFirstOrThrow({});
     expect(stored.cancelledAt).toBeNull(); // correctly un-cancelled in the DB
@@ -317,11 +323,11 @@ describe('P6 open-house timezone is write-once', () => {
   it('BUG: a corrected timezone never reaches the row, even on the slow path', async () => {
     const o = oh({ timezone: 'America/Denver' });
     const l = mk({ sourceListingId: 'p6', openHouses: [o] });
-    await pollArea(db, new TestProvider([l]), areaA);
+    await pollSearch(db, new TestProvider([l]), areaA);
 
     // Provider corrects the zone AND drops the price, so the contentHash definitely moves
     // and the full update path runs.
-    await pollArea(db, new TestProvider([
+    await pollSearch(db, new TestProvider([
       { ...l, listPrice: 700000, openHouses: [{ ...o, timezone: 'America/New_York' }] },
     ]), areaA);
 
@@ -336,9 +342,9 @@ describe('P6 open-house timezone is write-once', () => {
 describe('P7 address and coordinates are write-once', () => {
   it('BUG: a corrected address/geocode is never persisted (contentHash ignores them)', async () => {
     const l = mk({ sourceListingId: 'p7', addressLine1: '1420 Pne St', lat: 0, lng: 0 });
-    await pollArea(db, new TestProvider([l]), areaA);
+    await pollSearch(db, new TestProvider([l]), areaA);
 
-    await pollArea(db, new TestProvider([
+    await pollSearch(db, new TestProvider([
       { ...l, addressLine1: '1420 Pine St', lat: 40.019, lng: -105.27 },
     ]), areaA);
 
@@ -354,7 +360,7 @@ describe('P7 address and coordinates are write-once', () => {
 describe('P8 per-listing round trips', () => {
   it('measures the N+1 shape of a steady-state poll', async () => {
     const batch = Array.from({ length: 40 }, (_, i) => mk({ sourceListingId: `p8-${i}` }));
-    await pollArea(db, new TestProvider(batch), areaA);
+    await pollSearch(db, new TestProvider(batch), areaA);
 
     let queries = 0;
     const counting = new PrismaClient({
@@ -362,7 +368,7 @@ describe('P8 per-listing round trips', () => {
       log: [{ emit: 'event', level: 'query' }],
     });
     (counting as any).$on('query', () => { queries++; });
-    await pollArea(counting, new TestProvider(batch), areaA);
+    await pollSearch(counting, new TestProvider(batch), areaA);
     await counting.$disconnect();
 
     console.log(`steady-state poll of 40 unchanged listings issued ${queries} SQL statements`);

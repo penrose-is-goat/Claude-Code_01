@@ -1,19 +1,26 @@
 import Link from 'next/link';
+import { getUnseenEventCount } from '@/lib/db/queries';
+import { getSavedSearches } from '@/lib/db/searches';
 import { PageHeader, Empty } from '@/components/ui';
+import { MarkSeenButton } from '@/components/actions';
 import { SavedSearchRow } from '@/components/search/SavedSearchRow';
 import type { SavedSearchSummary } from '@/components/search/types';
-// TODO(backend): see the TODO in src/app/page.tsx — same `getSavedSearches` expectation.
-import { getSavedSearches } from '@/lib/db/searches';
 
 export const dynamic = 'force-dynamic';
 
 export default async function SearchesPage() {
   let searches: SavedSearchSummary[] = [];
   let loadError = false;
+  let unseen = 0;
   try {
-    searches = (await getSavedSearches()) as SavedSearchSummary[];
+    searches = await getSavedSearches();
   } catch {
     loadError = true;
+  }
+  try {
+    unseen = await getUnseenEventCount();
+  } catch {
+    // Non-fatal — same reasoning as loadError above.
   }
 
   return (
@@ -21,7 +28,12 @@ export default async function SearchesPage() {
       <PageHeader
         title="Saved Searches"
         subtitle="What gets tracked, how often, and what you're notified about"
-        actions={<Link href="/" className="btn-link">New search</Link>}
+        actions={
+          <>
+            <MarkSeenButton disabled={unseen === 0} />
+            <Link href="/" className="btn-link">New search</Link>
+          </>
+        }
       />
 
       {loadError ? (

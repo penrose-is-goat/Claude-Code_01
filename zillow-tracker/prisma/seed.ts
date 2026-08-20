@@ -1,52 +1,15 @@
-import { PrismaClient } from '@prisma/client';
-
 /**
- * Seeds the areas from the real capture in data/snapshots/.
+ * Deliberately a no-op.
  *
- * `zillow` is the primary provider so a fresh install goes straight at live data on a
- * machine that can reach it. `snapshot` is listed second as the offline fallback: it
- * replays real captured listings and invents nothing, so the app is inspectable even
- * where outbound HTTPS is blocked.
+ * This app has no built-in area and no ZIP-code concept — the user chose "city +
+ * radius" and "draw on a map", so nothing is seeded. An empty database (zero saved
+ * searches, zero listings) is the correct state for a fresh install, and the dashboard
+ * is designed to prompt for a first search rather than assume Boulder, or any other
+ * place, on the user's behalf.
+ *
+ * Kept as a script (rather than deleted) so `npm run setup` and any docs that still
+ * reference `npm run seed` keep working — it just tells you what to do instead of
+ * pretending to have done it.
  */
-const prisma = new PrismaClient();
-
-const AREAS = [
-  {
-    id: 'area-central-boulder',
-    name: 'Central Boulder (80302)',
-    kind: 'POSTAL_CODES',
-    postalCodes: JSON.stringify(['80302']),
-    providerIds: JSON.stringify(['zillow', 'snapshot']),
-    pollCron: '*/15 * * * *',
-  },
-  {
-    id: 'area-north-boulder',
-    name: 'North Boulder (80304)',
-    kind: 'POSTAL_CODES',
-    postalCodes: JSON.stringify(['80304']),
-    providerIds: JSON.stringify(['zillow', 'snapshot']),
-    pollCron: '*/15 * * * *',
-  },
-  {
-    id: 'area-south-boulder',
-    name: 'South/East Boulder (80303, 80305)',
-    kind: 'POSTAL_CODES',
-    postalCodes: JSON.stringify(['80303', '80305']),
-    providerIds: JSON.stringify(['zillow', 'snapshot']),
-    pollCron: '*/30 * * * *',
-  },
-];
-
-async function main() {
-  for (const area of AREAS) {
-    await prisma.area.upsert({ where: { id: area.id }, create: area, update: area });
-    console.log(`  ${area.name}`);
-  }
-  console.log(`\nSeeded ${AREAS.length} areas.`);
-  console.log('Edit the ZIP codes on the Areas page (or here) to match your own neighborhoods.');
-  console.log('Next: npm run poll');
-}
-
-main()
-  .catch((e) => { console.error(e); process.exit(1); })
-  .finally(() => prisma.$disconnect());
+console.log('Nothing to seed — this app starts empty by design.');
+console.log('Open the app and search for a place (or draw an area on the map) to get started.');

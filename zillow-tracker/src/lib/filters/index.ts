@@ -29,7 +29,7 @@ export function parseFilters(sp: SearchParams): ListingFilterInput {
     minBaths: numOrUndef(sp.minBaths),
     status: status ? [status] : undefined,
     propertyType: propertyType ? [propertyType] : undefined,
-    areaId: one(sp.areaId) || undefined,
+    searchId: one(sp.searchId) || undefined,
     openHouseOnly: one(sp.openHouse) === '1',
     favoritesOnly: one(sp.favorites) === '1',
     // Carried through the query string so the Excel export matches the page. /saved
@@ -51,7 +51,7 @@ export function describeFilters(f: ListingFilterInput): string {
   if (f.propertyType?.length) parts.push(`type ${f.propertyType.map(humanize).join('/')}`);
   if (f.openHouseOnly) parts.push('has upcoming open house');
   if (f.favoritesOnly) parts.push('favorites only');
-  if (f.areaId) parts.push(`area ${f.areaId}`);
+  if (f.searchId) parts.push(`search ${f.searchId}`);
   if (f.includeRemoved) parts.push('including delisted');
   return parts.join(', ');
 }

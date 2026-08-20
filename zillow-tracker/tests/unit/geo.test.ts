@@ -65,21 +65,8 @@ describe('boundingBox', () => {
 });
 
 describe('listingMatchesArea', () => {
-  const inside = { lat: 40.02, lng: -105.27, postalCode: '80302' };
-  const outside = { lat: 40.90, lng: -105.90, postalCode: '80513' };
-
-  it('matches by ZIP', () => {
-    const area: AreaQuery = { kind: 'postalCodes', codes: ['80302', '80304'] };
-    expect(listingMatchesArea(inside, area)).toBe(true);
-    expect(listingMatchesArea(outside, area)).toBe(false);
-  });
-
-  it('tolerates ZIP+4 on either side', () => {
-    expect(listingMatchesArea(
-      { lat: 0, lng: 0, postalCode: '80302-1234' },
-      { kind: 'postalCodes', codes: ['80302'] },
-    )).toBe(true);
-  });
+  const inside = { lat: 40.02, lng: -105.27 };
+  const outside = { lat: 40.90, lng: -105.90 };
 
   it('matches by polygon', () => {
     const area: AreaQuery = { kind: 'polygon', ring: SQUARE };
@@ -102,22 +89,21 @@ describe('listingMatchesArea', () => {
     expect(listingMatchesArea(outside, area)).toBe(false);
   });
 
-  it('keeps a listing with no coordinates rather than silently hiding it', () => {
-    const noCoords = { lat: undefined, lng: undefined, postalCode: '99999' };
+  it('keeps a listing with no coordinates rather than silently hiding it — there is no ZIP fallback any more', () => {
+    const noCoords = { lat: undefined, lng: undefined };
     expect(listingMatchesArea(noCoords, { kind: 'polygon', ring: SQUARE })).toBe(true);
-  });
-
-  it('still applies ZIP matching when coordinates are missing', () => {
-    const noCoords = { lat: undefined, lng: undefined, postalCode: '99999' };
-    expect(listingMatchesArea(noCoords, { kind: 'postalCodes', codes: ['80302'] })).toBe(false);
+    expect(listingMatchesArea(noCoords, {
+      kind: 'cityRadius', city: 'Boulder', state: 'CO', centerLat: 40.015, centerLng: -105.2705, radiusMiles: 5,
+    })).toBe(true);
+    expect(listingMatchesArea(noCoords, { kind: 'bbox', minLat: 0, maxLat: 1, minLng: 0, maxLng: 1 })).toBe(true);
   });
 });
 
 describe('filterListingsToArea', () => {
   it('filters a collection', () => {
     const listings = [
-      { lat: 40.02, lng: -105.27, postalCode: '80302' },
-      { lat: 40.90, lng: -105.90, postalCode: '80513' },
+      { lat: 40.02, lng: -105.27 },
+      { lat: 40.90, lng: -105.90 },
     ];
     expect(filterListingsToArea(listings, { kind: 'polygon', ring: SQUARE })).toHaveLength(1);
   });

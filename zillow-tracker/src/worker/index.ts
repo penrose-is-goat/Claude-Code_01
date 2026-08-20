@@ -1,6 +1,6 @@
 import { Cron } from 'croner';
 import { PrismaClient } from '@prisma/client';
-import { runAllAreas } from '../lib/ingest/runner';
+import { runAllSearches } from '../lib/ingest/runner';
 
 /**
  * Separate process, deliberately.
@@ -15,7 +15,7 @@ const SCHEDULE = process.env.POLL_CRON ?? '*/15 * * * *';
 async function poll(): Promise<void> {
   const started = Date.now();
   try {
-    const results = await runAllAreas(prisma);
+    const results = await runAllSearches(prisma);
     const seen = results.reduce((n, r) => n + r.listingsSeen, 0);
     const events = results.reduce((n, r) => n + r.eventsCreated, 0);
     console.log(
@@ -23,7 +23,7 @@ async function poll(): Promise<void> {
       `${seen} listings, ${events} event(s) in ${Date.now() - started}ms`,
     );
     for (const r of results.filter((x) => !x.canaryOk)) {
-      console.warn(`[worker] canary warning on ${r.areaName}: ${r.canaryReason}`);
+      console.warn(`[worker] canary warning on ${r.searchName}: ${r.canaryReason}`);
     }
   } catch (err) {
     console.error('[worker] poll failed:', err);

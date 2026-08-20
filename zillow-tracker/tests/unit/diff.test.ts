@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { diffListing, type PriorState } from '@/lib/ingest/diff';
 import type { NormalizedListing, NormalizedOpenHouse } from '@/lib/providers/normalized';
 
+/** The instant these fixtures were "observed". diffListing measures against this. */
+const FETCHED_AT = new Date('2026-08-15T12:00:00Z');
+
 function listing(over: Partial<NormalizedListing> = {}): NormalizedListing {
   return {
     providerId: 'snapshot',
@@ -16,7 +19,7 @@ function listing(over: Partial<NormalizedListing> = {}): NormalizedListing {
     photos: [],
     openHouses: [],
     raw: {},
-    fetchedAt: new Date('2026-08-15T12:00:00Z'),
+    fetchedAt: FETCHED_AT,
     ...over,
   };
 }
@@ -27,7 +30,8 @@ function prior(over: Partial<PriorState> = {}): PriorState {
 
 /** Far enough in the future that "already ended" logic never fires accidentally. */
 function futureOh(over: Partial<NormalizedOpenHouse> = {}): NormalizedOpenHouse {
-  const startsAt = new Date(Date.now() + 3 * 864e5);
+  // Future relative to FETCHED_AT for the same reason as above.
+  const startsAt = new Date(FETCHED_AT.getTime() + 3 * 864e5);
   const endsAt = new Date(startsAt.getTime() + 2 * 36e5);
   return { startsAt, endsAt, timezone: 'America/Denver', appointmentOnly: false, virtual: false, ...over };
 }
@@ -111,7 +115,11 @@ describe('diffListing — open houses', () => {
   });
 
   it('does not call a PAST open house dropping out a cancellation', () => {
-    const startsAt = new Date(Date.now() - 5 * 864e5);
+    // "Past" is relative to when the data was OBSERVED (next.fetchedAt), not to the wall
+    // clock. Building the window from Date.now() mixed two clocks: the test drifted with
+    // the calendar until it landed on the fixture's fetchedAt and flipped sides. Deriving
+    // it from the same instant diffListing judges against is what makes this stable.
+    const startsAt = new Date(FETCHED_AT.getTime() - 5 * 864e5);
     const past = futureOh({ startsAt, endsAt: new Date(startsAt.getTime() + 2 * 36e5) });
     const evts = diffListing(prior({ openHouses: [past] }), listing({ openHouses: [] }));
     expect(evts).toHaveLength(0);

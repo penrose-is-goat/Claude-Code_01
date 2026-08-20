@@ -1,9 +1,5 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/client';
-// TODO(backend): expects src/lib/search/service.ts to export
-// `runSearch(db: PrismaClient, query: SearchQuery, opts?: { signal?: AbortSignal }): Promise<SearchOutcome>`
-// per the contract in src/lib/search/types.ts. Not present yet as of this write — see
-// src/lib/search/geocode.ts for the Geocoder this presumably composes with providers.
 import { runSearch } from '@/lib/search/service';
 import { SearchQuerySchema } from '../_lib/searchQuerySchema';
 

@@ -79,7 +79,7 @@ describe('G2 boundaries', () => {
   it('OK: bbox comparisons are inclusive on all four sides', () => {
     const q: AreaQuery = { kind: 'bbox', minLat: 40, maxLat: 41, minLng: -106, maxLng: -105 };
     for (const p of [at(40, -106), at(41, -105), at(40, -105), at(41, -106)]) {
-      expect(listingMatchesArea({ ...p, postalCode: '80302' }, q)).toBe(true);
+      expect(listingMatchesArea(p, q)).toBe(true);
     }
   });
 });
@@ -96,7 +96,7 @@ describe('G3 self-intersection and wrap-around', () => {
 
   it('BUG(quiet): a bbox spanning the antimeridian matches nothing', () => {
     const q: AreaQuery = { kind: 'bbox', minLat: 50, maxLat: 55, minLng: 170, maxLng: -170 };
-    expect(listingMatchesArea({ lat: 52, lng: 179, postalCode: '99546' }, q)).toBe(true);
+    expect(listingMatchesArea({ lat: 52, lng: 179 }, q)).toBe(true);
   });
 
   it('BUG(quiet): boundingBox of an antimeridian ring spans the whole globe', () => {
@@ -106,25 +106,23 @@ describe('G3 self-intersection and wrap-around', () => {
 });
 
 describe('G4 the missing-coordinate policy', () => {
-  it('BUG: the "keep it if we cannot test it" policy is not applied to postal-code areas', () => {
-    // polygon / cityRadius / bbox all return true for a listing with no coordinates,
-    // on the documented grounds that a false positive is cheaper than an invisible home.
-    // A listing with no postalCode is silently dropped instead — the opposite call, made
-    // implicitly rather than deliberately.
-    const noZip = { lat: undefined, lng: undefined, postalCode: '' };
-    const poly: AreaQuery = { kind: 'polygon', ring: SQUARE };
-    expect(listingMatchesArea(noZip, poly)).toBe(true);
-    expect(listingMatchesArea(noZip, { kind: 'postalCodes', codes: ['80302'] })).toBe(true);
+  // There is no ZIP/postal-code AreaQuery any more (see providers/types.ts) — every
+  // remaining kind is geometric, and geometric tests are simply undefined for a listing
+  // with no coordinates. Previously that meant "keep it" for polygon/cityRadius/bbox but
+  // silently "drop it" for postalCodes — the same policy applied inconsistently across
+  // kinds, implicitly rather than deliberately. With only geometric kinds left, the
+  // policy is now uniform by construction rather than by remembering to apply it evenly.
+  const noCoords = { lat: undefined, lng: undefined };
+
+  it('OK: a coordinate-less listing is kept by every remaining AreaQuery kind', () => {
+    expect(listingMatchesArea(noCoords, { kind: 'polygon', ring: SQUARE })).toBe(true);
+    expect(listingMatchesArea(noCoords, {
+      kind: 'cityRadius', city: 'Boulder', state: 'CO', centerLat: 40.02, centerLng: -105.25, radiusMiles: 5,
+    })).toBe(true);
+    expect(listingMatchesArea(noCoords, { kind: 'bbox', minLat: 40, maxLat: 41, minLng: -106, maxLng: -105 })).toBe(true);
   });
 
   it('OK (documented tradeoff): a coordinate-less listing lands in every polygon area', () => {
-    const noCoords = [{ lat: undefined, lng: undefined, postalCode: '99999' }];
-    expect(filterListingsToArea(noCoords, { kind: 'polygon', ring: SQUARE })).toHaveLength(1);
-  });
-
-  it('OK: a postal-code area ignores coordinates entirely, as designed', () => {
-    const q: AreaQuery = { kind: 'postalCodes', codes: ['80302'] };
-    expect(listingMatchesArea({ lat: 0, lng: 0, postalCode: '80302-1234' }, q)).toBe(true);
-    expect(listingMatchesArea({ lat: 40.05, lng: -105.25, postalCode: '80303' }, q)).toBe(false);
+    expect(filterListingsToArea([noCoords], { kind: 'polygon', ring: SQUARE })).toHaveLength(1);
   });
 });

@@ -171,13 +171,14 @@ describe('status and type mapping', () => {
 });
 
 describe('search URL building', () => {
-  it('builds a ZIP URL', () => {
-    expect(buildSearchUrl({ kind: 'postalCodes', codes: ['80302'] })).toBe('https://www.zillow.com/80302/');
+  it('builds a city/state URL from a cityRadius query', () => {
+    expect(buildSearchUrl({ kind: 'cityRadius', city: 'Boulder', state: 'CO', radiusMiles: 5 }))
+      .toBe('https://www.zillow.com/boulder-co/');
   });
 
   it('builds an open-house URL', () => {
-    expect(buildSearchUrl({ kind: 'postalCodes', codes: ['80302'] }, 1, true))
-      .toBe('https://www.zillow.com/80302/open-house/');
+    expect(buildSearchUrl({ kind: 'cityRadius', city: 'Boulder', state: 'CO', radiusMiles: 5 }, 1, true))
+      .toBe('https://www.zillow.com/boulder-co/open-house/');
   });
 
   it('adds the page segment past page 1', () => {
@@ -185,9 +186,25 @@ describe('search URL building', () => {
       .toBe('https://www.zillow.com/boulder-co/2_p/');
   });
 
-  it('refuses a polygon instead of silently querying the wrong area', () => {
-    expect(() => buildSearchUrl({ kind: 'polygon', ring: [[0, 0], [1, 1], [0, 1]] }))
-      .toThrow(/resolve it to ZIP codes/);
+  it('turns a drawn shape into a map-bounds query rather than refusing it', () => {
+    // Previously this threw. That meant a drawn search could never reach live Zillow and
+    // was served only from cached data, which defeats the draw-on-map feature. The box is
+    // a superset of the ring; the exact shape is re-applied locally afterwards.
+    const url = buildSearchUrl({
+      kind: 'polygon',
+      ring: [[-105.30, 40.00], [-105.25, 40.00], [-105.25, 40.05], [-105.30, 40.05]],
+    });
+    expect(url).toContain('searchQueryState=');
+
+    const state = JSON.parse(decodeURIComponent(url.split('searchQueryState=')[1]));
+    expect(state.mapBounds).toEqual({ north: 40.05, east: -105.25, south: 40.00, west: -105.30 });
+  });
+
+  it('sends a bbox through as bounds too', () => {
+    const url = buildSearchUrl({ kind: 'bbox', minLat: 39.9, maxLat: 40.1, minLng: -105.4, maxLng: -105.1 });
+    const state = JSON.parse(decodeURIComponent(url.split('searchQueryState=')[1]));
+    expect(state.mapBounds.north).toBe(40.1);
+    expect(state.mapBounds.west).toBe(-105.4);
   });
 
   it('slugifies multi-word cities', () => {

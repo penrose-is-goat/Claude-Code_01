@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/client';
-// TODO(backend): see TODOs in ../../route.ts and ../../../search/route.ts for the
-// exact getSavedSearch / runSearch signatures this composes.
-import { getSavedSearch } from '@/lib/db/searches';
+import { getSavedSearch, markSearchRun } from '@/lib/db/searches';
 import { runSearch } from '@/lib/search/service';
 
 export const runtime = 'nodejs';
@@ -12,16 +10,15 @@ export const runtime = 'nodejs';
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const saved = await getSavedSearch(id).catch(() => null);
+  const saved = await getSavedSearch(id);
   if (!saved) {
     return NextResponse.json({ error: 'Saved search not found' }, { status: 404 });
   }
 
   try {
-    // TODO(backend): stamping `lastRunAt` on manual runs (not just scheduled polls) is
-    // left to the saved-search repo / ingest pipeline, whichever ends up owning writes
-    // to that field, rather than duplicated here.
     const outcome = await runSearch(prisma, saved.query, { signal: request.signal });
+    // Best-effort: a stamp failure should not turn a successful search into an error.
+    await markSearchRun(id, new Date()).catch(() => {});
     return NextResponse.json(outcome);
   } catch (err) {
     return NextResponse.json(

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/client';
-import { runAllAreas } from '@/lib/ingest/runner';
+import { runAllSearches } from '@/lib/ingest/runner';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,12 +23,12 @@ export async function POST(request: Request) {
   }
 
   const url = new URL(request.url);
-  const areaId = url.searchParams.get('areaId') ?? undefined;
+  const searchId = url.searchParams.get('searchId') ?? undefined;
 
   try {
     // Same tracker semantics as the CLI: refresh replaces, it does not accumulate.
     const rebuild = url.searchParams.get('merge') !== '1';
-    const results = await runAllAreas(prisma, { areaId, rebuild });
+    const results = await runAllSearches(prisma, { searchId, rebuild });
     return NextResponse.json({ ok: true, results });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

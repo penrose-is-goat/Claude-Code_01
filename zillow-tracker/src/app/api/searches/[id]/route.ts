@@ -1,9 +1,5 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-// TODO(backend): expects src/lib/db/searches.ts to export:
-//   updateSavedSearch(id: string, patch: Partial<{ name, active, cron, notifyOnNew,
-//     notifyOnPriceDrop, notifyOnOpenHouse }>): Promise<SavedSearchRecord>
-//   deleteSavedSearch(id: string): Promise<void>
 import { updateSavedSearch, deleteSavedSearch } from '@/lib/db/searches';
 
 export const runtime = 'nodejs';

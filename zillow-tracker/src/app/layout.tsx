@@ -40,7 +40,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               {NAV.map((n) => (
                 <Link key={n.href} href={n.href} style={{ textDecoration: 'none' }}>
                   {n.label}
-                  {n.href === '/' && unseen > 0 && (
+                  {n.href === '/searches' && unseen > 0 && (
                     <span
                       aria-label={`${unseen} unseen updates`}
                       style={{

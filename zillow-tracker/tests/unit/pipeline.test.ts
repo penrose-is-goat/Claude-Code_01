@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { SnapshotProvider } from '@/lib/providers/snapshot';
-import { pollArea, type AreaSpec } from '@/lib/ingest/pipeline';
+import { pollSearch, type SearchSpec } from '@/lib/ingest/pipeline';
 import type { NormalizedListing } from '@/lib/providers/normalized';
 import type { FetchOptions, ListingProvider, ProviderPage } from '@/lib/providers/types';
 
@@ -22,12 +22,16 @@ import type { FetchOptions, ListingProvider, ProviderPage } from '@/lib/provider
 
 let dir: string;
 let db: PrismaClient;
-const AREA_ID = 'area-boulder';
+const SEARCH_ID = 'search-boulder';
 
-const area: AreaSpec = {
-  id: AREA_ID,
-  name: 'Boulder',
-  query: { kind: 'postalCodes', codes: ['80302', '80303', '80304'] },
+// A cityRadius query, standing in for what a real "Boulder, CO within 5mi" search
+// resolves to. It does NOT actually narrow this suite's data — see "area filtering"
+// below for why — but it is what a real place search produces, so tests exercise the
+// same AreaQuery shape production code does rather than an arbitrary placeholder.
+const area: SearchSpec = {
+  id: SEARCH_ID,
+  name: 'Boulder, CO · 5mi',
+  query: { kind: 'cityRadius', city: 'Boulder', state: 'CO', centerLat: 40.015, centerLng: -105.2705, radiusMiles: 5 },
 };
 
 /** Replays an explicit set of observations, so a test controls exactly what the source reports. */
@@ -36,7 +40,7 @@ class Replay implements ListingProvider<NormalizedListing> {
   readonly displayName = 'replay';
   readonly capabilities = {
     supportsOpenHouses: false, supportsPolygonQuery: false, supportsRadiusQuery: false,
-    supportsPostalCodeQuery: true, supportsPhotos: false, supportsPriceHistory: false,
+    supportsPhotos: false, supportsPriceHistory: false,
     rateLimit: null,
   };
   constructor(private rows: NormalizedListing[]) {}
@@ -56,15 +60,20 @@ beforeAll(async () => {
     env: { ...process.env, DATABASE_URL: url }, cwd: process.cwd(), stdio: 'pipe',
   });
   db = new PrismaClient({ datasources: { db: { url } } });
-  await db.area.create({
-    data: { id: AREA_ID, name: 'Boulder', kind: 'POSTAL_CODES', postalCodes: JSON.stringify(['80302', '80303', '80304']) },
+  await db.savedSearch.create({
+    data: {
+      id: SEARCH_ID, name: area.name,
+      query: JSON.stringify({ location: { kind: 'place', query: 'Boulder, CO', radiusMiles: 5 }, filters: {} }),
+    },
   });
 
+  // The provider returns every real capture; nothing here narrows it further. Real
+  // captured listings carry no coordinates (Zillow's search pages never publish them —
+  // see snapshot/index.ts), so under the documented "cannot test it, keep it" policy a
+  // geometric area query, whatever its shape, keeps every one of them. `real` is
+  // therefore simply everything on disk, not a ZIP- or radius-filtered subset of it.
   const { raw } = await new SnapshotProvider().fetchPage({ area: area.query });
-  // The provider returns every capture; the pipeline geo-filters to the area. The
-  // baseline has to match what should actually land, not everything on disk.
-  const zips = ['80302', '80303', '80304'];
-  real = raw.filter((l) => zips.includes(l.postalCode));
+  real = raw;
 });
 
 afterAll(async () => {
@@ -76,7 +85,7 @@ describe('ingesting the real captured snapshot', () => {
   // Counts are derived from the captures on disk rather than hardcoded, so adding a new
   // capture does not falsify a test that is still describing correct behaviour.
   it('loads every captured listing', async () => {
-    const result = await pollArea(db, new SnapshotProvider(), area);
+    const result = await pollSearch(db, new SnapshotProvider(), area);
     expect(result.status).toBe('SUCCESS');
     expect(real.length).toBeGreaterThan(0);
     expect(result.listingsSeen).toBe(real.length);
@@ -133,7 +142,7 @@ describe('ingesting the real captured snapshot', () => {
 describe('re-polling identical data', () => {
   it('produces no events at all — the false-positive guard that matters most', async () => {
     const before = await db.listingEvent.count();
-    const result = await pollArea(db, new SnapshotProvider(), area);
+    const result = await pollSearch(db, new SnapshotProvider(), area);
 
     expect(result.listingsNew).toBe(0);
     expect(result.eventsCreated).toBe(0);
@@ -143,7 +152,7 @@ describe('re-polling identical data', () => {
 
   it('writes no extra snapshots (the contentHash gate)', async () => {
     const before = await db.listingSnapshot.count();
-    await pollArea(db, new SnapshotProvider(), area);
+    await pollSearch(db, new SnapshotProvider(), area);
     expect(await db.listingSnapshot.count()).toBe(before);
   });
 });
@@ -157,7 +166,7 @@ describe('change detection over two observations of the same real home', () => {
 
   it('records a price cut with the correct delta', async () => {
     const target = '80304-4072-crystal-ct'; // really listed at $789,000
-    const result = await pollArea(db, new Replay(observedWith(target, { listPrice: 749000 })), area);
+    const result = await pollSearch(db, new Replay(observedWith(target, { listPrice: 749000 })), area);
     expect(result.eventsCreated).toBeGreaterThan(0);
 
     const listing = await db.listing.findFirstOrThrow({ where: { sourceListingId: target } });
@@ -170,11 +179,11 @@ describe('change detection over two observations of the same real home', () => {
 
   it('records a status change and then a return to market', async () => {
     const target = '80302-39-spring-ln';
-    await pollArea(db, new Replay(observedWith(target, { status: 'PENDING' })), area);
+    await pollSearch(db, new Replay(observedWith(target, { status: 'PENDING' })), area);
     const listing = await db.listing.findFirstOrThrow({ where: { sourceListingId: target } });
     expect(listing.status).toBe('PENDING');
 
-    await pollArea(db, new Replay(observedWith(target, { status: 'ACTIVE' })), area);
+    await pollSearch(db, new Replay(observedWith(target, { status: 'ACTIVE' })), area);
     const back = await db.listingEvent.findFirst({
       where: { listingId: listing.id, type: 'BACK_ON_MARKET' },
     });
@@ -187,15 +196,15 @@ describe('absence handling when the source returns fewer rows', () => {
     const target = '80303-181-pawnee-dr';
     const without = real.filter((l) => l.sourceListingId !== target);
 
-    const first = await pollArea(db, new Replay(without), area);
+    const first = await pollSearch(db, new Replay(without), area);
     expect(first.delisted).toBe(0);
 
     const listing = await db.listing.findFirstOrThrow({ where: { sourceListingId: target } });
-    const link = await db.listingArea.findFirstOrThrow({ where: { listingId: listing.id, areaId: AREA_ID } });
+    const link = await db.listingSearch.findFirstOrThrow({ where: { listingId: listing.id, searchId: SEARCH_ID } });
     expect(link.missedRunCount).toBe(1);
     expect(listing.removedAt).toBeNull();
 
-    const second = await pollArea(db, new Replay(without), area);
+    const second = await pollSearch(db, new Replay(without), area);
     expect(second.delisted).toBe(1);
 
     const gone = await db.listing.findFirstOrThrow({ where: { sourceListingId: target } });
@@ -203,13 +212,22 @@ describe('absence handling when the source returns fewer rows', () => {
   });
 });
 
-describe('area filtering against real ZIP codes', () => {
-  it('narrows to a single real ZIP', async () => {
-    const narrow: AreaSpec = { id: AREA_ID, name: '80304 only', query: { kind: 'postalCodes', codes: ['80304'] } };
-    const expected = real.filter((l) => l.postalCode === '80304').length;
-    const result = await pollArea(db, new SnapshotProvider(), narrow);
-    expect(result.listingsSeen).toBe(expected);
-    expect(expected).toBeGreaterThan(0);
+describe('area filtering against the real capture', () => {
+  // There is no ZIP/postal-code AreaQuery any more (the user chose city+radius or a
+  // drawn shape, never a ZIP — see providers/types.ts). Every remaining AreaQuery kind
+  // is geometric, and Zillow's real search pages never publish coordinates (confirmed
+  // above: "does not invent coordinates"), so a real capture cannot be geometrically
+  // narrowed at all — every geometry keeps every listing under the documented
+  // "cannot test it, keep it" policy. That is the honest, current behaviour for real
+  // data, not a gap: it's the same tradeoff geo.test.ts and geo-adversarial.test.ts
+  // exercise directly with synthetic coordinates, observed here end-to-end.
+  it('keeps every real listing regardless of which geometry is used, because none carry coordinates', async () => {
+    const narrow: SearchSpec = {
+      id: SEARCH_ID, name: 'a tiny bbox nowhere near Boulder',
+      query: { kind: 'bbox', minLat: 0, maxLat: 0.001, minLng: 0, maxLng: 0.001 },
+    };
+    const result = await pollSearch(db, new SnapshotProvider(), narrow);
+    expect(result.listingsSeen).toBe(real.length);
   });
 
   it('gives every real address a distinct identity key', async () => {

@@ -42,7 +42,9 @@ export class ZillowPublicProvider implements ListingProvider<NormalizedListing> 
   readonly displayName = 'Zillow (public pages)';
   readonly capabilities: ProviderCapabilities = {
     supportsOpenHouses: true,
-    supportsPolygonQuery: false, // we coarsen to city/ZIP, then filter locally
+    // Drawn shapes are sent as map bounds and the exact ring is re-applied locally,
+    // so a bounding box is always a superset — never a silently narrower answer.
+    supportsPolygonQuery: true,
     supportsRadiusQuery: false,
     supportsPhotos: true,
     supportsPriceHistory: false,
@@ -160,12 +162,46 @@ export function buildSearchUrl(area: AreaQuery, page = 1, openHouseOnly = false)
       const slug = `${slugify(area.city)}-${area.state.toLowerCase()}`;
       return `${base}/${slug}/${suffix}${paged}`;
     }
-    case 'polygon':
+
+    // A drawn shape becomes a map-bounds query. Without this, "draw an area" could only
+    // ever be served from cached data — the live provider would refuse every drawn
+    // search, which defeats the feature. Zillow accepts bounds via searchQueryState;
+    // the exact shape is re-applied locally afterwards, since a box is only ever a
+    // superset of the ring the user drew.
     case 'bbox':
-      throw new Error(
-        'Zillow provider cannot query a polygon or bbox directly — resolve it to a city/state first',
-      );
+      return boundsUrl(base, suffix, paged, area, page);
+
+    case 'polygon': {
+      const lngs = area.ring.map((r) => r[0]);
+      const lats = area.ring.map((r) => r[1]);
+      return boundsUrl(base, suffix, paged, {
+        minLat: Math.min(...lats), maxLat: Math.max(...lats),
+        minLng: Math.min(...lngs), maxLng: Math.max(...lngs),
+      }, page);
+    }
   }
+}
+
+/**
+ * Zillow encodes map bounds in a JSON `searchQueryState` query parameter. Shape
+ * confirmed against @use_homi/real-estate-portal-schemas, whose Zillow schema was
+ * verified against the live site by browser automation.
+ */
+function boundsUrl(
+  base: string,
+  suffix: string,
+  paged: string,
+  b: { minLat: number; maxLat: number; minLng: number; maxLng: number },
+  page: number,
+): string {
+  const state = {
+    isMapVisible: true,
+    isListVisible: true,
+    mapBounds: { north: b.maxLat, east: b.maxLng, south: b.minLat, west: b.minLng },
+    filterState: { sortSelection: { value: 'globalrelevanceex' }, isAllHomes: { value: true } },
+    pagination: page > 1 ? { currentPage: page } : {},
+  };
+  return `${base}/homes/${suffix}${paged}?searchQueryState=${encodeURIComponent(JSON.stringify(state))}`;
 }
 
 export function slugify(s: string): string {

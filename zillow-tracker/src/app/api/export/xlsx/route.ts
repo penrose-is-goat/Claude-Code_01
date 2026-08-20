@@ -85,9 +85,10 @@ export async function GET(request: Request) {
   }));
 
   const providerIds = [...new Set(listings.map((l) => l.providerId))];
-  const areaNames = filters.areaId
-    ? [(await prisma.area.findUnique({ where: { id: filters.areaId } }))?.name ?? filters.areaId]
-    : [];
+  // There is no per-area filter on this page any more — a listing's provenance is which
+  // saved search(es) found it (see the "Tracked by" fact on the listing detail page),
+  // not a single area it belongs to, so there is nothing scalar to summarize here.
+  const areaNames: string[] = [];
 
   const buffer = await buildWorkbook({
     listings: exportListings,

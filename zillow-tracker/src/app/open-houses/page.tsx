@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { getUpcomingOpenHouses } from '@/lib/db/queries';
 import { AddressCell, Empty, PageHeader, StatusBadge, usd } from '@/components/ui';
 import { FavoriteButton } from '@/components/actions';
@@ -28,7 +29,13 @@ export default async function OpenHousesPage() {
       {openHouses.length === 0 ? (
         <Empty
           title="No upcoming open houses"
-          hint="Open-house times only appear if your data source publishes them. The CSV import path does not carry them; the mock and Zillow providers do."
+          hint={
+            <>
+              Nothing scheduled among your tracked listings — <Link href="/">run a search</Link> to
+              start tracking an area, or check back later. (Open-house times depend on the data
+              source publishing them; the CSV import path never carries them.)
+            </>
+          }
         />
       ) : (
         [...byDay.entries()].map(([day, items]) => (
