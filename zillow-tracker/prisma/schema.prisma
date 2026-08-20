@@ -13,26 +13,31 @@ generator client {
   provider = "prisma-client-js"
 }
 
-/// A neighborhood you care about. Polygon and radius are both first-class because
-/// providers only accept coarse queries — we query coarse, then filter fine locally.
-model Area {
-  id          String   @id @default(cuid())
-  name        String
-  kind        String // POSTAL_CODES | CITY_RADIUS | POLYGON
-  postalCodes String? // JSON string[] when kind=POSTAL_CODES
-  city        String?
-  state       String?
-  centerLat   Float?
-  centerLng   Float?
-  radiusMiles Float?
-  polygon     String? // GeoJSON ring as JSON text; turf does point-in-polygon in JS
-  providerIds String   @default("[\"mock\"]") // JSON string[]
-  filters     String? // JSON ListingFilters prefilter
-  active      Boolean  @default(true)
-  pollCron    String   @default("*/15 * * * *")
-  createdAt   DateTime @default(now())
+/// A search the user typed or drew, and chose to keep.
+///
+/// Nothing is seeded. There are no built-in areas and no ZIP-code concept: a person
+/// describes somewhere to look ("Boulder, CO within 5 miles", or a shape drawn on the
+/// map) and may then save that description. An empty table is the correct initial state
+/// and the dashboard is designed for it.
+model SavedSearch {
+  id                String    @id @default(cuid())
+  name              String
+  /// JSON SearchQuery — the whole query, so the search that produced these results can
+  /// always be replayed exactly as the user expressed it.
+  query             String
+  /// Cached geocode of the typed place, so a refresh does not re-geocode needlessly.
+  resolved          String?
+  active            Boolean   @default(true)
+  /// null = manual refresh only.
+  pollCron          String?
+  notifyOnNew       Boolean   @default(true)
+  notifyOnPriceDrop Boolean   @default(true)
+  notifyOnOpenHouse Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  lastRunAt         DateTime?
 
-  listings ListingArea[]
+  listings ListingSearch[]
   runs     PollRun[]
 }
 
@@ -92,7 +97,7 @@ model Listing {
   contentHash   String
   raw           String
 
-  areas      ListingArea[]
+  searches   ListingSearch[]
   snapshots  ListingSnapshot[]
   events     ListingEvent[]
   openHouses OpenHouse[]
@@ -111,18 +116,18 @@ model Listing {
 /// still saw the home kept resetting the counter so another area could never delist it,
 /// and an area polling twice inside another's interval could mark a listing removed
 /// seconds after the first reported it active — hiding it from every view at once.
-model ListingArea {
+model ListingSearch {
   listingId      String
-  areaId         String
+  searchId       String
   matchedAt      DateTime  @default(now())
   missedRunCount Int       @default(0)
   absentSince    DateTime?
 
-  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
-  area    Area    @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  listing Listing     @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  search  SavedSearch @relation(fields: [searchId], references: [id], onDelete: Cascade)
 
-  @@id([listingId, areaId])
-  @@index([areaId, absentSince])
+  @@id([listingId, searchId])
+  @@index([searchId, absentSince])
 }
 
 /// Append-only, written ONLY when contentHash changes. This is what keeps the database
@@ -209,7 +214,7 @@ model SavedListing {
 /// of wondering whether the thing is even running.
 model PollRun {
   id            String    @id @default(cuid())
-  areaId        String?
+  searchId      String?
   providerId    String
   startedAt     DateTime  @default(now())
   finishedAt    DateTime?
@@ -222,7 +227,7 @@ model PollRun {
   canaryReason  String?
   errorMessage  String?
 
-  area Area? @relation(fields: [areaId], references: [id], onDelete: SetNull)
+  search SavedSearch? @relation(fields: [searchId], references: [id], onDelete: SetNull)
 
   @@index([startedAt])
 }
