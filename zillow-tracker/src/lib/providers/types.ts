@@ -1,6 +1,6 @@
 import type { NormalizedListing, PropertyType } from './normalized';
 
-export type ProviderId = 'snapshot' | 'zillow' | 'csv';
+export type ProviderId = 'websearch' | 'snapshot' | 'zillow' | 'csv';
 
 /**
  * Providers advertise what they can do; the scheduler and UI degrade gracefully rather
@@ -45,6 +45,15 @@ export interface FetchOptions {
   filters?: ListingFilters;
   /** Providers that support it fetch only records changed since this instant. */
   modifiedSince?: Date;
+  /**
+   * A human place name for the area, when one is known: "Boulder, CO".
+   *
+   * `AreaQuery` is geometry, and geometry is all a geo-aware provider needs. A provider
+   * backed by a text search engine needs words, and a drawn ring contains none — so the
+   * search service passes along whatever name it has (the geocoder's answer, or the
+   * label the user gave the shape) and the provider says so plainly when there is none.
+   */
+  placeHint?: string;
   signal?: AbortSignal;
 }
 

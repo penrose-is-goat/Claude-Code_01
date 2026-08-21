@@ -75,6 +75,9 @@ export async function runSearch(
       const { raw } = await fetchAll(provider, {
         area: areaQuery,
         filters: query.filters,
+        // Geometry is enough for a geo-aware provider; a search-backed one needs a name.
+        // Prefer the geocoder's answer, fall back to what the user typed or labelled.
+        placeHint: placeHintFor(query.location, resolved),
         signal: opts.signal,
       });
 
@@ -204,6 +207,20 @@ export function filterToLocation<T extends Pick<NormalizedListing, 'lat' | 'lng'
     if (!resolved) return true;
     return isWithinRadius(p, { lat: resolved.lat, lng: resolved.lng }, location.radiusMiles);
   });
+}
+
+/**
+ * The best available human name for the area being searched.
+ *
+ * For a typed place this is the geocoder's `City, ST`, which is more reliable than the
+ * raw string the user typed. For a drawn shape there is no name unless the user gave the
+ * shape one — returning undefined then is correct, and the provider that needs a name
+ * says so rather than quietly finding nothing.
+ */
+export function placeHintFor(location: SearchLocation, resolved?: ResolvedPlace): string | undefined {
+  if (location.kind === 'drawn') return location.label?.trim() || undefined;
+  if (resolved?.city && resolved.state) return `${resolved.city}, ${resolved.state}`;
+  return resolved?.displayName ?? location.query;
 }
 
 function hasUpcomingOpenHouse(l: NormalizedListing, now: Date): boolean {

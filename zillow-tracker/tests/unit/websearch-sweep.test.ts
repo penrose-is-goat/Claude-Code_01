@@ -1,0 +1,244 @@
+import { describe, expect, it, vi } from 'vitest';
+import type { SearchBackend } from '../../src/lib/providers/websearch/backends';
+import { resolveBackend } from '../../src/lib/providers/websearch/backends';
+import {
+  planFacetQueries, planStreetQueries, sweep, type SweepTarget,
+} from '../../src/lib/providers/websearch/sweep';
+import { toSweepTarget } from '../../src/lib/providers/websearch';
+import type { SearchResult } from '../../src/lib/providers/websearch/parse';
+
+const TARGET: SweepTarget = { city: 'Boulder', state: 'CO' };
+const NOW = () => new Date('2026-08-21T12:00:00Z');
+
+/**
+ * A backend that answers from a table and counts calls. This is a test double for the
+ * TRANSPORT — the network — not for the data: every assertion below is about the
+ * sweep's own logic (budget, dedupe, coverage arithmetic), which is exactly the logic a
+ * live run cannot be trusted to exercise deterministically.
+ */
+function fakeBackend(table: Record<string, SearchResult[]>, opts: { fail?: string } = {}) {
+  const calls: string[] = [];
+  const backend: SearchBackend = {
+    id: 'fake',
+    displayName: 'fake',
+    setupHint: '',
+    isConfigured: () => true,
+    async search(query) {
+      calls.push(query);
+      if (opts.fail && query.includes(opts.fail)) throw new Error('backend exploded');
+      return table[query] ?? matchBySubstring(table, query);
+    },
+  };
+  return { backend, calls };
+}
+
+/** Lets a fixture key on a distinguishing fragment instead of a whole query string. */
+function matchBySubstring(table: Record<string, SearchResult[]>, query: string): SearchResult[] {
+  for (const [key, value] of Object.entries(table)) {
+    if (key.startsWith('~') && query.includes(key.slice(1))) return value;
+  }
+  return [];
+}
+
+function home(zpid: string, address: string, price: number): SearchResult {
+  return {
+    url: `https://www.zillow.com/homedetails/${address.replace(/\s+/g, '-')}-Boulder-CO-80302/${zpid}_zpid/`,
+    title: `${address}, Boulder, CO 80302 | MLS #${zpid} | Zillow`,
+    description: `Zillow has 5 photos of this $${price.toLocaleString('en-US')} 3 beds, 2 baths, ` +
+      `1,800 Square Feet single family home located at ${address}, Boulder, CO 80302 built in 1998.`,
+  };
+}
+
+describe('sweep', () => {
+  it('reports coverage against the count Zillow publishes, not against its own harvest', async () => {
+    const { backend } = fakeBackend({
+      '~homes for sale': [
+        {
+          url: 'https://www.zillow.com/boulder-co/houses/',
+          title: 'Boulder CO Single Family Homes For Sale - 406 Homes | Zillow',
+        },
+      ],
+      '~2 beds': [home('1', '100 Pearl St', 900000)],
+      '~3 beds': [home('2', '200 Pearl St', 950000)],
+    });
+
+    const report = await sweep(backend, TARGET, { queryBudget: 12, minIntervalMs: 0, now: NOW });
+
+    expect(report.coverage).toMatchObject({ found: 2, published: 406, scope: 'Boulder CO Single Family Homes For Sale' });
+    // The honest reading of a thin harvest: a tiny ratio, stated, rather than "2 homes".
+    expect(report.coverage!.ratio).toBeCloseTo(2 / 406, 6);
+  });
+
+  it('measures against the searched city, not the larger county that also publishes a count', async () => {
+    const { backend } = fakeBackend({
+      '~homes for sale': [
+        {
+          url: 'https://www.zillow.com/boulder-county-co/houses/',
+          title: 'Boulder County CO Single Family Homes For Sale - 1042 Homes | Zillow',
+        },
+        {
+          url: 'https://www.zillow.com/boulder-co/houses/',
+          title: 'Boulder CO Single Family Homes For Sale - 406 Homes | Zillow',
+        },
+      ],
+      '~2 beds': [home('1', '100 Pearl St', 900000)],
+    });
+
+    const report = await sweep(backend, TARGET, { queryBudget: 10, minIntervalMs: 0, now: NOW });
+    expect(report.coverage?.published).toBe(406);
+    expect(report.coverage?.scope).toContain('Boulder CO');
+  });
+
+  it('leaves coverage undefined rather than implying completeness when no count was published', async () => {
+    const { backend } = fakeBackend({ '~2 beds': [home('1', '100 Pearl St', 900000)] });
+    const report = await sweep(backend, TARGET, { queryBudget: 8, minIntervalMs: 0, now: NOW });
+    expect(report.coverage).toBeUndefined();
+    expect(report.listings).toHaveLength(1);
+  });
+
+  it('deduplicates the same home found through different slices', async () => {
+    const duplicate = home('88908043', '1655 Walnut St', 1470000);
+    const { backend } = fakeBackend({
+      '~2 beds': [duplicate],
+      '~3 beds': [duplicate],
+      '~single family home': [duplicate],
+    });
+
+    const report = await sweep(backend, TARGET, { queryBudget: 10, minIntervalMs: 0, now: NOW });
+    expect(report.listings).toHaveLength(1);
+    // Overlap is expected and is the evidence a slice was covered — the later queries
+    // must report zero NEW listings rather than being suppressed.
+    const productive = report.queries.filter((q) => q.newListings > 0);
+    expect(productive).toHaveLength(1);
+  });
+
+  it('never exceeds the query budget', async () => {
+    // A table that yields a new street from every query, so phase 3 would run forever.
+    const { backend, calls } = fakeBackend({
+      '~': [home('9', '900 Endless Ave', 100000)],
+    });
+    const report = await sweep(backend, TARGET, { queryBudget: 5, minIntervalMs: 0, now: NOW });
+    expect(report.queriesSpent).toBe(5);
+    expect(calls).toHaveLength(5);
+  });
+
+  it('discovers Zillow neighborhoods and ZIPs and slices by them', async () => {
+    const { backend, calls } = fakeBackend({
+      '~open houses': [
+        {
+          url: 'https://www.zillow.com/central-boulder-boulder-co/open-house/',
+          title: 'Central Boulder Boulder Open Houses - 26 Upcoming | Zillow',
+        },
+        {
+          url: 'https://www.zillow.com/boulder-co-80304/open-house/',
+          title: '80304 Open Houses - 13 Upcoming | Zillow',
+        },
+      ],
+    });
+
+    await sweep(backend, TARGET, { queryBudget: 30, minIntervalMs: 0, now: NOW });
+
+    expect(calls.some((q) => q.includes('Central Boulder Boulder'))).toBe(true);
+    expect(calls.some((q) => q.includes('Boulder, CO 80304'))).toBe(true);
+  });
+
+  it('sweeps streets discovered from harvested addresses', async () => {
+    const { backend, calls } = fakeBackend({
+      '~3 beds': [home('1', '1655 Walnut St', 900000)],
+    });
+    const report = await sweep(backend, TARGET, { queryBudget: 25, minIntervalMs: 0, now: NOW });
+
+    expect(calls).toContain('site:zillow.com/homedetails "Walnut St" "Boulder, CO"');
+    expect(report.queriesSpent).toBeLessThanOrEqual(25);
+  });
+
+  it('records a failing query without sinking the sweep', async () => {
+    const { backend } = fakeBackend({ '~3 beds': [home('1', '100 Pearl St', 900000)] }, { fail: '2 beds' });
+    const report = await sweep(backend, TARGET, { queryBudget: 12, minIntervalMs: 0, now: NOW });
+
+    expect(report.queries.some((q) => q.error === 'backend exploded')).toBe(true);
+    expect(report.listings).toHaveLength(1);
+  });
+
+  it('counts why results were dropped instead of discarding them silently', async () => {
+    const { backend } = fakeBackend({
+      '~2 beds': [
+        home('1', '100 Pearl St', 900000),
+        {
+          url: 'https://www.zillow.com/homedetails/2300-75th-St-Boulder-CO-80301/13185000_zpid/',
+          title: '2300 75th St, Boulder, CO 80301 | Zillow',
+          description: 'Zillow has 25 photos of this 4 beds, 3 baths, 2,800 Square Feet home.',
+        },
+        { url: 'https://www.redfin.com/x', title: 'somewhere else' },
+      ],
+    });
+
+    const report = await sweep(backend, TARGET, { queryBudget: 6, minIntervalMs: 0, now: NOW });
+    const reasons = Object.keys(report.dropped).join(' | ');
+    expect(reasons).toMatch(/not for sale/);
+    expect(reasons).toMatch(/off-site|unrecognized/);
+  });
+
+  it('reports progress as it goes so a long sweep is not a black box', async () => {
+    const { backend } = fakeBackend({ '~2 beds': [home('1', '100 Pearl St', 900000)] });
+    const onProgress = vi.fn();
+    await sweep(backend, TARGET, { queryBudget: 4, minIntervalMs: 0, now: NOW, onProgress });
+    expect(onProgress).toHaveBeenCalled();
+    expect(onProgress.mock.calls.at(-1)![0]).toMatchObject({ queryBudget: 4 });
+  });
+});
+
+describe('planFacetQueries', () => {
+  it('partitions by Zillow area when one was discovered, by city when none was', () => {
+    expect(planFacetQueries(TARGET).every((q) => q.includes('"Boulder, CO"'))).toBe(true);
+
+    const withAreas = planFacetQueries({ ...TARGET, postalCodes: ['80302'] });
+    expect(withAreas.some((q) => q.includes('"Boulder, CO 80302"'))).toBe(true);
+    expect(withAreas.some((q) => q.includes('"Boulder, CO"'))).toBe(false);
+  });
+
+  it('switches to open-house queries when that is what was asked for', () => {
+    const q = planFacetQueries(TARGET, { openHouseOnly: true });
+    expect(q.every((s) => s.includes('open house'))).toBe(true);
+  });
+
+  it('constrains every query to Zillow home pages', () => {
+    for (const q of [...planFacetQueries(TARGET), ...planStreetQueries(TARGET, ['Walnut St'])]) {
+      expect(q).toContain('site:zillow.com/homedetails');
+    }
+  });
+});
+
+describe('toSweepTarget', () => {
+  it('uses a resolved city and state directly', () => {
+    expect(toSweepTarget({ kind: 'cityRadius', city: 'Boulder', state: 'CO', radiusMiles: 5 }))
+      .toEqual({ city: 'Boulder', state: 'CO' });
+  });
+
+  it('falls back to a place hint for a drawn shape the user named', () => {
+    expect(toSweepTarget({ kind: 'bbox', minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 }, 'Boulder, CO'))
+      .toEqual({ city: 'Boulder', state: 'CO' });
+  });
+
+  it('says plainly that an unnamed drawn shape cannot be searched for', () => {
+    expect(() => toSweepTarget({ kind: 'polygon', ring: [[0, 0], [1, 1], [0, 1]] }))
+      .toThrow(/name the area/i);
+  });
+});
+
+describe('resolveBackend', () => {
+  const unconfigured: SearchBackend = {
+    id: 'x', displayName: 'X', setupHint: 'Set X_KEY.',
+    isConfigured: () => false, search: async () => [],
+  };
+
+  it('returns setup instructions rather than an empty result set', () => {
+    const { backend, hints } = resolveBackend([unconfigured], undefined);
+    expect(backend).toBeNull();
+    expect(hints.join(' ')).toContain('Set X_KEY.');
+  });
+
+  it('honours an explicit override and complains about an unknown one', () => {
+    expect(resolveBackend([unconfigured], 'nope').hints[0]).toMatch(/not a known backend/);
+  });
+});

@@ -1,4 +1,5 @@
 import type { ListingProvider, ProviderId } from './types';
+import { WebSearchProvider } from './websearch';
 import { SnapshotProvider } from './snapshot';
 import { ZillowPublicProvider } from './zillow';
 import { CsvImportProvider } from './csv';
@@ -21,6 +22,8 @@ export function getProvider(id: ProviderId): ListingProvider<any> {
 
 function create(id: ProviderId): ListingProvider<any> {
   switch (id) {
+    case 'websearch':
+      return new WebSearchProvider();
     case 'snapshot':
       return new SnapshotProvider();
     case 'zillow':
@@ -36,4 +39,12 @@ export function resetRegistry(): void {
   registry.clear();
 }
 
-export const ALL_PROVIDER_IDS: ProviderId[] = ['zillow', 'snapshot', 'csv'];
+/**
+ * Order matters: this is the order a search runs providers in, and the first one is the
+ * one expected to carry the market. `websearch` leads because it is the only provider
+ * that reaches live Zillow data from an ordinary machine — the direct `zillow` provider
+ * is refused with a 403 even from a residential IP. `zillow` stays registered behind it
+ * so a licensed or otherwise-permitted deployment can still use it, and `snapshot`
+ * follows to contribute the open-house windows search results do not carry.
+ */
+export const ALL_PROVIDER_IDS: ProviderId[] = ['websearch', 'zillow', 'snapshot', 'csv'];
