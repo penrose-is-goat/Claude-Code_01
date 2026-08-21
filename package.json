@@ -1,0 +1,10 @@
+{
+  "name": "claude-code-01",
+  "private": true,
+  "description": "Repository root. The app lives in zillow-tracker/ — these scripts forward to it.",
+  "scripts": {
+    "go": "npm --prefix zillow-tracker run go",
+    "harvest": "npm --prefix zillow-tracker run harvest --",
+    "test": "npm --prefix zillow-tracker test"
+  }
+}
