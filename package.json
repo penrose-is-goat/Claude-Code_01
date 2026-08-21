@@ -5,6 +5,11 @@
   "scripts": {
     "go": "npm --prefix zillow-tracker run go",
     "harvest": "npm --prefix zillow-tracker run harvest --",
-    "test": "npm --prefix zillow-tracker test"
+    "verify-zillow": "npm --prefix zillow-tracker run verify-zillow --",
+    "verify-ui": "npm --prefix zillow-tracker run verify-ui",
+    "poll": "npm --prefix zillow-tracker run poll",
+    "dev": "npm --prefix zillow-tracker run dev",
+    "test": "npm --prefix zillow-tracker test",
+    "install-app": "npm --prefix zillow-tracker install && npm --prefix zillow-tracker exec prisma generate"
   }
 }
