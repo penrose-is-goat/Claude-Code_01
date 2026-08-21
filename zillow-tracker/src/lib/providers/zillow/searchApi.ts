@@ -97,7 +97,16 @@ export async function querySearchApi(
             // XHR marker has to be stated, exactly as the site's own code states it.
             'X-Requested-With': 'XMLHttpRequest',
           },
-          credentials: 'include',
+          /*
+           * No `credentials` option, deliberately.
+           *
+           * This is a same-origin request, and same-origin fetches send the document's
+           * cookies by default — so setting `credentials: 'include'` changed nothing
+           * here while widening the rule to cross-origin requests, which this must
+           * never make. Leaving it off keeps the request to exactly what the page is
+           * already entitled to send, and keeps this file free of any cookie handling
+           * of its own. The CI guard that flagged the flag was right.
+           */
           body: JSON.stringify({
             searchQueryState: state,
             wants,
