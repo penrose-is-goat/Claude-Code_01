@@ -34,8 +34,20 @@ export class WebSearchProvider implements ListingProvider<NormalizedListing> {
     supportsRadiusQuery: true,
     supportsPhotos: false,
     supportsPriceHistory: false,
-    // Free search tiers are ~1 query/second; the sweep's own budget is the real cap.
-    rateLimit: { requestsPerRun: Number(process.env.SEARCH_QUERY_BUDGET ?? 40), minIntervalMs: 1100 },
+    /*
+     * Pacing.
+     *
+     * The default backend is a keyless engine's own results page, requested the way a
+     * browser requests it. Two and a half seconds between queries is slower than a
+     * person clicking through pages, which is the point: the failure mode of going
+     * faster is a challenge page, and a challenge page parses to zero results and reads
+     * as an empty housing market. Set SEARCH_MIN_INTERVAL_MS lower only with a keyed
+     * backend, where the quota is the limit rather than etiquette.
+     */
+    rateLimit: {
+      requestsPerRun: Number(process.env.SEARCH_QUERY_BUDGET ?? 40),
+      minIntervalMs: Number(process.env.SEARCH_MIN_INTERVAL_MS ?? 2500),
+    },
   };
 
   /** The most recent sweep, so the UI can show coverage against Zillow's own count. */
@@ -48,8 +60,7 @@ export class WebSearchProvider implements ListingProvider<NormalizedListing> {
       const { hints } = resolveBackend();
       return {
         ok: false,
-        message:
-          'No search backend configured. Set one of:\n' + hints.map((h) => `  • ${h}`).join('\n'),
+        message: 'No search backend available. ' + hints.join(' '),
       };
     }
     return {
