@@ -19,7 +19,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "next lint",
     "verify-ui": "node scripts/verify-ui.mjs",
-    "go": "bash run.sh",
+    "go": "node scripts/go.mjs",
     "setup": "npm install && prisma generate && prisma db push --skip-generate && tsx prisma/seed.ts && tsx scripts/poll.ts"
   },
   "dependencies": {
