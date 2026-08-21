@@ -213,20 +213,29 @@ describe('absence handling when the source returns fewer rows', () => {
 });
 
 describe('area filtering against the real capture', () => {
-  // There is no ZIP/postal-code AreaQuery any more (the user chose city+radius or a
-  // drawn shape, never a ZIP — see providers/types.ts). Every remaining AreaQuery kind
-  // is geometric, and Zillow's real search pages never publish coordinates (confirmed
-  // above: "does not invent coordinates"), so a real capture cannot be geometrically
-  // narrowed at all — every geometry keeps every listing under the documented
-  // "cannot test it, keep it" policy. That is the honest, current behaviour for real
-  // data, not a gap: it's the same tradeoff geo.test.ts and geo-adversarial.test.ts
-  // exercise directly with synthetic coordinates, observed here end-to-end.
-  it('keeps every real listing regardless of which geometry is used, because none carry coordinates', async () => {
+  // This block used to assert the opposite — that every geometry keeps every captured
+  // listing, because captures carry no coordinates and the geometry filter keeps what it
+  // cannot place. That reasoning was sound about geometry and wrong about the product:
+  // it meant a search anywhere returned the whole capture pile, so a search for Austin
+  // came back with 49 Boulder homes and the app looked hardcoded to one city.
+  //
+  // Coordinates are still absent and geometry still cannot narrow these rows. Place is
+  // matched on the listing's own city/state text instead, before geometry ever runs.
+  it('returns nothing for an area that no capture belongs to', async () => {
     const narrow: SearchSpec = {
-      id: SEARCH_ID, name: 'a tiny bbox nowhere near Boulder',
+      id: SEARCH_ID, name: 'a tiny bbox nowhere near any captured city',
       query: { kind: 'bbox', minLat: 0, maxLat: 0.001, minLng: 0, maxLng: 0.001 },
     };
     const result = await pollSearch(db, new SnapshotProvider(), narrow);
+    expect(result.listingsSeen).toBe(0);
+  });
+
+  it('returns the capture for the city it was captured in', async () => {
+    const here: SearchSpec = {
+      id: SEARCH_ID, name: 'the captured city',
+      query: { kind: 'cityRadius', city: real[0].city, state: real[0].state, radiusMiles: 25 },
+    };
+    const result = await pollSearch(db, new SnapshotProvider(), here);
     expect(result.listingsSeen).toBe(real.length);
   });
 

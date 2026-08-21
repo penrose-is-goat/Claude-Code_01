@@ -114,7 +114,16 @@ export class SnapshotProvider implements ListingProvider<NormalizedListing> {
 
   async fetchPage(opts: FetchOptions): Promise<ProviderPage<NormalizedListing>> {
     const { rows } = await this.load();
-    let raw = rows;
+
+    // Snapshots are a pile of captures from wherever has been harvested so far, and
+    // this provider used to serve all of them for every search. A search for Austin
+    // returned 49 Boulder homes, which is exactly the "the app is hardcoded to one
+    // city" failure it looks like from the outside.
+    //
+    // Captured listings frequently have no coordinates (a search snippet does not carry
+    // any), so the geometry filter downstream cannot catch this — it keeps unplaceable
+    // listings by design. Place has to be matched on the text instead, here.
+    let raw = filterToPlace(rows, opts);
 
     const f = opts.filters;
     if (f) {
@@ -223,4 +232,47 @@ function normalizeType(s: string): PropertyType {
     'SINGLE_FAMILY', 'CONDO', 'TOWNHOUSE', 'MULTI_FAMILY', 'LAND', 'MANUFACTURED', 'OTHER',
   ];
   return known.includes(s as PropertyType) ? (s as PropertyType) : 'OTHER';
+}
+
+/**
+ * Keeps only the captured listings that belong to the place being searched.
+ *
+ * Fails CLOSED: with no place to match against, this returns nothing rather than
+ * everything. Showing a user homes from a city they did not ask about is a worse
+ * failure than showing none — the empty state says "no captures for this area yet",
+ * which is true and actionable, while the alternative silently misrepresents another
+ * city's market as theirs.
+ */
+export function filterToPlace(
+  rows: NormalizedListing[],
+  opts: Pick<FetchOptions, 'area' | 'placeHint'>,
+): NormalizedListing[] {
+  const place = placeOf(opts);
+  if (!place) return [];
+
+  return rows.filter((l) => {
+    if (place.state && l.state && l.state.toUpperCase() !== place.state) return false;
+    return normalizeCity(l.city) === place.city;
+  });
+}
+
+/** The city/state a fetch is for, from the area query or the caller's place hint. */
+function placeOf(opts: Pick<FetchOptions, 'area' | 'placeHint'>): { city: string; state: string } | null {
+  if (opts.area.kind === 'cityRadius' && opts.area.city) {
+    return { city: normalizeCity(opts.area.city), state: (opts.area.state ?? '').toUpperCase() };
+  }
+
+  // A drawn shape carries no name, so the search service passes along whatever label
+  // the user gave it. Without one there is nothing to match and nothing is returned.
+  const hint = opts.placeHint?.trim();
+  if (!hint) return null;
+
+  const m = hint.match(/^(.*?)[,\s]+([A-Za-z]{2})$/);
+  return m
+    ? { city: normalizeCity(m[1]), state: m[2].toUpperCase() }
+    : { city: normalizeCity(hint), state: '' };
+}
+
+function normalizeCity(city: string | undefined): string {
+  return (city ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 }

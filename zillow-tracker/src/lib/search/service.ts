@@ -190,13 +190,22 @@ export async function resolveLocation(
  * `geo/listingMatchesArea`, it is kept rather than dropped — a listing you see and
  * dismiss is cheaper than one you never see.
  */
-export function filterToLocation<T extends Pick<NormalizedListing, 'lat' | 'lng'>>(
+export function filterToLocation<T extends Pick<NormalizedListing, 'lat' | 'lng'> & { city?: string }>(
   listings: T[],
   location: SearchLocation,
   resolved?: ResolvedPlace,
 ): T[] {
+  const expectedCity = resolved?.city?.trim().toLowerCase();
+
   return listings.filter((l) => {
-    if (l.lat == null || l.lng == null) return true;
+    if (l.lat == null || l.lng == null) {
+      // "Keep what cannot be placed" is right for a listing that is plausibly here and
+      // merely missing coordinates. It is wrong for one that names a different city
+      // outright — that is not an unplaceable listing, it is a listing from somewhere
+      // else, and keeping it is how a search for one city quietly returns another's.
+      if (expectedCity && l.city && l.city.trim().toLowerCase() !== expectedCity) return false;
+      return true;
+    }
     const p: LatLng = { lat: l.lat, lng: l.lng };
 
     if (location.kind === 'drawn') {

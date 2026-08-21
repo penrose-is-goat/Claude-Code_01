@@ -66,9 +66,13 @@ export class ZillowPublicProvider implements ListingProvider<NormalizedListing> 
     };
   }
 
-  async healthCheck(): Promise<HealthCheckResult> {
+  async healthCheck(area?: AreaQuery): Promise<HealthCheckResult> {
     try {
-      const html = await this.get('https://www.zillow.com/boulder-co/open-house/');
+      // No baked-in city. A health check is "is this source reachable and still the
+      // shape we parse", and any area answers that — so it uses the one the caller is
+      // actually interested in, and only falls back to a well-known large market when
+      // asked to probe with no area in hand.
+      const html = await this.get(probeUrl(area));
       const { listings } = parseSearchPage(html, this.ctx());
       return {
         ok: listings.length > 0,
@@ -242,4 +246,18 @@ function describeError(err: unknown): string {
     return err.message;
   }
   return String(err);
+}
+
+/**
+ * The URL a health check probes.
+ *
+ * Falls back to a national listing page rather than any particular city: a fallback that
+ * names a town reads as that town being special to this app, and it is not.
+ */
+function probeUrl(area?: AreaQuery): string {
+  if (area?.kind === 'cityRadius' && area.city && area.state) {
+    const slug = `${area.city.trim().toLowerCase().replace(/\s+/g, '-')}-${area.state.toLowerCase()}`;
+    return `https://www.zillow.com/${slug}/open-house/`;
+  }
+  return 'https://www.zillow.com/homes/for_sale/';
 }
