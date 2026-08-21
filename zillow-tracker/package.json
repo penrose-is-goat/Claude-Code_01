@@ -9,6 +9,7 @@
     "start": "next start",
     "worker": "tsx src/worker/index.ts",
     "poll": "tsx scripts/poll.ts",
+    "harvest": "tsx scripts/harvest.ts",
     "seed": "tsx prisma/seed.ts",
     "verify-live": "node scripts/verify-live.mjs",
     "db:push": "prisma db push",

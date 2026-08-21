@@ -64,3 +64,41 @@ jobs:
           done
           [ "$violations" -eq 0 ] && echo "OK: no credential handling found in Zillow provider code"
           exit "$violations"
+
+      # The websearch provider's central claim is that it reads Zillow's crawler-facing
+      # data from a search index and never requests anything from zillow.com. That is
+      # checkable: every outbound request it makes lives in backends.ts, and backends.ts
+      # must not mention zillow at all. If someone later "helpfully" adds a direct fetch,
+      # this fails rather than quietly changing what the provider does.
+      - name: Assert the websearch provider never contacts zillow.com
+        run: |
+          violations=0
+
+          stray=$(grep -rln "fetch(" src/lib/providers/websearch --include='*.ts' \
+                  | grep -v 'backends\.ts' || true)
+          if [ -n "$stray" ]; then
+            echo "::error::websearch makes network calls outside backends.ts: $stray"
+            violations=1
+          fi
+
+          # Comments first, again: backends.ts DOCUMENTS that it never talks to Zillow,
+          # and a naive grep flags that sentence as the violation it rules out.
+          #
+          # Delete comment LINES rather than substituting away "//..." — that
+          # substitution also eats the "//" in "https://www.zillow.com", which turned a
+          # planted direct fetch into "const leak = await fetch(\"https:" and let it pass.
+          strip="/^[[:space:]]*\/\//d;/^[[:space:]]*\*/d;/^[[:space:]]*\/\*/d"
+          backends=$(sed -e "$strip" src/lib/providers/websearch/backends.ts)
+          if echo "$backends" | grep -niE "zillow"; then
+            echo "::error file=src/lib/providers/websearch/backends.ts::websearch backends must not reference zillow.com — the provider reads the search index, it does not fetch Zillow"
+            violations=1
+          fi
+
+          code=$(sed -e "$strip" src/lib/providers/websearch/*.ts)
+          if echo "$code" | grep -niE "(cookie)\s*:|document\.cookie|setCookie|password|signIn|logIn\b"; then
+            echo "::error::websearch provider must remain credential-free"
+            violations=1
+          fi
+
+          [ "$violations" -eq 0 ] && echo "OK: websearch contacts only the configured search backend"
+          exit "$violations"

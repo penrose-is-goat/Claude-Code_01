@@ -42,24 +42,64 @@ time window paired to the address — the capability previously (wrongly) declar
 impossible. That is how `data/snapshots/boulder-open-houses-2026-08-19.json` was built.
 `WebFetch` is blocked; `WebSearch` is not. Do not confuse them.
 
+## The `websearch` provider — how live data actually arrives
+
+Zillow refuses direct fetches but publishes every listing to search engines. A
+`/homedetails/` page carries address+zpid in its URL, address and (while the MLS record
+is live) the MLS number in its `<title>`, and price/beds/baths/sqft/type/year in its
+`<meta name="description">`. `src/lib/providers/websearch/` reads exactly that, through
+an ordinary search API. It never contacts zillow.com.
+
+Three things worth not rediscovering:
+
+1. **The MLS tell.** `| MLS #123456` in the page title means a live MLS record; it
+   disappears when the record closes. Checked against 27 results across four Boulder ZIPs
+   on 2026-08-21 it agreed with for-sale status every time — including a slice where the
+   search reported exactly one of ten homes as listed, and that one was the only title
+   with an MLS number. It is the signal that keeps a genuinely listed home from being
+   dropped when the snippet omits the price. Sale-history and rental language override it.
+2. **Index titles publish the market size.** `Boulder CO Open Houses - 61 Upcoming`,
+   `Boulder CO Single Family Homes For Sale - 406 Homes`. That is the coverage
+   denominator, and the same pages expose Zillow's neighborhood slugs
+   (`central-boulder-boulder-co`) for partitioning a sweep. Parse the count only at the
+   END of the title — matching anywhere read the ZIP out of `80305 Real Estate - 80305
+   Homes For Sale` and reported a market of eighty thousand homes.
+3. **Enumeration is area × facet × street.** Streets are the strongest axis and are
+   self-discovering: every harvested address yields one to sweep next.
+
+`npm run harvest -- --place "City, ST" [--budget N] [--open-houses]` is the repeatable
+refresh. `--from <capture.json>` replays search results collected elsewhere through the
+identical parser — that is how a harvest gets done from this container, where search APIs
+are blocked but the `WebSearch` tool is not. A capture holds real url+title only;
+prose-relayed facts go in `observations[]` with a per-entry note and are merged only into
+fields the parser left empty. Never synthesize a `description` — that would launder a
+paraphrase into something indistinguishable from a capture.
+
 ## Current state
 
-Works, on real data: 28 real Boulder listings, 12 real open houses with correct local
-times, change detection, saved listings/notes/tags, filters, Excel export (4 sheets),
-the whole UI, rebuild-on-refresh.
+Works, on real data: 49 real Boulder listings (28 earlier capture + 21 harvested
+2026-08-21 via websearch), 12 real open houses with correct local times, change
+detection, saved listings/notes/tags, filters, Excel export, the whole UI. 372 unit tests
+and 13/13 browser checks pass; production build clean.
 
-Does not work here: the direct `zillow` provider records a real 403 and **has never
-parsed a live Zillow page**. Its parser was cross-validated against `johnbalvin/pyzill`
-and `@use_homi/real-estate-portal-schemas` — which found two live-breaking bugs
-(HTML-entity-escaped blob; reading `listResults` instead of `mapResults`) — but no real
-page has passed through it. `npm run verify-live` on a networked machine closes this and
-saves the page as a fixture.
+Verified this session: `npx prisma generate && npx tsc --noEmit && npx vitest run &&
+npm run build`, then app up on :3000, a drawn search created via `/api/searches`
+(drawn needs no geocoder — the only offline-workable path), `npx tsx scripts/poll.ts`,
+then `CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome node
+scripts/verify-ui.mjs` → 13/13. Note the pinned Chromium is build **1194**; Playwright
+wants 1234 and errors without that env var.
 
-Not done: areas are Boulder ZIPs, not the user's own — **ask for their ZIP codes.** The
-standalone `zillow-tracker` repo could not be created (403 from the GitHub App); the
-subtree-split commands are in the README.
+Does not work here: the direct `zillow` provider records a real 403 and has never parsed
+a live page. Its 403 message now points at `websearch`, not CSV.
+
+Not done: **the user's own location is still unknown — ask what area they want.** All
+current data is Boulder, CO, which was only ever a test market. The standalone
+`zillow-tracker` repo could not be created (403 from the GitHub App); subtree-split
+commands are in the README.
 
 ## Next step
 
-Wire the WebSearch-based harvest into a repeatable command so a refresh pulls current
-Zillow data rather than replaying a fixed capture.
+Coverage is 21 of the 406 Boulder homes Zillow publishes — the mechanism is proven, the
+budget is not spent. Either run a bigger WebSearch capture here, or have the user set
+`BRAVE_SEARCH_API_KEY` and run `npm run harvest -- --place "<their city>" --budget 80`
+on their machine, which is the real answer.

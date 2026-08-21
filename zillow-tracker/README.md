@@ -110,7 +110,60 @@ simply asking an agent to put you on their MLS client portal. Both give you MLS-
 open houses ahead of portal syndication. The provider interface is designed so either
 drops in as one new file.
 
-### Does the live fetch actually work?
+### `websearch` — the provider that actually reaches live Zillow data
+
+Zillow refuses direct page fetches. It also, necessarily, publishes every listing to
+search engines — a `/homedetails/` page carries the address and zpid in its URL, the
+address and (while the MLS record is live) the MLS number in its `<title>`, and the
+price, beds, baths, square footage, home type and year built in its `<meta
+name="description">`. That is the data Zillow hands to every crawler on the internet so
+buyers can find these homes, and it is what this provider reads.
+
+It never contacts zillow.com. It queries a general search API, and the only host it
+talks to is the one you configure:
+
+```bash
+# Pick one. Brave has a free tier and returns the raw meta description.
+export BRAVE_SEARCH_API_KEY=...                     # brave.com/search/api
+export GOOGLE_CSE_KEY=...  GOOGLE_CSE_CX=...        # 100 queries/day free
+export SEARXNG_URL=https://your-searxng.example     # self-hosted, no key, no quota
+```
+
+Then refresh from the command line, or just search in the app:
+
+```bash
+npm run harvest -- --place "Boulder, CO"
+npm run harvest -- --place "Boulder, CO" --budget 80 --open-houses
+```
+
+**How it enumerates a market rather than sampling it.** One query returns ten or twenty
+results; a city has hundreds of listings. So the sweep partitions the market into slices
+small enough to fit in one page of results, and runs a query per slice:
+
+1. **Area.** Zillow publishes its own subdivision of every city — ZIP pages and named
+   neighborhoods like `central-boulder-boulder-co` — as indexed pages whose titles state
+   how many homes each holds (`Boulder CO Open Houses - 61 Upcoming`). Those titles are
+   both the partition and the denominator.
+2. **Facet.** Bed count and home type are exact tokens in every indexed description, so
+   they slice cleanly and cheaply.
+3. **Street.** Type an address into a search engine and its Zillow page comes up. A city
+   has a finite list of streets and every address contains exactly one, so each harvested
+   address yields a street to sweep — the run discovers its own frontier.
+
+`--budget` caps the queries spent (default 40). Every run reports coverage against
+Zillow's published count — *"21 of 406 that Zillow publishes for Boulder CO"* — so a
+partial harvest reads as partial instead of being presented as the whole market.
+
+**What it does not give you.** Search results carry no coordinates and no open-house
+times, so listings harvested this way have null `lat`/`lng` and no open-house windows,
+rather than approximations. Open-house times come from the `snapshot` provider.
+
+**Off-market filtering.** The search index is full of sold, rented and never-listed
+homes, so exclusion is the default: a result is kept only on positive evidence — a
+published list price, or a live MLS number in the page title — and sale-history and
+rental language override both.
+
+### Does the direct Zillow fetch actually work?
 
 This project was built inside a sandbox whose egress proxy blocks `zillow.com`, so the
 live path is the one thing that could not be verified during development. Find out for
@@ -124,8 +177,12 @@ node scripts/verify-live.mjs --city "Denver, CO" --for-sale
 
 It makes exactly one request and tells you plainly what happened: parsed listings with
 open-house times, a block, a challenge page, or a schema change. Exit code 0 means the
-live provider is usable from where you are. Anything else means use `csv`, and the app
-works exactly the same.
+direct provider is usable from where you are.
+
+It has been run, and the answer was no: Zillow returned HTTP 403 from an ordinary
+residential connection. That is why `websearch` above is the primary provider and
+`zillow` sits behind it. If your connection gets a different answer, nothing needs to
+change — the provider is still registered and still works.
 
 ---
 
