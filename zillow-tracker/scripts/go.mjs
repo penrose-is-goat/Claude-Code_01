@@ -84,6 +84,12 @@ function fail(...lines) {
 step('Installing dependencies');
 run(NPM, ['install', '--no-audit', '--no-fund']);
 
+step('Installing the browser');
+// Zillow refuses a plain HTTP fetch; a real Chromium is what gets a real page. Optional
+// so a download failure leaves the app working through the search-index provider rather
+// than refusing to start.
+run(NPX, ['playwright', 'install', 'chromium'], { optional: true });
+
 step('Preparing the database');
 run(NPX, ['prisma', 'generate']);
 mkdirSync(join(root, 'data'), { recursive: true });

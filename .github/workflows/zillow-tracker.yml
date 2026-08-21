@@ -42,6 +42,12 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+      # The browser transport is tested against a real Chromium driving a real HTTP
+      # server. Without this the suite silently SKIPS those tests, and "406 passed"
+      # would quietly stop covering the only path that gets a real Zillow page.
+      - name: Install Chromium for the browser-transport tests
+        run: npx playwright install --with-deps chromium
+
       - name: Unit and integration tests
         run: npx vitest run
 

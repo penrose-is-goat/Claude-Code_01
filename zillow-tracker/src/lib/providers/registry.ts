@@ -41,10 +41,11 @@ export function resetRegistry(): void {
 
 /**
  * Order matters: this is the order a search runs providers in, and the first one is the
- * one expected to carry the market. `websearch` leads because it is the only provider
- * that reaches live Zillow data from an ordinary machine — the direct `zillow` provider
- * is refused with a 403 even from a residential IP. `zillow` stays registered behind it
- * so a licensed or otherwise-permitted deployment can still use it, and `snapshot`
- * follows to contribute the open-house windows search results do not carry.
+ * one expected to carry the market. `zillow` leads now that it drives a real browser
+ * rather than a plain fetch: the 403 that demoted it was a refusal of an obvious
+ * non-browser client, and a rendered page carries coordinates, open-house times and
+ * price history that a search snippet never does. `websearch` follows as the fallback
+ * for when Zillow still refuses, or when no browser is installed — it reads the same
+ * listings from the public search index Zillow publishes them to.
  */
-export const ALL_PROVIDER_IDS: ProviderId[] = ['websearch', 'zillow', 'snapshot', 'csv'];
+export const ALL_PROVIDER_IDS: ProviderId[] = ['zillow', 'websearch', 'snapshot', 'csv'];

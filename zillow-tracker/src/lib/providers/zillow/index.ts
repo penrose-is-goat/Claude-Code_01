@@ -1,4 +1,5 @@
 import type { NormalizedListing } from '../normalized';
+import { browserAvailable, fetchRendered } from './browser';
 import type {
   AreaQuery, FetchOptions, HealthCheckResult, ListingProvider, ProviderCapabilities, ProviderPage,
 } from '../types';
@@ -35,6 +36,18 @@ export interface ZillowProviderOptions {
   /** Injectable so tests never touch the network. */
   fetchImpl?: typeof fetch;
   now?: () => Date;
+  /**
+   * How pages are retrieved.
+   *
+   *  - `browser` drives a real headless Chromium. Slower to start, and the only mode
+   *    that has any prospect of working: Zillow refuses a plain fetch with 403 because
+   *    of what the client is, not where it is from.
+   *  - `fetch` is the plain HTTP path, kept because it is what the tests exercise and
+   *    what a permitted deployment would use.
+   *  - `auto` (the default) tries the browser and falls back to fetch when Playwright or
+   *    Chromium is not installed.
+   */
+  transport?: 'auto' | 'browser' | 'fetch';
 }
 
 export class ZillowPublicProvider implements ListingProvider<NormalizedListing> {
@@ -52,12 +65,15 @@ export class ZillowPublicProvider implements ListingProvider<NormalizedListing> 
   };
 
   private lastRequestAt = 0;
+  /** Why the browser transport was skipped, surfaced in healthCheck. */
+  private browserNote: string | null = null;
   private readonly opts: Required<Omit<ZillowProviderOptions, 'fetchImpl'>> & {
     fetchImpl: typeof fetch;
   };
 
   constructor(options: ZillowProviderOptions = {}) {
     this.opts = {
+      transport: options.transport ?? (process.env.ZILLOW_TRANSPORT as 'auto' | 'browser' | 'fetch') ?? 'auto',
       timezone: options.timezone ?? process.env.TZ ?? 'America/Denver',
       minIntervalMs: options.minIntervalMs ?? 1500,
       userAgent: options.userAgent ?? DEFAULT_UA,
@@ -118,6 +134,19 @@ export class ZillowPublicProvider implements ListingProvider<NormalizedListing> 
   private async get(url: string, signal?: AbortSignal): Promise<string> {
     await this.pace();
 
+    if (this.opts.transport !== 'fetch') {
+      try {
+        return await this.getViaBrowser(url, signal);
+      } catch (err) {
+        if (err instanceof ZillowBlockedError) throw err;
+        if (this.opts.transport === 'browser') throw err;
+        // `auto`: no browser installed, so fall through to the plain fetch below. That
+        // path is expected to 403, and says so, which is still better than failing with
+        // a message about Playwright when the user never asked for a browser.
+        this.browserNote = err instanceof Error ? err.message : String(err);
+      }
+    }
+
     const res = await this.opts.fetchImpl(url, {
       signal,
       redirect: 'follow',
@@ -165,6 +194,29 @@ export class ZillowPublicProvider implements ListingProvider<NormalizedListing> 
     }
 
     return res.text();
+  }
+
+  /**
+   * Opens the page in a real browser and returns what rendered.
+   *
+   * A 403 here means something different from a 403 on a plain fetch, and the message
+   * says so: the plain fetch is refused for being an obvious non-browser, while a real
+   * Chromium being refused is Zillow declining this connection specifically.
+   */
+  private async getViaBrowser(url: string, signal?: AbortSignal): Promise<string> {
+    const { html, status } = await fetchRendered(url, { signal });
+
+    if (status === 403 || status === 429) {
+      throw new ZillowBlockedError(
+        `Zillow declined the request (HTTP ${status}) even from a real browser. ` +
+        'Try again in a few minutes, or use the "websearch" provider, which reads the ' +
+        'same listings from the public search index Zillow publishes them to.',
+        status,
+      );
+    }
+    if (status >= 400) throw new Error(`Zillow returned HTTP ${status} for ${url}`);
+
+    return html;
   }
 
   private async pace(): Promise<void> {

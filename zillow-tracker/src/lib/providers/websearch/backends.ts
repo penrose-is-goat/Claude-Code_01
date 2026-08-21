@@ -1,5 +1,4 @@
 import type { SearchResult } from './parse';
-import { detectBlockPage, parseDuckDuckGoHtml, parseMojeekHtml } from './html';
 
 /**
  * Pluggable web-search backends.
@@ -36,159 +35,6 @@ export class SearchBackendError extends Error {
     this.name = 'SearchBackendError';
   }
 }
-
-/**
- * DuckDuckGo, with no API key.
- *
- * This is the default, and it is the default because the alternative was a product that
- * did nothing until its owner registered for a search API. Someone typed in their own
- * town, got zero results and a wall of setup instructions, and was right to call that
- * broken.
- *
- * It requests the same public no-JavaScript results page a browser would, from the
- * user's own machine and their own IP, at human pace. There is no key, no account, no
- * quota, and nothing to configure.
- *
- * A refusal is reported as a refusal. A challenge page parses to zero results, which is
- * indistinguishable from "this town has no houses for sale" unless it is named — so it
- * is named, and the sweep stops rather than grinding out an empty market.
- */
-export class DuckDuckGoBackend implements SearchBackend {
-  readonly id = 'duckduckgo';
-  readonly displayName = 'DuckDuckGo (no API key)';
-  readonly setupHint = 'Nothing to set up — this works out of the box.';
-
-  constructor(private doFetch: typeof fetch = globalThis.fetch) {}
-
-  isConfigured(): boolean {
-    return true;
-  }
-
-  async search(query: string, opts: SearchBackendOptions = {}): Promise<SearchResult[]> {
-    // POST, not GET: the HTML endpoint expects a form submission, which is what the
-    // no-JS page itself sends. Pagination is DuckDuckGo's own `s` offset.
-    const body = new URLSearchParams({ q: query, b: '' });
-    if (opts.offset) body.set('s', String(opts.offset));
-
-    const res = await this.doFetch('https://html.duckduckgo.com/html/', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'User-Agent': BROWSER_UA,
-      },
-      body,
-      signal: opts.signal,
-    });
-
-    if (!res.ok) {
-      throw new SearchBackendError(`DuckDuckGo returned HTTP ${res.status}`, res.status);
-    }
-
-    const html = await res.text();
-    const blocked = detectBlockPage(html);
-    if (blocked) {
-      throw new SearchBackendError(
-        `DuckDuckGo served a ${blocked} instead of results. Wait a few minutes and retry, ` +
-        'or lower the query budget so the sweep asks less often.',
-      );
-    }
-
-    return parseDuckDuckGoHtml(html);
-  }
-}
-
-/**
- * Mojeek, with no API key.
- *
- * An independent crawler rather than a front-end onto someone else's index, which makes
- * it a genuine second opinion when DuckDuckGo is rate-limiting.
- */
-export class MojeekBackend implements SearchBackend {
-  readonly id = 'mojeek';
-  readonly displayName = 'Mojeek (no API key)';
-  readonly setupHint = 'Nothing to set up — this works out of the box.';
-
-  constructor(private doFetch: typeof fetch = globalThis.fetch) {}
-
-  isConfigured(): boolean {
-    return true;
-  }
-
-  async search(query: string, opts: SearchBackendOptions = {}): Promise<SearchResult[]> {
-    const url = new URL('https://www.mojeek.com/search');
-    url.searchParams.set('q', query);
-    if (opts.offset) url.searchParams.set('s', String(opts.offset));
-
-    const res = await this.doFetch(url, {
-      headers: {
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'User-Agent': BROWSER_UA,
-      },
-      signal: opts.signal,
-    });
-
-    if (!res.ok) throw new SearchBackendError(`Mojeek returned HTTP ${res.status}`, res.status);
-
-    const html = await res.text();
-    const blocked = detectBlockPage(html);
-    if (blocked) throw new SearchBackendError(`Mojeek served a ${blocked} instead of results.`);
-
-    return parseMojeekHtml(html);
-  }
-}
-
-/**
- * Tries each backend in turn and returns the first that answers with results.
- *
- * Keyless engines rate-limit, and one that is throttling right now should not end a
- * harvest when another is willing to answer. Only when every backend fails does the
- * error surface, and it names each failure rather than reporting an empty market.
- */
-export class FallbackBackend implements SearchBackend {
-  readonly id = 'fallback';
-  readonly displayName: string;
-  readonly setupHint = 'Nothing to set up — this works out of the box.';
-
-  constructor(private backends: SearchBackend[]) {
-    this.displayName = backends.map((b) => b.displayName).join(' -> ');
-  }
-
-  isConfigured(): boolean {
-    return this.backends.some((b) => b.isConfigured());
-  }
-
-  async search(query: string, opts: SearchBackendOptions = {}): Promise<SearchResult[]> {
-    const failures: string[] = [];
-
-    for (const backend of this.backends) {
-      if (!backend.isConfigured()) continue;
-      try {
-        const results = await backend.search(query, opts);
-        if (results.length > 0) return results;
-        // Zero results is a legitimate answer for a narrow query, so remember it and
-        // try the next engine rather than treating it as success or as failure.
-        failures.push(`${backend.displayName}: no results`);
-      } catch (err) {
-        failures.push(`${backend.displayName}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
-
-    if (failures.length === this.backends.length && failures.every((f) => !f.endsWith('no results'))) {
-      throw new SearchBackendError(`Every search backend failed.\n  ${failures.join('\n  ')}`);
-    }
-    return [];
-  }
-}
-
-/** A current, ordinary desktop browser string. Not a disguise: this IS a browser request
- * for a page meant to be read by browsers, and sending a blank or scripted-looking agent
- * gets a challenge page rather than the results the same person would see by hand. */
-const BROWSER_UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ' +
-  'Chrome/126.0.0.0 Safari/537.36';
 
 /**
  * Brave Search API. The default recommendation: it has a free tier, it indexes Zillow
@@ -360,16 +206,7 @@ export class CapturedBackend implements SearchBackend {
  * with instructions, never as "no homes found".
  */
 export function defaultBackends(): SearchBackend[] {
-  return [
-    // Keyed backends first when the user configured one: they are faster, higher-limit
-    // and not subject to scraping etiquette. But nothing REQUIRES one.
-    new BraveBackend(),
-    new GoogleCseBackend(),
-    new SearxngBackend(),
-    // The fallback that always works, with nothing to configure. Last in the list but
-    // first in practice, because the keyed ones report themselves unconfigured.
-    new FallbackBackend([new DuckDuckGoBackend(), new MojeekBackend()]),
-  ];
+  return [new BraveBackend(), new GoogleCseBackend(), new SearxngBackend()];
 }
 
 export function resolveBackend(
