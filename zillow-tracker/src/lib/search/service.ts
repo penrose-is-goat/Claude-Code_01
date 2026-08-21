@@ -72,7 +72,7 @@ export async function runSearch(
     }
 
     try {
-      const { raw } = await fetchAll(provider, {
+      const { raw, partial } = await fetchAll(provider, {
         area: areaQuery,
         filters: query.filters,
         // Geometry is enough for a geo-aware provider; a search-backed one needs a name.
@@ -99,7 +99,8 @@ export async function runSearch(
         providerId,
         ok: true,
         count: withOpenHouse.length,
-        message: skipped > 0 ? `${skipped} record(s) could not be parsed` : undefined,
+        message: [partial, skipped > 0 ? `${skipped} record(s) could not be parsed` : undefined]
+          .filter(Boolean).join(' — ') || undefined,
       });
     } catch (err) {
       // One provider failing must not sink the others — snapshot/csv routinely succeed

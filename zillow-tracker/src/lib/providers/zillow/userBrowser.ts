@@ -88,57 +88,207 @@ export interface RenderedPage {
   html: string;
   status: number;
   finalUrl: string;
+  /** True when a human had to solve a challenge before the page appeared. */
+  solvedChallenge?: boolean;
+}
+
+/**
+ * Selectors that mean "the listing data has arrived". Presence of one of these — not the
+ * HTTP status — is what decides whether a fetch succeeded.
+ */
+const CONTENT_READY = [
+  'script#__NEXT_DATA__',
+  '[data-testid="search-page-list-container"]',
+  '[id^="zpid_"]',
+];
+
+/** Text and markers that mean a challenge is on screen waiting for a human. */
+const CHALLENGE_MARKERS = [
+  'press & hold',
+  'press and hold',
+  'are you a human',
+  'verify you are a human',
+  'px-captcha',
+  'perimeterx',
+  '_px',
+];
+
+export interface UserBrowserFetchOptions extends UserBrowserOptions {
+  /**
+   * How long to leave a challenge on screen for a person to solve, in ms.
+   *
+   * Zillow serves its Press & Hold challenge WITH an HTTP 403. Treating that status as
+   * final was the bug: the tab was closed while the human was still holding the button,
+   * and a page that would have loaded seconds later was reported as a refusal. The
+   * status is now advisory and the content decides.
+   */
+  challengeTimeoutMs?: number;
+  /** Called when a challenge appears, so the caller can tell the user to solve it. */
+  onChallenge?: (info: { url: string }) => void;
+}
+
+/** Whether the page currently shows listing data. */
+async function hasContent(page: Page): Promise<boolean> {
+  return page
+    .evaluate(
+      (sel) => sel.some((s) => document.querySelector(s) !== null),
+      CONTENT_READY,
+    )
+    .catch(() => false);
+}
+
+/** Whether the page currently shows a human-verification challenge. */
+async function hasChallenge(page: Page): Promise<boolean> {
+  return page
+    .evaluate((markers) => {
+      const text = (document.body?.innerText ?? '').toLowerCase();
+      const html = document.documentElement.outerHTML.toLowerCase();
+      return markers.some((m) => text.includes(m) || html.includes(m));
+    }, CHALLENGE_MARKERS)
+    .catch(() => false);
 }
 
 /**
  * Opens a URL in the user's browser and returns what rendered.
  *
- * Uses a new tab in their existing context so their session applies, and closes it
- * afterwards so their browser is left as it was found. The tab is opened in the
- * background; nothing steals focus.
+ * The important behaviour is what happens on a challenge. Zillow answers with HTTP 403
+ * and a Press & Hold page; a person holds the button; the page then navigates itself to
+ * the real content. So this does not decide anything from the status code — it waits for
+ * listing data to appear, leaves the tab open and visible while it waits, and only
+ * reports a refusal if the data never comes.
+ *
+ * Solving the challenge also sets a cookie in that browser profile, so the next fetch
+ * in the same profile usually goes straight through. The persistent profile is what
+ * makes one solve last rather than being demanded on every search.
  */
 export async function fetchWithUserBrowser(
   url: string,
-  opts: UserBrowserOptions = {},
+  opts: UserBrowserFetchOptions = {},
 ): Promise<RenderedPage> {
   const timeout = opts.timeoutMs ?? 45_000;
+  const challengeTimeout = opts.challengeTimeoutMs ?? 180_000;
   const browser = await connectToUserBrowser(opts);
 
   // connectOverCDP hands back the browser's existing contexts. Using the first one is
-  // what makes this the user's session rather than a blank incognito profile — a fresh
-  // context would throw away the very thing that makes this work.
+  // what makes this the user's session rather than a blank profile — a fresh context
+  // would throw away the very thing that makes this work.
   const context: BrowserContext = browser.contexts()[0] ?? (await browser.newContext());
 
   let page: Page | null = null;
+  let solvedChallenge = false;
+
   try {
     page = await context.newPage();
     opts.signal?.addEventListener('abort', () => void page?.close().catch(() => {}), { once: true });
 
     const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout });
-    const status = response?.status() ?? 0;
+    let status = response?.status() ?? 0;
 
-    // Listing data is written during hydration, after DOMContentLoaded. Waiting for the
-    // data itself rather than a fixed sleep means slow pages still work, and a page that
-    // never produces it falls through to the timeout and is reported — instead of
-    // returning an empty shell that parses as zero listings.
-    await page
-      .waitForFunction(
-        () =>
-          document.querySelector('script#__NEXT_DATA__') !== null ||
-          document.querySelector('[data-testid="search-page-list-container"]') !== null ||
-          document.querySelector('[id^="zpid_"]') !== null,
-        undefined,
-        { timeout: Math.min(timeout, 25_000) },
-      )
-      .catch(() => {
-        /* The parser and the block detector decide what this page is. */
-      });
+    // Fast path: content already there.
+    let ready = await waitForContent(page, Math.min(timeout, 20_000));
 
-    return { html: await page.content(), status, finalUrl: page.url() };
+    if (!ready && (await hasChallenge(page))) {
+      solvedChallenge = true;
+      opts.onChallenge?.({ url });
+
+      // Bring the tab forward — a challenge nobody can see is a challenge nobody solves.
+      await page.bringToFront().catch(() => {});
+
+      // Wait for the human. The page navigates itself once the challenge clears, so
+      // this watches for content rather than for a click.
+      ready = await waitForContent(page, challengeTimeout);
+
+      if (ready) {
+        // The status from the challenge response is no longer what this page is.
+        status = 200;
+      }
+    }
+
+    const html = await page.content();
+    if (!ready) {
+      return { html, status: status || 403, finalUrl: page.url(), solvedChallenge };
+    }
+    return { html, status, finalUrl: page.url(), solvedChallenge };
   } finally {
-    // Leave their browser as we found it.
     await page?.close().catch(() => {});
     await browser.close().catch(() => {});
+  }
+}
+
+/** Polls for listing data, returning false on timeout rather than throwing. */
+async function waitForContent(page: Page, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await hasContent(page)) return true;
+    if (page.isClosed()) return false;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return false;
+}
+
+/**
+ * One attached browser, one tab, reused across a whole run.
+ *
+ * The first version connected, opened a tab, closed it and disconnected for EVERY page.
+ * A three-page search was three connect/disconnect cycles and three brand-new tabs
+ * hitting deep pagination URLs in seconds — which is both slow and exactly the pattern
+ * that gets a challenge thrown at you. Browsing normally means one tab that navigates,
+ * and that is also fewer chances to be asked to prove you are human.
+ *
+ * The session leaves the browser running when it closes; it only gives back the tab.
+ */
+export class UserBrowserSession {
+  private browser: Browser | null = null;
+  private page: Page | null = null;
+
+  constructor(private opts: UserBrowserFetchOptions = {}) {}
+
+  async fetch(url: string, overrides: UserBrowserFetchOptions = {}): Promise<RenderedPage> {
+    const opts = { ...this.opts, ...overrides };
+    const timeout = opts.timeoutMs ?? 45_000;
+    const challengeTimeout = opts.challengeTimeoutMs ?? 180_000;
+
+    if (!this.browser || !this.browser.isConnected()) {
+      this.browser = await connectToUserBrowser(opts);
+      this.page = null;
+    }
+    if (!this.page || this.page.isClosed()) {
+      const context = this.browser.contexts()[0] ?? (await this.browser.newContext());
+      this.page = await context.newPage();
+    }
+
+    const page = this.page;
+    opts.signal?.addEventListener('abort', () => void page.close().catch(() => {}), { once: true });
+
+    const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout });
+    let status = response?.status() ?? 0;
+    let solvedChallenge = false;
+
+    let ready = await waitForContent(page, Math.min(timeout, 20_000));
+
+    if (!ready && (await hasChallenge(page))) {
+      solvedChallenge = true;
+      opts.onChallenge?.({ url });
+      await page.bringToFront().catch(() => {});
+      ready = await waitForContent(page, challengeTimeout);
+      if (ready) status = 200;
+    }
+
+    const html = await page.content();
+    return {
+      html,
+      status: ready ? status : status || 403,
+      finalUrl: page.url(),
+      solvedChallenge,
+    };
+  }
+
+  /** Closes the tab and detaches. Never closes the person's browser. */
+  async close(): Promise<void> {
+    await this.page?.close().catch(() => {});
+    this.page = null;
+    await this.browser?.close().catch(() => {});
+    this.browser = null;
   }
 }
 

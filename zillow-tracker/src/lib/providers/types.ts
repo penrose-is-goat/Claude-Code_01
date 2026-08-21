@@ -88,17 +88,42 @@ export interface ListingProvider<TRaw = unknown> {
 }
 
 /** Convenience: drain every page of a provider for one area. */
+/**
+ * Convenience: drain every page of a provider for one area.
+ *
+ * A failure partway through KEEPS the pages already fetched. This is not politeness, it
+ * is the difference between working and not: a real run fetched page 1 of a Zillow
+ * search successfully, was challenged on page 2, and the exception discarded page 1 —
+ * so a search that had genuinely found forty homes reported zero. Later pages are
+ * always the least valuable ones, and losing them is a smaller failure than losing
+ * everything, so partial results are returned with the reason attached.
+ *
+ * A failure on the FIRST page has nothing to salvage and rethrows, because "no data and
+ * no error" is the one outcome a caller cannot act on.
+ */
 export async function fetchAll<TRaw>(
   provider: ListingProvider<TRaw>,
   opts: FetchOptions,
   maxPages = 20,
-): Promise<{ raw: TRaw[]; requestsUsed: number }> {
+): Promise<{ raw: TRaw[]; requestsUsed: number; partial?: string }> {
   const raw: TRaw[] = [];
   let cursor: string | undefined;
   let requestsUsed = 0;
 
   for (let page = 0; page < maxPages; page++) {
-    const result = await provider.fetchPage(opts, cursor);
+    let result;
+    try {
+      result = await provider.fetchPage(opts, cursor);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (page === 0) throw err;
+      return {
+        raw,
+        requestsUsed,
+        partial: `Stopped after page ${page} of results: ${message}`,
+      };
+    }
+
     raw.push(...result.raw);
     requestsUsed += result.requestsUsed;
     if (!result.cursor) break;

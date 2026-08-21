@@ -1,6 +1,6 @@
 import type { NormalizedListing } from '../normalized';
 import { browserAvailable, fetchRendered } from './browser';
-import { fetchWithUserBrowser, howToEnable, userBrowserAvailable } from './userBrowser';
+import { UserBrowserSession, howToEnable, userBrowserAvailable } from './userBrowser';
 import type {
   AreaQuery, FetchOptions, HealthCheckResult, ListingProvider, ProviderCapabilities, ProviderPage,
 } from '../types';
@@ -69,6 +69,9 @@ export class ZillowPublicProvider implements ListingProvider<NormalizedListing> 
   private lastRequestAt = 0;
   /** Why the browser transport was skipped, surfaced in healthCheck. */
   private browserNote: string | null = null;
+  /** Set while a human-verification challenge is waiting to be solved. */
+  private challengeNote: string | null = null;
+  private session: UserBrowserSession | null = null;
   private readonly opts: Required<Omit<ZillowProviderOptions, 'fetchImpl'>> & {
     fetchImpl: typeof fetch;
   };
@@ -229,13 +232,36 @@ export class ZillowPublicProvider implements ListingProvider<NormalizedListing> 
    * about this app, and the message says so instead of blaming the transport.
    */
   private async getViaUserBrowser(url: string, signal?: AbortSignal): Promise<string> {
-    const { html, status } = await fetchWithUserBrowser(url, { signal });
+    // One session per provider instance, so a multi-page search is one tab navigating
+    // rather than a new connection and a new tab per page.
+    this.session ??= new UserBrowserSession();
+
+    const { html, status, solvedChallenge } = await this.session.fetch(url, {
+      signal,
+      // Long enough for a person to notice the tab and hold the button. Only the first
+      // fetch normally needs this: solving sets a cookie in that browser profile, and
+      // subsequent pages in the same profile go straight through.
+      challengeTimeoutMs: Number(process.env.ZILLOW_CHALLENGE_TIMEOUT_MS ?? 180_000),
+      onChallenge: () => {
+        this.challengeNote =
+          'Zillow is asking your browser to confirm a human. Switch to the Chrome window ' +
+          'that just opened and press and hold the button — the search continues by itself ' +
+          'once you do.';
+        console.log(`[zillow] ${this.challengeNote}`);
+      },
+    });
+
+    if (solvedChallenge && status < 400) this.challengeNote = null;
 
     if (status === 403 || status === 429) {
       throw new ZillowBlockedError(
-        `Zillow returned HTTP ${status} to your own browser. Open ${url} in that same ` +
-        'browser window — if you see the same refusal by hand, this is about your ' +
-        'connection rather than about this app.',
+        `Zillow returned HTTP ${status} to your own browser and no listings appeared` +
+        (solvedChallenge
+          ? ' after waiting for the human-verification challenge to be solved. If the ' +
+            'challenge is still on screen, solve it and search again — the answer is ' +
+            'remembered for a while.'
+          : `. Open ${url} in that same browser window; if you see the same refusal by ` +
+            'hand, this is about your connection rather than about this app.'),
         status,
       );
     }

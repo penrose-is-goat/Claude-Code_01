@@ -4,7 +4,10 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fetchWithUserBrowser, howToEnable, userBrowserAvailable } from '../../src/lib/providers/zillow/userBrowser';
+import {
+  UserBrowserSession, fetchWithUserBrowser, howToEnable, userBrowserAvailable,
+} from '../../src/lib/providers/zillow/userBrowser';
+import { fetchAll } from '../../src/lib/providers/types';
 import { parseSearchPage } from '../../src/lib/providers/zillow/parse';
 
 /**
@@ -125,5 +128,170 @@ describe('when no browser is listening', () => {
     expect(help).toMatch(/macOS/);
     expect(help).toMatch(/Linux/);
     expect(help).toMatch(/never types or clicks/);
+  });
+});
+
+/**
+ * The challenge flow, which is what actually broke in the field.
+ *
+ * Zillow serves its Press & Hold challenge WITH HTTP 403. The first version treated
+ * that status as final, threw, and closed the tab — while the person was still holding
+ * the button. They watched the real results flash up in their own browser and the app
+ * reported a refusal. So the status is advisory and the presence of listing data is what
+ * decides.
+ *
+ * The server below reproduces that exactly: 403 plus a challenge page on the first
+ * request, then real content once "solved". Nothing is mocked — a real Chrome, a real
+ * navigation, and the production fetcher.
+ */
+describe.skipIf(!ready)('a challenge that resolves into content', () => {
+  const CHALLENGE = `<!doctype html><html><body>
+    <div id="px-captcha">Press &amp; Hold to confirm you are a human</div>
+    <script>
+      // Stands in for the person holding the button. The delay must exceed the initial
+      // content wait below, or the fetcher takes its fast path and the challenge branch
+      // — the one that actually broke in the field — is never exercised.
+      setTimeout(function () {
+        var s = document.createElement('script');
+        s.id = '__NEXT_DATA__'; s.type = 'application/json';
+        s.textContent = JSON.stringify({ props: { pageProps: { searchPageState: { cat1: { searchResults: {
+          mapResults: [{ zpid: "222", detailUrl: "/homedetails/9-Solved-Rd-Anytown-XX-00000/222_zpid/",
+            hdpData: { homeInfo: { zpid: 222, streetAddress: "9 Solved Rd", city: "Anytown", state: "XX",
+              zipcode: "00000", price: 750000, bedrooms: 4, bathrooms: 3, livingArea: 2000,
+              homeType: "SINGLE_FAMILY", homeStatus: "FOR_SALE", latitude: 1.5, longitude: -2.5 } } }]
+        } } } } } });
+        document.getElementById('px-captcha').remove();
+        document.body.appendChild(s);
+      }, 5000);
+    </script></body></html>`;
+
+  let challengeServer: Server | null = null;
+  let challengeBase = '';
+
+  it('waits for the human instead of reporting the 403 as final', async () => {
+    challengeServer = createServer((_req, res) => {
+      // The exact shape Zillow uses: a refusal status carrying a solvable challenge.
+      res.writeHead(403, { 'Content-Type': 'text/html' });
+      res.end(CHALLENGE);
+    });
+    await new Promise<void>((r) => challengeServer!.listen(0, '127.0.0.1', r));
+    const addr = challengeServer!.address();
+    challengeBase = typeof addr === 'object' && addr ? `http://127.0.0.1:${addr.port}` : '';
+
+    const notified: string[] = [];
+    const result = await fetchWithUserBrowser(`${challengeBase}/search/`, {
+      port: PORT,
+      timeoutMs: 2_500,
+      challengeTimeoutMs: 40_000,
+      onChallenge: ({ url }) => notified.push(url),
+    });
+
+    // The old behaviour: threw on 403 and closed the tab. The new behaviour:
+    expect(result.solvedChallenge).toBe(true);
+    expect(result.status).toBe(200);
+    expect(notified).toHaveLength(1);
+
+    const { listings } = parseSearchPage(result.html, { timezone: 'UTC', fetchedAt: new Date() });
+    expect(listings).toHaveLength(1);
+    expect(listings[0]).toMatchObject({ addressLine1: '9 Solved Rd', listPrice: 750000, lat: 1.5 });
+
+    challengeServer.close();
+  }, 90_000);
+
+  it('reports a refusal when the challenge never resolves', async () => {
+    const stuck = createServer((_req, res) => {
+      res.writeHead(403, { 'Content-Type': 'text/html' });
+      res.end('<html><body><div id="px-captcha">Press &amp; Hold</div></body></html>');
+    });
+    await new Promise<void>((r) => stuck.listen(0, '127.0.0.1', r));
+    const addr = stuck.address();
+    const base = typeof addr === 'object' && addr ? `http://127.0.0.1:${addr.port}` : '';
+
+    const result = await fetchWithUserBrowser(`${base}/search/`, {
+      port: PORT, timeoutMs: 4_000, challengeTimeoutMs: 4_000,
+    });
+
+    // Never getting content is still a 403 — the point is that it is reported after
+    // waiting, not instead of waiting.
+    expect(result.status).toBe(403);
+    stuck.close();
+  }, 60_000);
+});
+
+/**
+ * Reusing one tab, and keeping what earlier pages returned.
+ *
+ * These two together are the actual field failure. A real search fetched page 1 of a
+ * Zillow result set successfully, was challenged on page 2, and the exception threw away
+ * page 1 — so a search that had genuinely found forty homes reported zero, and the
+ * person watched their own results flash up in their own browser before the app told
+ * them nothing matched.
+ */
+describe.skipIf(!ready)('one session across several pages', () => {
+  it('navigates the same tab instead of opening one per page', async () => {
+    const session = new UserBrowserSession({ port: PORT, timeoutMs: 15_000 });
+    try {
+      const a = await session.fetch(`${base}/page/1/`);
+      const b = await session.fetch(`${base}/page/2/`);
+      expect(a.status).toBe(200);
+      expect(b.status).toBe(200);
+      // Both fetches parsed, from one attached browser and one tab.
+      for (const r of [a, b]) {
+        expect(parseSearchPage(r.html, { timezone: 'UTC', fetchedAt: new Date() }).listings).toHaveLength(1);
+      }
+    } finally {
+      await session.close();
+    }
+  }, 90_000);
+
+  it('leaves the browser running after the session closes', async () => {
+    const session = new UserBrowserSession({ port: PORT });
+    await session.fetch(`${base}/page/1/`);
+    await session.close();
+    // Closing a session must never close a window the person is using.
+    const res = await fetch(`http://127.0.0.1:${PORT}/json/version`);
+    expect(res.ok).toBe(true);
+  }, 60_000);
+});
+
+describe('fetchAll keeps what earlier pages returned', () => {
+  const capabilities = {
+    supportsOpenHouses: true, supportsPolygonQuery: true, supportsRadiusQuery: false,
+    supportsPhotos: false, supportsPriceHistory: false,
+    rateLimit: { requestsPerRun: 4, minIntervalMs: 0 },
+  };
+
+  it('returns page 1 when page 2 is challenged, instead of throwing it away', async () => {
+    let call = 0;
+    const provider = {
+      id: 'zillow' as const, displayName: 'x', capabilities,
+      healthCheck: async () => ({ ok: true, message: '' }),
+      normalize: (r: { id: string }) => r,
+      fetchPage: async () => {
+        if (++call === 1) return { raw: [{ id: 'a' }, { id: 'b' }], cursor: '2', requestsUsed: 1 };
+        throw new Error('Zillow returned HTTP 403 to your own browser');
+      },
+    };
+
+    const result = await fetchAll(provider as never, {
+      area: { kind: 'cityRadius', city: 'X', state: 'YY', radiusMiles: 5 },
+    });
+
+    expect(result.raw).toHaveLength(2);
+    expect(result.partial).toMatch(/Stopped after page 1/);
+    expect(result.partial).toMatch(/403/);
+  });
+
+  it('still throws when the FIRST page fails, because there is nothing to salvage', async () => {
+    const provider = {
+      id: 'zillow' as const, displayName: 'x', capabilities,
+      healthCheck: async () => ({ ok: true, message: '' }),
+      normalize: (r: unknown) => r,
+      fetchPage: async () => { throw new Error('blocked'); },
+    };
+
+    await expect(fetchAll(provider as never, {
+      area: { kind: 'cityRadius', city: 'X', state: 'YY', radiusMiles: 5 },
+    })).rejects.toThrow(/blocked/);
   });
 });
