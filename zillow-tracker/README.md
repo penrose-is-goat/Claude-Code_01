@@ -1,5 +1,26 @@
 # Zillow Tracker
 
+## What do I run?
+
+**Windows:** double-click **`START-HERE.bat`** in this folder.
+**macOS:** double-click **`START-HERE.command`** in this folder.
+
+That is the whole thing. It installs everything, loads the data, and starts the app.
+The first run takes a few minutes. When it finishes, open **http://localhost:3000**.
+
+If you would rather use a terminal, open one *in this folder* and run:
+
+```
+npm run go
+```
+
+Both do exactly the same thing.
+
+> The page opens **empty on purpose** — no area is built into this app. Type a place or
+> draw an area on the dashboard to search. The bundled data covers Boulder, CO; anywhere
+> else correctly shows nothing until you harvest it (see "Harvesting your own area").
+
+---
 Watches for-sale listings and open houses in neighborhoods you define, remembers what
 changed, lets you save the ones you care about with notes, and exports to a real Excel
 workbook.
