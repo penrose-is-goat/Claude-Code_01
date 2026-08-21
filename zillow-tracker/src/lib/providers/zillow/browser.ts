@@ -107,6 +107,30 @@ async function launch(): Promise<Browser> {
         // exists purely to be detected.
         '--disable-blink-features=AutomationControlled',
         '--no-sandbox',
+        /*
+         * Keep the browser off the local network.
+         *
+         * Chromium opens a debugging listener and, on Windows, that listener is what
+         * makes the firewall ask whether chrome-headless-shell may access public
+         * networks. Binding it to loopback means the honest answer to that prompt is
+         * "no" — nothing outside this machine ever needs to reach it.
+         *
+         * The rest are features that reach the network on their own behalf: background
+         * component updates, translation, extension installs, crash and metrics upload.
+         * None are wanted by a browser whose entire job is to open one page.
+         */
+        '--remote-debugging-address=127.0.0.1',
+        '--disable-background-networking',
+        '--disable-component-update',
+        '--disable-default-apps',
+        '--disable-extensions',
+        '--disable-sync',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--metrics-recording-only',
+        '--disable-breakpad',
+        '--no-pings',
+        '--disable-features=Translate,MediaRouter,OptimizationHints',
       ],
     });
   } catch (err) {

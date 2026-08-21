@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H 127.0.0.1",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -H 127.0.0.1",
     "worker": "tsx src/worker/index.ts",
     "poll": "tsx scripts/poll.ts",
     "harvest": "tsx scripts/harvest.ts",
