@@ -102,6 +102,15 @@ if (existsSync(capture)) {
 step('Checking it works');
 run(NPX, ['vitest', 'run', '--reporter=dot'], { optional: true });
 
+// `--no-start` runs every step except the server, so CI can exercise this whole script
+// on a real Windows runner. Without it, the only way to find out that the start path is
+// broken on Windows is for someone on Windows to try to start the app.
+if (process.argv.includes('--no-start')) {
+  console.log(`\n${bold('==> Skipping the server (--no-start)')}`);
+  console.log('  Every setup step above completed.');
+  process.exit(0);
+}
+
 step('Starting the app');
 console.log(`
   Open ${bold('http://localhost:3000')}

@@ -102,3 +102,25 @@ jobs:
 
           [ "$violations" -eq 0 ] && echo "OK: websearch contacts only the configured search backend"
           exit "$violations"
+
+  # The Ubuntu job above cannot catch a Windows-only break in the start path, and twice
+  # it did not: `npm run go` first ran a bash script that PowerShell has no way to
+  # execute, then spawned npm.cmd without a shell, which Node refuses with EINVAL since
+  # the CVE-2024-27980 fix. Both shipped green. Both were found by a person on Windows.
+  #
+  # This job runs the real start script on a real Windows runner, doing everything except
+  # launching the server.
+  start-script-windows:
+    runs-on: windows-latest
+    env:
+      DATABASE_URL: file:../data/ci.db
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run the documented start command
+        working-directory: zillow-tracker
+        run: npm run go -- --no-start
