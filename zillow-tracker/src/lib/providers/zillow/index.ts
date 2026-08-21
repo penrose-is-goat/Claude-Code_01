@@ -1,5 +1,6 @@
 import type { NormalizedListing } from '../normalized';
 import { browserAvailable, fetchRendered } from './browser';
+import { fetchWithUserBrowser, howToEnable, userBrowserAvailable } from './userBrowser';
 import type {
   AreaQuery, FetchOptions, HealthCheckResult, ListingProvider, ProviderCapabilities, ProviderPage,
 } from '../types';
@@ -39,15 +40,16 @@ export interface ZillowProviderOptions {
   /**
    * How pages are retrieved.
    *
-   *  - `browser` drives a real headless Chromium. Slower to start, and the only mode
-   *    that has any prospect of working: Zillow refuses a plain fetch with 403 because
-   *    of what the client is, not where it is from.
-   *  - `fetch` is the plain HTTP path, kept because it is what the tests exercise and
-   *    what a permitted deployment would use.
-   *  - `auto` (the default) tries the browser and falls back to fetch when Playwright or
-   *    Chromium is not installed.
+   *  - `user-browser` attaches to the Chrome the person already has open, through its
+   *    DevTools port. The only mode measured to work: a launched headless Chromium was
+   *    refused 403 by Zillow from a real residential connection, while a browser someone
+   *    started for their own use is not distinguishable from that person browsing —
+   *    because it is that person browsing.
+   *  - `browser` launches a headless Chromium. Kept for completeness; expect a 403.
+   *  - `fetch` is the plain HTTP path. Expect a 403.
+   *  - `auto` (the default) tries them in that order.
    */
-  transport?: 'auto' | 'browser' | 'fetch';
+  transport?: 'auto' | 'user-browser' | 'browser' | 'fetch';
 }
 
 export class ZillowPublicProvider implements ListingProvider<NormalizedListing> {
@@ -83,6 +85,10 @@ export class ZillowPublicProvider implements ListingProvider<NormalizedListing> 
   }
 
   async healthCheck(area?: AreaQuery): Promise<HealthCheckResult> {
+    const attached = await userBrowserAvailable();
+    if (attached.ok) return { ok: true, message: attached.message };
+    if (this.opts.transport === 'user-browser') return { ok: false, message: howToEnable() };
+
     try {
       // No baked-in city. A health check is "is this source reachable and still the
       // shape we parse", and any area answers that — so it uses the one the caller is
@@ -134,7 +140,18 @@ export class ZillowPublicProvider implements ListingProvider<NormalizedListing> 
   private async get(url: string, signal?: AbortSignal): Promise<string> {
     await this.pace();
 
-    if (this.opts.transport !== 'fetch') {
+    // The user's own browser first: it is the transport that was measured to work.
+    if (this.opts.transport === 'auto' || this.opts.transport === 'user-browser') {
+      try {
+        return await this.getViaUserBrowser(url, signal);
+      } catch (err) {
+        if (err instanceof ZillowBlockedError) throw err;
+        if (this.opts.transport === 'user-browser') throw err;
+        this.browserNote = err instanceof Error ? err.message : String(err);
+      }
+    }
+
+    if (this.opts.transport === 'auto' || this.opts.transport === 'browser') {
       try {
         return await this.getViaBrowser(url, signal);
       } catch (err) {
@@ -203,6 +220,29 @@ export class ZillowPublicProvider implements ListingProvider<NormalizedListing> 
    * says so: the plain fetch is refused for being an obvious non-browser, while a real
    * Chromium being refused is Zillow declining this connection specifically.
    */
+  /**
+   * Reads the page through the browser the person already has open.
+   *
+   * A 403 here means something quite different from a 403 anywhere else: it would mean
+   * Zillow is refusing this person's own browser, which is exactly what they would see
+   * by typing the address in themselves. That is a fact about their access rather than
+   * about this app, and the message says so instead of blaming the transport.
+   */
+  private async getViaUserBrowser(url: string, signal?: AbortSignal): Promise<string> {
+    const { html, status } = await fetchWithUserBrowser(url, { signal });
+
+    if (status === 403 || status === 429) {
+      throw new ZillowBlockedError(
+        `Zillow returned HTTP ${status} to your own browser. Open ${url} in that same ` +
+        'browser window — if you see the same refusal by hand, this is about your ' +
+        'connection rather than about this app.',
+        status,
+      );
+    }
+    if (status >= 400) throw new Error(`Zillow returned HTTP ${status} for ${url}`);
+    return html;
+  }
+
   private async getViaBrowser(url: string, signal?: AbortSignal): Promise<string> {
     const { html, status } = await fetchRendered(url, { signal });
 

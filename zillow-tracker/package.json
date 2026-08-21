@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev -H 127.0.0.1",
+    "browser": "node scripts/start-browser.mjs",
     "build": "next build",
     "start": "next start -H 127.0.0.1",
     "worker": "tsx src/worker/index.ts",

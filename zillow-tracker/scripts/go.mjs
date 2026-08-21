@@ -139,7 +139,12 @@ if (process.argv.includes('--no-start')) {
 
 step('Starting the app');
 console.log(`
-  Open ${bold('http://localhost:3000')}
+  ${bold('First, in a SECOND terminal, run:  npm run browser')}
+  That opens your own Chrome with a local debugging port. Zillow refuses a headless
+  browser with HTTP 403 — measured, not assumed — but it does not refuse yours.
+  Leave that window open while you use the app.
+
+  Then open ${bold('http://localhost:3000')}
 
   The app starts ${bold('empty on purpose')} — no area is built in.
   Type a place or draw an area on the dashboard to search.

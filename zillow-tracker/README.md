@@ -2,6 +2,26 @@
 
 ## What do I run?
 
+**Two commands, in two terminals.**
+
+Terminal 1 — your browser, with a local debugging port open:
+```
+npm run browser
+```
+Terminal 2 — the app:
+```
+npm run go
+```
+Then open **http://localhost:3000**.
+
+Zillow answers a headless browser with HTTP 403. That is measured from a real
+residential connection, not assumed, which is why the app reads pages through the
+browser you already use instead of one it launches. It opens pages you could open
+yourself, reads what renders, and closes the tab — it never types, clicks or submits,
+and the debugging port listens on 127.0.0.1 only.
+
+### The older instructions
+
 **Windows:** double-click **`START-HERE.bat`** in this folder.
 **macOS:** double-click **`START-HERE.command`** in this folder.
 
