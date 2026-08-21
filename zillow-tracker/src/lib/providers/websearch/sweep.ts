@@ -146,6 +146,16 @@ export function planFacetQueries(t: SweepTarget, opts: { openHouseOnly?: boolean
 }
 
 /**
+ * The query that asks Zillow's index what an area is made of.
+ *
+ * The answer comes back as index pages — neighborhoods, ZIPs — each with its own count
+ * in its title, which is what makes the next split decision.
+ */
+export function planSubAreaQuery(label: string, openHouseOnly = false): string {
+  return `Zillow "${label}" ${openHouseOnly ? 'open houses' : 'homes for sale neighborhoods'}`;
+}
+
+/**
  * Phase 3: one query per street already known to have listings.
  *
  * This is the address-shaped query the user described, generalized: rather than needing

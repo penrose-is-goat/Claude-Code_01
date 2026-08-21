@@ -176,6 +176,17 @@ describe('search URL building', () => {
       .toBe('https://www.zillow.com/boulder-co/');
   });
 
+  it('uses the map-bounds spelling of the open-house filter for a drawn area', () => {
+    // Two real, indexed Zillow URLs prove the two spellings are not interchangeable:
+    // https://www.zillow.com/boulder-co/open-house/  (area slug)
+    // https://www.zillow.com/homes/for_sale/1_open/  (map bounds)
+    const drawn = buildSearchUrl(
+      { kind: 'bbox', minLat: 39.9, maxLat: 40.1, minLng: -105.4, maxLng: -105.1 }, 1, true,
+    );
+    expect(drawn).toContain('/homes/for_sale/1_open/');
+    expect(drawn).not.toContain('/homes/open-house/');
+  });
+
   it('builds an open-house URL', () => {
     expect(buildSearchUrl({ kind: 'cityRadius', city: 'Boulder', state: 'CO', radiusMiles: 5 }, 1, true))
       .toBe('https://www.zillow.com/boulder-co/open-house/');
@@ -202,6 +213,7 @@ describe('search URL building', () => {
 
   it('sends a bbox through as bounds too', () => {
     const url = buildSearchUrl({ kind: 'bbox', minLat: 39.9, maxLat: 40.1, minLng: -105.4, maxLng: -105.1 });
+    expect(url).toContain('/homes/for_sale/');
     const state = JSON.parse(decodeURIComponent(url.split('searchQueryState=')[1]));
     expect(state.mapBounds.north).toBe(40.1);
     expect(state.mapBounds.west).toBe(-105.4);

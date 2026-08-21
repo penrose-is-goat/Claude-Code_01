@@ -180,6 +180,12 @@ export class ZillowPublicProvider implements ListingProvider<NormalizedListing> 
  */
 export function buildSearchUrl(area: AreaQuery, page = 1, openHouseOnly = false): string {
   const base = 'https://www.zillow.com';
+  // Zillow spells the open-house filter two different ways, and which one is valid
+  // depends on the URL form. An area-slug page takes the `/open-house/` path segment
+  // (`/boulder-co/open-house/`, `/fl/open-house/`). A map-bounds query lives under
+  // `/homes/` and takes `for_sale/1_open/` instead — both confirmed against real indexed
+  // Zillow URLs. Using the slug spelling under /homes/ built a URL that is not the
+  // open-house filter at all, so every drawn open-house search asked the wrong question.
   const suffix = openHouseOnly ? 'open-house/' : '';
   const paged = page > 1 ? `${page}_p/` : '';
 
@@ -197,12 +203,12 @@ export function buildSearchUrl(area: AreaQuery, page = 1, openHouseOnly = false)
     // the exact shape is re-applied locally afterwards, since a box is only ever a
     // superset of the ring the user drew.
     case 'bbox':
-      return boundsUrl(base, suffix, paged, area, page);
+      return boundsUrl(base, openHouseOnly, paged, area, page);
 
     case 'polygon': {
       const lngs = area.ring.map((r) => r[0]);
       const lats = area.ring.map((r) => r[1]);
-      return boundsUrl(base, suffix, paged, {
+      return boundsUrl(base, openHouseOnly, paged, {
         minLat: Math.min(...lats), maxLat: Math.max(...lats),
         minLng: Math.min(...lngs), maxLng: Math.max(...lngs),
       }, page);
@@ -217,7 +223,7 @@ export function buildSearchUrl(area: AreaQuery, page = 1, openHouseOnly = false)
  */
 function boundsUrl(
   base: string,
-  suffix: string,
+  openHouseOnly: boolean,
   paged: string,
   b: { minLat: number; maxLat: number; minLng: number; maxLng: number },
   page: number,
@@ -229,7 +235,8 @@ function boundsUrl(
     filterState: { sortSelection: { value: 'globalrelevanceex' }, isAllHomes: { value: true } },
     pagination: page > 1 ? { currentPage: page } : {},
   };
-  return `${base}/homes/${suffix}${paged}?searchQueryState=${encodeURIComponent(JSON.stringify(state))}`;
+  const facet = openHouseOnly ? 'for_sale/1_open/' : 'for_sale/';
+  return `${base}/homes/${facet}${paged}?searchQueryState=${encodeURIComponent(JSON.stringify(state))}`;
 }
 
 export function slugify(s: string): string {

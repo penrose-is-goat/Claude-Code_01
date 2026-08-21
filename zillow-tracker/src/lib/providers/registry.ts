@@ -1,5 +1,6 @@
 import type { ListingProvider, ProviderId } from './types';
 import { WebSearchProvider } from './websearch';
+import { RentCastProvider } from './rentcast';
 import { SnapshotProvider } from './snapshot';
 import { ZillowPublicProvider } from './zillow';
 import { CsvImportProvider } from './csv';
@@ -24,6 +25,8 @@ function create(id: ProviderId): ListingProvider<any> {
   switch (id) {
     case 'websearch':
       return new WebSearchProvider();
+    case 'rentcast':
+      return new RentCastProvider();
     case 'snapshot':
       return new SnapshotProvider();
     case 'zillow':
@@ -47,4 +50,4 @@ export function resetRegistry(): void {
  * so a licensed or otherwise-permitted deployment can still use it, and `snapshot`
  * follows to contribute the open-house windows search results do not carry.
  */
-export const ALL_PROVIDER_IDS: ProviderId[] = ['websearch', 'zillow', 'snapshot', 'csv'];
+export const ALL_PROVIDER_IDS: ProviderId[] = ['websearch', 'rentcast', 'zillow', 'snapshot', 'csv'];
