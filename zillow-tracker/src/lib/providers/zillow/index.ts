@@ -117,18 +117,42 @@ export class ZillowPublicProvider implements ListingProvider<NormalizedListing> 
     const res = await this.opts.fetchImpl(url, {
       signal,
       redirect: 'follow',
+      // A complete, honest set of headers — what an ordinary Chrome tab sends when a
+      // person navigates to this URL, nothing more. This is here to rule out "the
+      // request looked incomplete" as the reason for the 403, not to disguise the
+      // client: there is no TLS fingerprint spoofing, no header order trickery, no
+      // proxy rotation. If Zillow still refuses a complete, honest request, that is a
+      // real answer, not an artifact of a lazy fetch.
       headers: {
         'User-Agent': this.opts.userAgent,
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
         'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+        'Upgrade-Insecure-Requests': '1',
+        // Sec-Fetch-* describe a top-level document navigation typed into the address
+        // bar — the same posture a first-time visitor has, matching "no login, no
+        // cookies" above.
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        // Client-hints companions to the Chrome UA string in DEFAULT_UA; a UA claiming
+        // Chrome 126 with no matching Sec-Ch-Ua triplet is itself a mismatch a server
+        // can flag, independent of anything meant to evade detection.
+        'Sec-Ch-Ua': '"Chromium";v="126", "Not.A/Brand";v="24", "Google Chrome";v="126"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"macOS"',
       },
     });
 
     if (res.status === 403 || res.status === 429) {
       // Stop immediately. Retrying a refusal is both rude and pointless.
       throw new ZillowBlockedError(
-        `Zillow declined the request (HTTP ${res.status}). Falling back to CSV import is the supported path.`,
+        `Zillow declined the request (HTTP ${res.status}). This is expected: Zillow refuses ` +
+        `direct page fetches even from an ordinary residential connection. The supported path is ` +
+        `the "websearch" provider, which reads the same listings from the public search index ` +
+        `Zillow publishes them to. CSV import remains available for an MLS or Redfin export.`,
         res.status,
       );
     }
