@@ -18,9 +18,28 @@ import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-// npm ships as npm.cmd on Windows, and spawn without a shell will not find the bare name.
-const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const NPX = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+/*
+ * Running npm from Node on Windows.
+ *
+ * npm is npm.cmd there, and since Node 20.12 / 22 (the fix for CVE-2024-27980) spawning
+ * a .cmd file WITHOUT a shell throws EINVAL outright. Spawning it WITH a shell works, and
+ * then the bare name `npm` resolves through PATHEXT anyway — so Windows takes the shell
+ * path and everything else keeps the safer shell-free path.
+ *
+ * The cost of a shell is that arguments are re-parsed by cmd.exe, so anything containing
+ * a space or a shell metacharacter has to be quoted. `--place "Boulder, CO"` is exactly
+ * such an argument, which is why quoting is not optional here.
+ */
+const isWindows = process.platform === 'win32';
+const NPM = 'npm';
+const NPX = 'npx';
+
+/** Quotes an argument for cmd.exe when, and only when, it needs it. */
+function quoteForShell(arg) {
+  if (!isWindows) return arg;
+  if (arg.length > 0 && !/[\s"&|<>^()%!,]/.test(arg)) return arg;
+  return `"${arg.replace(/"/g, '\\"')}"`;
+}
 
 const bold = (s) => (process.stdout.isTTY ? `\x1b[1m${s}\x1b[0m` : s);
 const dim = (s) => (process.stdout.isTTY ? `\x1b[2m${s}\x1b[0m` : s);
@@ -31,7 +50,14 @@ function step(label) {
 
 /** Runs a command, inheriting stdio. Returns the exit code instead of throwing. */
 function run(cmd, args, { optional = false } = {}) {
-  const result = spawnSync(cmd, args, { cwd: root, stdio: 'inherit', shell: false });
+  const result = spawnSync(cmd, isWindows ? args.map(quoteForShell) : args, {
+    cwd: root,
+    stdio: 'inherit',
+    shell: isWindows,
+    // With a shell, cmd.exe has already parsed the arguments; asking Node to escape them
+    // again would double-escape the quotes just added above.
+    windowsVerbatimArguments: isWindows,
+  });
 
   if (result.error) {
     if (result.error.code === 'ENOENT') {
