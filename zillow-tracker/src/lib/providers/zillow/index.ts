@@ -1,10 +1,14 @@
 import type { NormalizedListing } from '../normalized';
 import { browserAvailable, fetchRendered } from './browser';
 import { UserBrowserSession, howToEnable, userBrowserAvailable } from './userBrowser';
+import { querySearchApi, type SearchQueryState } from './searchApi';
+import { boundsOf } from './bounds';
 import type {
   AreaQuery, FetchOptions, HealthCheckResult, ListingProvider, ProviderCapabilities, ProviderPage,
 } from '../types';
-import { parseSearchPage, ZillowParseError, type ParseContext } from './parse';
+import {
+  ZillowParseError, normalizeZillowResult, parseSearchPage, type ParseContext,
+} from './parse';
 
 /**
  * Reads Zillow's public, logged-out search pages.
@@ -72,6 +76,10 @@ export class ZillowPublicProvider implements ListingProvider<NormalizedListing> 
   /** Set while a human-verification challenge is waiting to be solved. */
   private challengeNote: string | null = null;
   private session: UserBrowserSession | null = null;
+  /** The search page the session is currently sitting on. */
+  private landedOn: string | null = null;
+  /** Why the JSON path was skipped, if it was. */
+  private apiNote: string | null = null;
   private readonly opts: Required<Omit<ZillowProviderOptions, 'fetchImpl'>> & {
     fetchImpl: typeof fetch;
   };
@@ -113,6 +121,20 @@ export class ZillowPublicProvider implements ListingProvider<NormalizedListing> 
 
   async fetchPage(opts: FetchOptions, cursor?: string): Promise<ProviderPage<NormalizedListing>> {
     const page = cursor ? Number(cursor) : 1;
+
+    // Preferred path: one navigation to establish the session, then every page of
+    // results queried as JSON from inside that loaded page — which is what Zillow's own
+    // app does when you turn a page, and means a human clears a verification prompt at
+    // most once per search rather than once per page.
+    if (this.opts.transport === 'auto' || this.opts.transport === 'user-browser') {
+      try {
+        return await this.fetchPageViaApi(opts, page);
+      } catch (err) {
+        if (this.opts.transport === 'user-browser') throw err;
+        this.apiNote = err instanceof Error ? err.message : String(err);
+      }
+    }
+
     const url = buildSearchUrl(opts.area, page, Boolean(opts.filters?.openHouseOnly));
 
     const html = await this.get(url, opts.signal);
@@ -223,6 +245,73 @@ export class ZillowPublicProvider implements ListingProvider<NormalizedListing> 
    * says so: the plain fetch is refused for being an obvious non-browser, while a real
    * Chromium being refused is Zillow declining this connection specifically.
    */
+  /**
+   * Fetches one page of results as JSON, from inside a loaded Zillow page.
+   *
+   * The navigation happens once per provider instance. Every later page reuses that
+   * same document, so a multi-page search is one page load and N in-page requests
+   * rather than N page loads.
+   */
+  private async fetchPageViaApi(
+    opts: FetchOptions,
+    pageNumber: number,
+  ): Promise<ProviderPage<NormalizedListing>> {
+    this.session ??= new UserBrowserSession();
+
+    const landingUrl = buildSearchUrl(opts.area, 1, Boolean(opts.filters?.openHouseOnly));
+
+    if (!this.landedOn || this.landedOn !== landingUrl) {
+      await this.session.openPage(landingUrl, {
+        challengeTimeoutMs: Number(process.env.ZILLOW_CHALLENGE_TIMEOUT_MS ?? 180_000),
+        signal: opts.signal,
+        onChallenge: () => {
+          this.challengeNote =
+            'Zillow is asking your browser to confirm a human. Switch to that Chrome ' +
+            'window and press and hold the button — the search continues by itself, and ' +
+            'the rest of this search will not ask again.';
+          console.log(`[zillow] ${this.challengeNote}`);
+        },
+      });
+      this.landedOn = landingUrl;
+    }
+
+    const page = await this.session.openPage(landingUrl, { signal: opts.signal });
+    const bounds = boundsOf(opts.area);
+
+    const state: SearchQueryState = {
+      isMapVisible: true,
+      isListVisible: true,
+      mapBounds: bounds,
+      pagination: pageNumber > 1 ? { currentPage: pageNumber } : undefined,
+      filterState: opts.filters?.openHouseOnly ? { isOpenHousesOnly: { value: true } } : undefined,
+    };
+
+    const result = await querySearchApi(page, state);
+    const ctx = this.ctx();
+
+    const listings: NormalizedListing[] = [];
+    let skipped = 0;
+    for (const row of result.results) {
+      try {
+        listings.push(normalizeZillowResult(row, ctx));
+      } catch {
+        skipped++;
+      }
+    }
+    if (skipped > 0) console.warn(`[zillow] skipped ${skipped} unparseable result(s) on page ${pageNumber}`);
+
+    // Zillow reports how many pages exist, so pagination follows its answer instead of
+    // guessing from how full a page looked.
+    const totalPages = result.totalPages ?? 1;
+    const hasMore = pageNumber < Math.min(totalPages, 20) && listings.length > 0;
+
+    return {
+      raw: listings,
+      cursor: hasMore ? String(pageNumber + 1) : undefined,
+      requestsUsed: 1,
+    };
+  }
+
   /**
    * Reads the page through the browser the person already has open.
    *

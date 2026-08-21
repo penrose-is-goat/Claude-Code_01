@@ -283,6 +283,18 @@ export class UserBrowserSession {
     };
   }
 
+  /**
+   * Navigates and hands back the live page, so a caller can keep working inside it.
+   *
+   * This is what makes an in-page API query possible: the request has to be issued by
+   * the loaded document, so the document has to outlive the fetch that loaded it.
+   */
+  async openPage(url: string, overrides: UserBrowserFetchOptions = {}): Promise<Page> {
+    await this.fetch(url, overrides);
+    if (!this.page) throw new UserBrowserUnavailableError('The page closed unexpectedly.');
+    return this.page;
+  }
+
   /** Closes the tab and detaches. Never closes the person's browser. */
   async close(): Promise<void> {
     await this.page?.close().catch(() => {});
