@@ -70,6 +70,35 @@ describe('captured snapshots are scoped to the place being searched', () => {
   });
 });
 
+describe('the scheduled poll path carries the place name, not just the geometry', () => {
+  // Scoping snapshots to a place immediately created a second way to return nothing:
+  // the poll path built its SearchSpec from geometry alone, so a saved DRAWN search
+  // refreshed on a schedule matched no city, failed closed, and wrote an empty market
+  // over a good one. The interactive search path passed the hint; the poll path did not.
+  it('SearchSpec exposes placeHint so a drawn search still matches on a refresh', async () => {
+    const { placeHintFor } = await import('../../src/lib/search/service');
+
+    // A drawn ring the user labelled — the only name such a search ever has.
+    expect(placeHintFor({ kind: 'drawn', ring: [[0, 0], [1, 1], [0, 1]], label: 'Boulder, CO' }))
+      .toBe('Boulder, CO');
+
+    // And that hint is what makes the snapshot store return anything for it.
+    expect(filterToPlace(ROWS, {
+      area: { kind: 'bbox', minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+      placeHint: placeHintFor({ kind: 'drawn', ring: [[0, 0], [1, 1], [0, 1]], label: 'Boulder, CO' }),
+    }).map((l) => l.city)).toEqual(['Boulder']);
+  });
+
+  it('an unlabelled drawn search has no hint, and that is reported as no data', async () => {
+    const { placeHintFor } = await import('../../src/lib/search/service');
+    const hint = placeHintFor({ kind: 'drawn', ring: [[0, 0], [1, 1], [0, 1]] });
+    expect(hint).toBeUndefined();
+    expect(filterToPlace(ROWS, {
+      area: { kind: 'bbox', minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 }, placeHint: hint,
+    })).toEqual([]);
+  });
+});
+
 describe('filterToLocation does not keep another city as merely unplaceable', () => {
   const resolved = { displayName: 'Austin, Texas', lat: 30.27, lng: -97.74, city: 'Austin', state: 'TX' };
   const place = { kind: 'place' as const, query: 'Austin, TX', radiusMiles: 25 };

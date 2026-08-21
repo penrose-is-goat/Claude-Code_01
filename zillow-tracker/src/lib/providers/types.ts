@@ -1,6 +1,6 @@
 import type { NormalizedListing, PropertyType } from './normalized';
 
-export type ProviderId = 'websearch' | 'rentcast' | 'snapshot' | 'zillow' | 'csv';
+export type ProviderId = 'websearch' | 'snapshot' | 'zillow' | 'csv';
 
 /**
  * Providers advertise what they can do; the scheduler and UI degrade gracefully rather

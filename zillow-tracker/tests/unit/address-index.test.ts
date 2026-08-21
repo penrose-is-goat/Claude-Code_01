@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { splitCircle, splitSearch, type Circle } from '../../src/lib/providers/rentcast/split';
-import {
-  RentCastProvider, circleFor, mapPropertyType, mapStatus, type RentCastListing,
-} from '../../src/lib/providers/rentcast';
+import { splitCircle, splitSearch, type Circle } from '../../src/lib/address-index/split';
+import { RentCastAddressIndex, circleFor } from '../../src/lib/address-index';
 
 /**
  * The split logic is tested against its own contract rather than a live API: the whole
@@ -45,13 +43,13 @@ describe('splitCircle', () => {
 
 describe('splitSearch', () => {
   /** Returns `count` synthetic rows, capped, so the cap behaviour can be driven. */
-  const rows = (n: number, prefix: string) =>
+  const rows = (n: number, prefix: string): Array<{ id: string }> =>
     Array.from({ length: n }, (_, i) => ({ id: `${prefix}-${i}` }));
 
   it('does not split when the answer comes back under the cap', async () => {
     const fetch = vi.fn(async () => rows(120, 'a'));
     const r = await splitSearch(BOULDER, {
-      fetch, keyOf: (x) => x.id, cap: 500, maxLevel: 3, maxRequests: 50,
+      fetch, keyOf: (x: { id: string }) => x.id, cap: 500, maxLevel: 3, maxRequests: 50,
     });
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(r.items).toHaveLength(120);
@@ -63,7 +61,7 @@ describe('splitSearch', () => {
     const fetch = vi.fn(async () => (++call === 1 ? rows(500, 'root') : rows(10, `c${call}`)));
 
     const r = await splitSearch(BOULDER, {
-      fetch, keyOf: (x) => x.id, cap: 500, maxLevel: 2, maxRequests: 50,
+      fetch, keyOf: (x: { id: string }) => x.id, cap: 500, maxLevel: 2, maxRequests: 50,
     });
 
     expect(fetch).toHaveBeenCalledTimes(5); // root + 4 children
@@ -77,7 +75,7 @@ describe('splitSearch', () => {
     // tests floating-point noise instead of the recursion.
     const fetch = vi.fn(async (c: Circle) => (c.radiusMiles > 4.5 ? rows(500, `r${c.radiusMiles}`) : rows(3, `${c.lat}`)));
     const r = await splitSearch(BOULDER, {
-      fetch, keyOf: (x) => x.id, cap: 500, maxLevel: 3, maxRequests: 100,
+      fetch, keyOf: (x: { id: string }) => x.id, cap: 500, maxLevel: 3, maxRequests: 100,
     });
     expect(r.maxLevelReached).toBe(2);
     expect(r.truncated).toEqual([]);
@@ -86,7 +84,7 @@ describe('splitSearch', () => {
   it('reports areas it could not finish rather than passing them off as complete', async () => {
     const fetch = vi.fn(async () => rows(500, 'always-full'));
     const r = await splitSearch(BOULDER, {
-      fetch, keyOf: (x) => x.id, cap: 500, maxLevel: 1, maxRequests: 50,
+      fetch, keyOf: (x: { id: string }) => x.id, cap: 500, maxLevel: 1, maxRequests: 50,
     });
     // Root splits once; all four children still saturate and cannot go deeper.
     expect(r.truncated).toHaveLength(4);
@@ -95,7 +93,7 @@ describe('splitSearch', () => {
   it('stops at the request ceiling and reports the unexplored remainder', async () => {
     const fetch = vi.fn(async () => rows(500, 'full'));
     const r = await splitSearch(BOULDER, {
-      fetch, keyOf: (x) => x.id, cap: 500, maxLevel: 10, maxRequests: 3,
+      fetch, keyOf: (x: { id: string }) => x.id, cap: 500, maxLevel: 10, maxRequests: 3,
     });
     expect(r.requests).toBe(3);
     expect(r.truncated.length).toBeGreaterThan(0);
@@ -106,7 +104,7 @@ describe('splitSearch', () => {
     // Every child returns the same three homes — the seam overlap, exaggerated.
     const fetch = vi.fn(async () => (++call === 1 ? rows(500, 'root') : rows(3, 'shared')));
     const r = await splitSearch(BOULDER, {
-      fetch, keyOf: (x) => x.id, cap: 500, maxLevel: 1, maxRequests: 50,
+      fetch, keyOf: (x: { id: string }) => x.id, cap: 500, maxLevel: 1, maxRequests: 50,
     });
     expect(r.items.filter((i) => i.id.startsWith('shared'))).toHaveLength(3);
   });
@@ -114,7 +112,7 @@ describe('splitSearch', () => {
   it('never splits when maxLevel is 0', async () => {
     const fetch = vi.fn(async () => rows(500, 'full'));
     const r = await splitSearch(BOULDER, {
-      fetch, keyOf: (x) => x.id, cap: 500, maxLevel: 0, maxRequests: 50,
+      fetch, keyOf: (x: { id: string }) => x.id, cap: 500, maxLevel: 0, maxRequests: 50,
     });
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(r.truncated).toHaveLength(1);
@@ -139,98 +137,73 @@ describe('circleFor', () => {
   });
 });
 
-describe('normalize', () => {
-  const provider = new RentCastProvider({ apiKey: 'test' });
-  const row: RentCastListing = {
+describe('RentCastAddressIndex', () => {
+  const record = {
     id: '5500-Baseline-Rd,-Boulder,-CO-80303',
     formattedAddress: '5500 Baseline Rd, Boulder, CO 80303',
     addressLine1: '5500 Baseline Rd',
-    city: 'Boulder', state: 'CO', zipCode: '80303', county: 'Boulder',
+    city: 'Boulder', state: 'co', zipCode: '80303',
     latitude: 39.9998, longitude: -105.2312,
-    propertyType: 'Single Family', bedrooms: 4, bathrooms: 3,
-    squareFootage: 2800, lotSize: 8000, yearBuilt: 1998,
-    status: 'Active', price: 1250000,
-    listedDate: '2026-07-14T00:00:00.000Z', daysOnMarket: 38,
-    mlsName: 'IRES', mlsNumber: '1060172',
+    // Fields it must ignore: nothing here may ever reach the user.
+    price: 1250000, status: 'Active', bedrooms: 4, propertyType: 'Single Family',
   };
 
-  it('maps the documented record onto the shared shape', () => {
-    expect(provider.normalize(row)).toMatchObject({
-      providerId: 'rentcast',
-      sourceListingId: row.id,
-      mlsId: '1060172',
-      addressLine1: '5500 Baseline Rd',
-      city: 'Boulder', state: 'CO', postalCode: '80303',
-      status: 'ACTIVE', propertyType: 'SINGLE_FAMILY',
-      listPrice: 1250000, beds: 4, bathsTotal: 3,
-      livingAreaSqft: 2800, yearBuilt: 1998, providerDaysOnMarket: 38,
-      lat: 39.9998, lng: -105.2312,
-    });
-  });
-
-  it('still deep-links to Zillow, because that is what this app tracks', () => {
-    expect(provider.normalize(row).listingUrl).toContain('zillow.com');
-  });
-
-  it('leaves absent fields undefined rather than defaulting them', () => {
-    const sparse = provider.normalize({ addressLine1: '1 A St', city: 'X', state: 'co' });
-    expect(sparse.listPrice).toBeUndefined();
-    expect(sparse.beds).toBeUndefined();
-    expect(sparse.yearBuilt).toBeUndefined();
-    expect(sparse.state).toBe('CO');
-  });
-
-  it('refuses a record with no address at all', () => {
-    expect(() => provider.normalize({ city: 'Boulder' })).toThrow(/address/i);
-  });
-
-  it('does not guess why an inactive listing left the market', () => {
-    expect(mapStatus({ status: 'Inactive', removedDate: '2026-01-01' })).toBe('OFF_MARKET');
-    expect(mapStatus({ status: 'Inactive' })).toBe('UNKNOWN');
-    expect(mapStatus({})).toBe('UNKNOWN');
-  });
-
-  it('maps the documented property types and falls back to OTHER', () => {
-    expect(mapPropertyType('Single Family')).toBe('SINGLE_FAMILY');
-    expect(mapPropertyType('Condo')).toBe('CONDO');
-    expect(mapPropertyType('Townhouse')).toBe('TOWNHOUSE');
-    expect(mapPropertyType('Multi-Family')).toBe('MULTI_FAMILY');
-    expect(mapPropertyType('Land')).toBe('LAND');
-    expect(mapPropertyType('Houseboat')).toBe('OTHER');
-    expect(mapPropertyType(undefined)).toBe('OTHER');
-  });
-});
-
-describe('configuration', () => {
-  it('says how to enable itself instead of returning nothing', async () => {
-    const health = await new RentCastProvider({ apiKey: '' }).healthCheck();
-    expect(health.ok).toBe(false);
-    expect(health.message).toMatch(/RENTCAST_API_KEY/);
-  });
-
-  it('names the quota rather than a bare HTTP code when the plan runs out', async () => {
-    const provider = new RentCastProvider({
+  function indexWith(body: unknown, seen: string[] = []) {
+    return new RentCastAddressIndex({
       apiKey: 'k',
-      fetchImpl: (async () => new Response('', { status: 429 })) as unknown as typeof fetch,
-    });
-    await expect(provider.fetchPage({
-      area: { kind: 'cityRadius', city: 'Boulder', state: 'CO', centerLat: 40, centerLng: -105, radiusMiles: 5 },
-    })).rejects.toThrow(/quota|rate limit/i);
-  });
-
-  it('asks only for active listings', async () => {
-    const seen: string[] = [];
-    const provider = new RentCastProvider({
-      apiKey: 'k',
+      maxSplitLevel: 0,
       fetchImpl: (async (url: URL) => {
         seen.push(url.toString());
-        return new Response('[]', { status: 200 });
+        return new Response(JSON.stringify(body), { status: 200 });
       }) as unknown as typeof fetch,
     });
-    await provider.fetchPage({
-      area: { kind: 'cityRadius', city: 'Boulder', state: 'CO', centerLat: 40, centerLng: -105, radiusMiles: 5 },
-    });
-    expect(seen[0]).toContain('status=Active');
+  }
+
+  const AREA = {
+    kind: 'cityRadius' as const, city: 'Boulder', state: 'CO',
+    centerLat: 40.015, centerLng: -105.27, radiusMiles: 5,
+  };
+
+  it('returns addresses only — no price, status or property facts', async () => {
+    const { seeds } = await indexWith([record]).addresses(AREA);
+    expect(seeds).toEqual([{
+      addressLine1: '5500 Baseline Rd',
+      city: 'Boulder',
+      state: 'CO',
+      postalCode: '80303',
+      lat: 39.9998,
+      lng: -105.2312,
+    }]);
+    // The guarantee this whole design rests on, asserted directly.
+    const keys = Object.keys(seeds[0]);
+    for (const forbidden of ['price', 'status', 'bedrooms', 'propertyType', 'listPrice']) {
+      expect(keys).not.toContain(forbidden);
+    }
+  });
+
+  it('drops a record with no usable address instead of inventing one', async () => {
+    const { seeds } = await indexWith([{ city: 'Boulder', state: 'CO', price: 900000 }]).addresses(AREA);
+    expect(seeds).toEqual([]);
+  });
+
+  it('asks only for active listings on the sale endpoint', async () => {
+    const seen: string[] = [];
+    await indexWith([], seen).addresses(AREA);
     expect(seen[0]).toContain('/listings/sale');
+    expect(seen[0]).toContain('status=Active');
+  });
+
+  it('says how to enable itself rather than returning nothing', async () => {
+    const idx = new RentCastAddressIndex({ apiKey: '' });
+    expect(idx.isConfigured()).toBe(false);
+    await expect(idx.addresses(AREA)).rejects.toThrow(/RENTCAST_API_KEY/);
+  });
+
+  it('names the quota when the plan runs out', async () => {
+    const idx = new RentCastAddressIndex({
+      apiKey: 'k', maxSplitLevel: 0,
+      fetchImpl: (async () => new Response('', { status: 429 })) as unknown as typeof fetch,
+    });
+    await expect(idx.addresses(AREA)).rejects.toThrow(/quota|rate limit/i);
   });
 });

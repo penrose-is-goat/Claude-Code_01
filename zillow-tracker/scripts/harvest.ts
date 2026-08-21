@@ -21,7 +21,8 @@ import { join } from 'node:path';
 import type { NormalizedListing } from '../src/lib/providers/normalized';
 import { CapturedBackend, resolveBackend, type SearchBackend } from '../src/lib/providers/websearch/backends';
 import type { SearchResult } from '../src/lib/providers/websearch/parse';
-import { sweep, type SweepReport } from '../src/lib/providers/websearch/sweep';
+import { sweep, streetOf, type SweepReport } from '../src/lib/providers/websearch/sweep';
+import { RentCastAddressIndex } from '../src/lib/address-index';
 
 interface CaptureFile {
   /** How and when these results were obtained. Copied into the snapshot's provenance. */
@@ -61,7 +62,10 @@ async function main(): Promise<void> {
 
   const place = args.place;
   if (!place) {
-    console.error('Usage: npm run harvest -- --place "City, ST" [--budget N] [--open-houses] [--from file.json]');
+    console.error(
+      'Usage: npm run harvest -- --place "City, ST" [--budget N] [--open-houses]\n' +
+      '                          [--address-index] [--radius MILES] [--from file.json]',
+    );
     process.exit(2);
   }
 
@@ -104,7 +108,36 @@ async function main(): Promise<void> {
     console.log(`Sweeping ${target.city}, ${target.state} via ${resolved.backend.displayName}.\n`);
   }
 
+  // Optional: ask an address index for the streets in this area, so the Zillow sweep
+  // starts from the full list instead of discovering it a few results at a time. The
+  // index supplies STREET NAMES ONLY — every fact in the harvest still comes from the
+  // Zillow page a search returns.
+  let seedStreets: string[] = [];
+  if (args.addressIndex) {
+    const index = new RentCastAddressIndex();
+    if (!index.isConfigured()) {
+      console.error(`${index.displayName} is not configured. ${index.setupHint}\n`);
+      process.exit(1);
+    }
+    process.stdout.write(`Asking ${index.displayName} for streets in ${target.city}, ${target.state}... `);
+    const { seeds, requestsUsed, truncated } = await index.addresses({
+      kind: 'cityRadius', city: target.city, state: target.state, radiusMiles: args.radius,
+    });
+    const streets = new Set<string>();
+    for (const seed of seeds) {
+      const street = streetOf(seed.addressLine1);
+      if (street) streets.add(street);
+    }
+    seedStreets = [...streets];
+    console.log(`${seeds.length} addresses on ${seedStreets.length} streets (${requestsUsed} request(s)).`);
+    if (truncated.length > 0) {
+      console.log(`  ${truncated.length} sub-area(s) came back at the cap and are incompletely indexed.`);
+    }
+    console.log();
+  }
+
   const report = await sweep(backend, target, {
+    seedStreets,
     queryBudget: args.budget,
     // A replay has no rate limit to respect; a live backend does.
     minIntervalMs: args.from ? 0 : 1100,
@@ -319,6 +352,8 @@ function toSnapshotRow(l: NormalizedListing) {
 
 interface Args {
   place?: string;
+  addressIndex: boolean;
+  radius: number;
   budget: number;
   /** Distinguishes an explicit --budget from the default, which replay overrides. */
   budgetExplicit: boolean;
@@ -329,6 +364,8 @@ interface Args {
 
 function parseArgs(argv: string[]): Args {
   const args: Args = {
+    addressIndex: false,
+    radius: 10,
     budget: Number(process.env.SEARCH_QUERY_BUDGET ?? 40),
     budgetExplicit: false,
     openHouses: false,
@@ -340,6 +377,8 @@ function parseArgs(argv: string[]): Args {
     else if (a === '--from') args.from = argv[++i];
     else if (a === '--out') args.out = argv[++i];
     else if (a === '--open-houses') args.openHouses = true;
+    else if (a === '--address-index') args.addressIndex = true;
+    else if (a === '--radius') args.radius = Number(argv[++i]);
   }
   if (!Number.isFinite(args.budget) || args.budget <= 0) args.budget = 40;
   return args;

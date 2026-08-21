@@ -33,6 +33,15 @@ export interface SearchSpec {
   name: string;
   query: AreaQuery;
   filters?: ListingFilters;
+  /**
+   * The human place name for this search, when one is known.
+   *
+   * `query` is geometry. Providers that match on text rather than coordinates — the
+   * snapshot store, and any search-backed source — need words, and a drawn ring has
+   * none. Omitting this from the poll path meant a scheduled refresh of a drawn search
+   * matched nothing and wrote an empty market over a good one.
+   */
+  placeHint?: string;
 }
 
 export interface PollResult {
@@ -95,6 +104,7 @@ export async function pollSearch(
     const { raw, requestsUsed } = await fetchAll(provider, {
       area: area.query,
       filters: area.filters,
+      placeHint: area.placeHint,
     });
 
     // A provider that throws on one bad row must not lose the other 39.

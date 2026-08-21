@@ -4,6 +4,7 @@ import type { AreaQuery } from '../providers/types';
 import { NominatimGeocoder } from '../search/geocode';
 import type { Geocoder, ResolvedPlace, SearchLocation } from '../search/types';
 import { cacheResolvedPlace, parseResolvedPlace, parseSavedSearchQuery } from '../db/searches';
+import { placeHintFor } from '../search/service';
 import { pollSearch, type SearchSpec, type PollResult } from './pipeline';
 
 /**
@@ -122,7 +123,10 @@ export async function runAllSearches(
       continue;
     }
 
+    // Same hint the interactive search path computes, so a scheduled poll and a manual
+    // search of the same saved search see the same listings.
     const spec: SearchSpec = {
+      placeHint: placeHintFor(query.location, parseResolvedPlace(search) ?? undefined),
       id: search.id,
       name: search.name,
       query: areaQuery,

@@ -70,6 +70,20 @@ export interface SweepOptions {
    * generate today.
    */
   extraQueries?: string[];
+  /**
+   * Streets to sweep, known up front instead of discovered.
+   *
+   * Phase 3 normally learns streets from whatever addresses earlier phases happened to
+   * surface, which means coverage depends on luck: a street with no home in the first
+   * few result pages is never queried. An address index (see lib/address-index) can hand
+   * over the complete street list for an area in one request, turning the frontier from
+   * a guess into a checklist.
+   *
+   * These are only ever STREET NAMES used to build Zillow queries. No price, status or
+   * property fact from another source enters the harvest — every displayed fact still
+   * comes from the Zillow page the search returns.
+   */
+  seedStreets?: string[];
 }
 
 export interface SweepProgress {
@@ -278,6 +292,10 @@ export async function sweep(
       queriesSpent: spent, queryBudget, listingsFound: byZpid.size, lastQuery: query,
     });
   };
+
+  // Seeded streets join the frontier before anything runs, so phase 3 starts with a
+  // checklist rather than whatever phases 1 and 2 happened to turn up.
+  for (const street of opts.seedStreets ?? []) streetsSeen.add(street);
 
   // Phase 0 — caller-supplied queries, if any.
   for (const q of opts.extraQueries ?? []) await run(q);
