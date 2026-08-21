@@ -12,7 +12,7 @@
  * Every step is idempotent; run it again whenever.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -81,6 +81,23 @@ function fail(...lines) {
   process.exit(1);
 }
 
+/** Finds a capture file and reads the place out of the file itself. */
+function findCapture() {
+  const dir = join(root, 'captures');
+  if (!existsSync(dir)) return null;
+
+  for (const name of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
+    const file = join(dir, name);
+    try {
+      const place = JSON.parse(readFileSync(file, 'utf8')).place;
+      if (typeof place === 'string' && place.trim()) return { file, place: place.trim() };
+    } catch {
+      // A malformed capture is skipped, not fatal.
+    }
+  }
+  return null;
+}
+
 step('Installing dependencies');
 run(NPM, ['install', '--no-audit', '--no-fund']);
 
@@ -96,11 +113,14 @@ mkdirSync(join(root, 'data'), { recursive: true });
 run(NPX, ['prisma', 'db', 'push', '--skip-generate']);
 
 step('Loading the captured Zillow data');
-const capture = join(root, 'captures', 'boulder-co-2026-08-21.json');
-if (existsSync(capture)) {
+// Whatever captures happen to be present, each naming its own place. Nothing here
+// names a city: this app has no built-in area, and a start script that hardcodes one
+// is a built-in area no matter how it got there.
+const capture = findCapture();
+if (capture) {
   // Replays real search results captured from Zillow's public pages through the live
   // parser. Optional — a failure here must not stop the app from starting.
-  run(NPX, ['tsx', 'scripts/harvest.ts', '--place', 'Boulder, CO', '--from', capture], { optional: true });
+  run(NPX, ['tsx', 'scripts/harvest.ts', '--place', capture.place, '--from', capture.file], { optional: true });
 } else {
   console.log(dim('  No capture file found; the app will start with an empty database.'));
 }
@@ -124,7 +144,7 @@ console.log(`
   The app starts ${bold('empty on purpose')} — no area is built in.
   Type a place or draw an area on the dashboard to search.
 
-  The captured data covers ${bold('Boulder, CO')}. Searching anywhere else correctly
+  ${capture ? `The bundled capture covers ${bold(capture.place)}.` : 'No data is bundled.'} Searching anywhere else correctly
   returns nothing until you harvest that area:
 
       npm run harvest -- --place "Your City, ST" --budget 60

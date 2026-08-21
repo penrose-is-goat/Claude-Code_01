@@ -1,9 +1,8 @@
 /**
  * Does a real browser get real Zillow data from THIS machine?
  *
- *   npm run verify-zillow
- *   npm run verify-zillow -- --place "Silver Spring, MD"
- *   npm run verify-zillow -- --place "Silver Spring, MD" --open-houses
+ *   npm run verify-zillow -- --place "<City, ST>"
+ *   npm run verify-zillow -- --place "<City, ST>" --open-houses
  *
  * Everything else about the browser transport is covered by tests that run a real
  * Chromium against a real server. The one thing no test can decide is how Zillow itself
@@ -26,12 +25,20 @@ async function main(): Promise<void> {
     return i >= 0 ? argv[i + 1] : undefined;
   };
 
-  const place = at('--place') ?? 'Silver Spring, MD';
+  const place = at('--place');
+  if (!place) {
+    console.error(
+      'This app has no built-in area, so this check has none either.\n\n' +
+      '  npm run verify-zillow -- --place "<City, ST>"\n\n' +
+      'Any city works — it is only being used to build one Zillow URL to request.',
+    );
+    process.exit(2);
+  }
   const openHouses = argv.includes('--open-houses');
 
   const m = place.match(/^(.*?)[,\s]+([A-Za-z]{2})$/);
   if (!m) {
-    console.error(`Could not read a city and state from "${place}". Use the form "Silver Spring, MD".`);
+    console.error(`Could not read a city and state from "${place}". Use the form "City, ST".`);
     process.exit(2);
   }
 

@@ -71,7 +71,7 @@ async function main(): Promise<void> {
 
   const m = place.match(/^(.*?)[,\s]+([A-Za-z]{2})$/);
   if (!m) {
-    console.error(`Could not read a city and state from "${place}". Use the form "Boulder, CO".`);
+    console.error(`Could not read a city and state from "${place}". Use the form "City, ST".`);
     process.exit(2);
   }
   const target = { city: m[1].trim(), state: m[2].toUpperCase() };

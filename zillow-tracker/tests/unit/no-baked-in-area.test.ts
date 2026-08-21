@@ -116,14 +116,22 @@ describe('filterToLocation does not keep another city as merely unplaceable', ()
   });
 });
 
-describe('no city is hardcoded in application code', () => {
-  const SRC = join(process.cwd(), 'src');
+describe('no city is hardcoded anywhere that runs', () => {
+  /*
+   * `src` was the only directory this scanned, and that is how a real violation shipped:
+   * scripts/verify-zillow.ts carried `?? 'Silver Spring, MD'` as a CLI default — the
+   * user's own town, learned from a bug report, written into the repository by the same
+   * assistant that had promised no area would ever be built in. A default is a built-in
+   * area no matter which file it lives in, so every directory that executes is scanned.
+   */
+  const ROOTS = ['src', 'scripts'].map((d) => join(process.cwd(), d));
 
   function tsFiles(dir: string): string[] {
     return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
       const full = join(dir, e.name);
       if (e.isDirectory()) return tsFiles(full);
-      return /\.tsx?$/.test(e.name) ? [full] : [];
+      // .mjs too — the start script is one, and it hardcoded a place as well.
+      return /\.(tsx?|mjs)$/.test(e.name) ? [full] : [];
     });
   }
 
@@ -138,7 +146,7 @@ describe('no city is hardcoded in application code', () => {
   it('never names a specific city or ZIP in a URL, constant or default', () => {
     const offenders: string[] = [];
 
-    for (const file of tsFiles(SRC)) {
+    for (const file of ROOTS.flatMap(tsFiles)) {
       const code = codeOnly(readFileSync(file, 'utf8'));
 
       // A city slug inside a zillow.com URL is the exact shape of the bug this catches:
@@ -149,6 +157,18 @@ describe('no city is hardcoded in application code', () => {
       // A bare five-digit ZIP as a literal value.
       const zipLiteral = code.match(/['"`]\d{5}['"`]/g);
       if (zipLiteral) offenders.push(`${file}: ZIP literal ${zipLiteral.join(', ')}`);
+
+      /*
+       * A "City, ST" string literal — the shape a CLI default takes, and the one that
+       * actually slipped through: `at('--place') ?? 'Silver Spring, MD'`.
+       *
+       * A usage message has to show the expected FORM, so a generic placeholder is
+       * allowed and a real place is not. The distinction is whether the string names
+       * somewhere: "City, ST" and "Your City, ST" name nowhere; "Boulder, CO" does.
+       */
+      const placeLiteral = (code.match(/['"`][A-Z][A-Za-z.'-]+(?: [A-Z][A-Za-z.'-]+)*,\s?[A-Z]{2}['"`]/g) ?? [])
+        .filter((lit) => !/\bcity\b/i.test(lit));
+      if (placeLiteral.length) offenders.push(`${file}: place literal ${placeLiteral.join(', ')}`);
     }
 
     expect(offenders).toEqual([]);

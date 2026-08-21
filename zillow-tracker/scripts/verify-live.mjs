@@ -25,7 +25,11 @@ const flag = (name, fallback) => {
 const has = (name) => args.includes(`--${name}`);
 
 const zip = flag('zip', null);
-const cityArg = flag('city', 'Boulder, CO');
+const cityArg = flag('city', '');
+if (!cityArg && !flag('zip', '')) {
+  console.error('No built-in area. Pass one: node scripts/verify-live.mjs --city "<City, ST>"');
+  process.exit(2);
+}
 const openHouseOnly = !has('for-sale');
 
 function buildUrl() {
