@@ -144,9 +144,16 @@ export function planFacetQueries(t: SweepTarget, opts: { openHouseOnly?: boolean
 
   const queries: string[] = [];
 
+  // Plain-English queries only. The `site:zillow.com/homedetails` variants that used
+  // to run alongside these restricted results to individual home pages, which strips
+  // out the aggregator and preview snippets that carry open-house times, prices and
+  // bed counts. A person searching Zillow does not type `site:`; the app should not
+  // either. Every query below is a phrase somebody would actually type.
   if (opts.openHouseOnly) {
     for (const area of areaTerms) {
-      queries.push(`site:zillow.com/homedetails ${area} open house`);
+      const plain = area.replace(/^"|"$/g, '');
+      queries.push(`open houses ${plain} zillow this weekend`);
+      queries.push(`zillow open house ${plain}`);
     }
     return queries;
   }
@@ -155,8 +162,11 @@ export function planFacetQueries(t: SweepTarget, opts: { openHouseOnly?: boolean
   const typeFacets = ['single family home', 'condo home', 'townhouse'];
 
   for (const area of areaTerms) {
-    for (const beds of bedFacets) queries.push(`site:zillow.com/homedetails ${area} "${beds}"`);
-    for (const type of typeFacets) queries.push(`site:zillow.com/homedetails ${area} "${type}"`);
+    const plain = area.replace(/^"|"$/g, '');
+    queries.push(`homes for sale ${plain} zillow`);
+    queries.push(`new listings ${plain} zillow`);
+    for (const beds of bedFacets) queries.push(`${beds} homes for sale ${plain} zillow`);
+    for (const type of typeFacets) queries.push(`${type} for sale ${plain} zillow`);
   }
 
   return queries;
@@ -181,7 +191,9 @@ export function planSubAreaQuery(label: string, openHouseOnly = false): string {
  */
 export function planStreetQueries(t: SweepTarget, streets: string[]): string[] {
   const place = `${t.city}, ${t.state}`;
-  return streets.map((s) => `site:zillow.com/homedetails "${s}" "${place}"`);
+  // One plain-English query per street — the way a person searches. A "site:" filter
+  // would strip the aggregator and preview snippets that carry the useful facts.
+  return streets.map((s) => `${s} ${place} zillow`);
 }
 
 /**

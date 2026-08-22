@@ -34,10 +34,14 @@ function fakeBackend(table: Record<string, SearchResult[]>, opts: { fail?: strin
 
 /** Lets a fixture key on a distinguishing fragment instead of a whole query string. */
 function matchBySubstring(table: Record<string, SearchResult[]>, query: string): SearchResult[] {
-  for (const [key, value] of Object.entries(table)) {
-    if (key.startsWith('~') && query.includes(key.slice(1))) return value;
-  }
-  return [];
+  // Longest matching key wins. Otherwise `~homes for sale` fires on every query that
+  // also matches a more specific key like `~2 beds homes for sale`, which was the
+  // hidden reason the fixture-driven tests kept coming back empty.
+  const hits = Object.entries(table)
+    .filter(([key]) => key.startsWith('~'))
+    .filter(([key]) => query.includes(key.slice(1)))
+    .sort((a, b) => b[0].length - a[0].length);
+  return hits.length > 0 ? hits[0][1] : [];
 }
 
 function home(zpid: string, address: string, price: number): SearchResult {
@@ -58,11 +62,11 @@ describe('sweep', () => {
           title: 'Boulder CO Single Family Homes For Sale - 406 Homes | Zillow',
         },
       ],
-      '~2 beds': [home('1', '100 Pearl St', 900000)],
-      '~3 beds': [home('2', '200 Pearl St', 950000)],
+      '~2 beds homes for sale': [home('1', '100 Pearl St', 900000)],
+      '~3 beds homes for sale': [home('2', '200 Pearl St', 950000)],
     });
 
-    const report = await sweep(backend, TARGET, { queryBudget: 12, minIntervalMs: 0, now: NOW });
+    const report = await sweep(backend, TARGET, { queryBudget: 40, minIntervalMs: 0, now: NOW });
 
     expect(report.coverage).toMatchObject({ found: 2, published: 406, scope: 'Boulder CO Single Family Homes For Sale' });
     // The honest reading of a thin harvest: a tiny ratio, stated, rather than "2 homes".
@@ -81,16 +85,16 @@ describe('sweep', () => {
           title: 'Boulder CO Single Family Homes For Sale - 406 Homes | Zillow',
         },
       ],
-      '~2 beds': [home('1', '100 Pearl St', 900000)],
+      '~2 beds homes for sale': [home('1', '100 Pearl St', 900000)],
     });
 
-    const report = await sweep(backend, TARGET, { queryBudget: 10, minIntervalMs: 0, now: NOW });
+    const report = await sweep(backend, TARGET, { queryBudget: 40, minIntervalMs: 0, now: NOW });
     expect(report.coverage?.published).toBe(406);
     expect(report.coverage?.scope).toContain('Boulder CO');
   });
 
   it('leaves coverage undefined rather than implying completeness when no count was published', async () => {
-    const { backend } = fakeBackend({ '~2 beds': [home('1', '100 Pearl St', 900000)] });
+    const { backend } = fakeBackend({ '~2 beds homes for sale': [home('1', '100 Pearl St', 900000)] });
     const report = await sweep(backend, TARGET, { queryBudget: 8, minIntervalMs: 0, now: NOW });
     expect(report.coverage).toBeUndefined();
     expect(report.listings).toHaveLength(1);
@@ -99,12 +103,12 @@ describe('sweep', () => {
   it('deduplicates the same home found through different slices', async () => {
     const duplicate = home('88908043', '1655 Walnut St', 1470000);
     const { backend } = fakeBackend({
-      '~2 beds': [duplicate],
-      '~3 beds': [duplicate],
-      '~single family home': [duplicate],
+      '~2 beds homes for sale': [duplicate],
+      '~3 beds homes for sale': [duplicate],
+      '~single family home for sale': [duplicate],
     });
 
-    const report = await sweep(backend, TARGET, { queryBudget: 10, minIntervalMs: 0, now: NOW });
+    const report = await sweep(backend, TARGET, { queryBudget: 40, minIntervalMs: 0, now: NOW });
     expect(report.listings).toHaveLength(1);
     // Overlap is expected and is the evidence a slice was covered — the later queries
     // must report zero NEW listings rather than being suppressed.
@@ -148,13 +152,13 @@ describe('sweep', () => {
     });
     const report = await sweep(backend, TARGET, { queryBudget: 25, minIntervalMs: 0, now: NOW });
 
-    expect(calls).toContain('site:zillow.com/homedetails "Walnut St" "Boulder, CO"');
+    expect(calls.some((q) => q.includes('Walnut St') && q.includes('Boulder, CO'))).toBe(true);
     expect(report.queriesSpent).toBeLessThanOrEqual(25);
   });
 
   it('records a failing query without sinking the sweep', async () => {
     const { backend } = fakeBackend({ '~3 beds': [home('1', '100 Pearl St', 900000)] }, { fail: '2 beds' });
-    const report = await sweep(backend, TARGET, { queryBudget: 12, minIntervalMs: 0, now: NOW });
+    const report = await sweep(backend, TARGET, { queryBudget: 40, minIntervalMs: 0, now: NOW });
 
     expect(report.queries.some((q) => q.error === 'backend exploded')).toBe(true);
     expect(report.listings).toHaveLength(1);
@@ -180,7 +184,7 @@ describe('sweep', () => {
   });
 
   it('reports progress as it goes so a long sweep is not a black box', async () => {
-    const { backend } = fakeBackend({ '~2 beds': [home('1', '100 Pearl St', 900000)] });
+    const { backend } = fakeBackend({ '~2 beds homes for sale': [home('1', '100 Pearl St', 900000)] });
     const onProgress = vi.fn();
     await sweep(backend, TARGET, { queryBudget: 4, minIntervalMs: 0, now: NOW, onProgress });
     expect(onProgress).toHaveBeenCalled();
@@ -190,11 +194,12 @@ describe('sweep', () => {
 
 describe('planFacetQueries', () => {
   it('partitions by Zillow area when one was discovered, by city when none was', () => {
-    expect(planFacetQueries(TARGET).every((q) => q.includes('"Boulder, CO"'))).toBe(true);
+    expect(planFacetQueries(TARGET).every((q) => q.includes('Boulder, CO'))).toBe(true);
 
     const withAreas = planFacetQueries({ ...TARGET, postalCodes: ['80302'] });
-    expect(withAreas.some((q) => q.includes('"Boulder, CO 80302"'))).toBe(true);
-    expect(withAreas.some((q) => q.includes('"Boulder, CO"'))).toBe(false);
+    // With discovered ZIPs, every query mentions the ZIP rather than the bare city.
+    expect(withAreas.some((q) => q.includes('Boulder, CO 80302'))).toBe(true);
+    expect(withAreas.some((q) => /Boulder, CO(?![\s\d])/.test(q))).toBe(false);
   });
 
   it('switches to open-house queries when that is what was asked for', () => {
@@ -202,9 +207,13 @@ describe('planFacetQueries', () => {
     expect(q.every((s) => s.includes('open house'))).toBe(true);
   });
 
-  it('constrains every query to Zillow home pages', () => {
+  it('generates only plain-English queries — no site: operator', () => {
+    // A person searching Zillow does not type `site:zillow.com/homedetails`, and using
+    // it strips the aggregator snippets that carry open-house times and price/beds
+    // information. Every query should read like something a person would type.
     for (const q of [...planFacetQueries(TARGET), ...planStreetQueries(TARGET, ['Walnut St'])]) {
-      expect(q).toContain('site:zillow.com/homedetails');
+      expect(q, q).not.toContain('site:');
+      expect(q, q).toContain('zillow');
     }
   });
 });
@@ -270,7 +279,7 @@ describe('stopReason — the sweep knows why it ended', () => {
         url: 'https://www.zillow.com/boulder-co/houses/',
         title: 'Boulder CO Single Family Homes For Sale - 10 Homes | Zillow',
       }],
-      '~2 beds': homes(10, 'Peach'),
+      '~2 beds homes for sale': homes(10, 'Peach'),
     });
     const report = await sweep(backend, TARGET, { queryBudget: 30, minIntervalMs: 0, now: NOW });
     expect(report.stopReason).toBe('coverage');
@@ -280,7 +289,7 @@ describe('stopReason — the sweep knows why it ended', () => {
   it('reports "exhausted" when several queries in a row add nothing', async () => {
     // Only one query has any homes; the rest return duplicates or nothing. After a
     // dry streak the sweep stops rather than keep asking.
-    const { backend } = fakeBackend({ '~2 beds': homes(3, 'Peach') });
+    const { backend } = fakeBackend({ '~2 beds homes for sale': homes(3, 'Peach') });
     const report = await sweep(backend, TARGET, { queryBudget: 40, minIntervalMs: 0, now: NOW });
     expect(report.stopReason).toBe('exhausted');
     // And it stopped well before the budget — proving the exit fired for the right reason.
