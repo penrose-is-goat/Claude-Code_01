@@ -1,4 +1,5 @@
 import type { SearchResult } from './parse';
+import { SerpBrowserBackend } from './serpBrowser';
 
 /**
  * Pluggable web-search backends.
@@ -314,10 +315,18 @@ export class CapturedBackend implements SearchBackend {
  * with instructions, never as "no homes found".
  */
 export function defaultBackends(): SearchBackend[] {
-  // Mojeek first: it is the only option here that a fresh install can turn on without a
-  // credit card or a prior Google account. The others are kept for anyone who already
-  // has those keys, but nobody should be sent to sign up for them in 2026.
-  return [new MojeekBackend(), new BraveBackend(), new GoogleCseBackend(), new SearxngBackend()];
+  // The browser-driven backend leads because it is the only genuinely no-key option —
+  // the whole point of the project. `npm run browser` opens a Chrome window; this
+  // navigates that window to a search engine and reads the results the same way a
+  // person would. Everything below it needs an account or a key, and is a fallback
+  // for anyone who prefers a metered API to leaving a browser window open.
+  return [
+    new SerpBrowserBackend(),
+    new MojeekBackend(),
+    new BraveBackend(),
+    new GoogleCseBackend(),
+    new SearxngBackend(),
+  ];
 }
 
 export function resolveBackend(
@@ -337,13 +346,13 @@ export function resolveBackend(
   const configured = available.find((b) => b.isConfigured());
   if (configured) return { backend: configured, hints: [] };
 
-  // A fresh install has nothing set. Naming Mojeek first is the difference between "here
-  // is the two-minute answer" and a wall of signup links to services that have retired,
-  // gone paywalled, or closed to new customers.
-  const mojeek = available.find((b) => b.id === 'mojeek');
-  const rest = available.filter((b) => b.id !== 'mojeek');
+  // A fresh install should see the ZERO-key answer first, not a wall of signup links.
+  // Browser-driven search is that answer; the rest are opt-in for people who already
+  // have those keys.
+  const browser = available.find((b) => b.id === 'serp-browser');
+  const rest = available.filter((b) => b.id !== 'serp-browser');
   const hints = [
-    ...(mojeek ? [`${mojeek.displayName}: ${mojeek.setupHint}`] : []),
+    ...(browser ? [`${browser.displayName}: ${browser.setupHint}`] : []),
     ...rest.map((b) => `${b.displayName}: ${b.setupHint}`),
   ];
   return { backend: null, hints };

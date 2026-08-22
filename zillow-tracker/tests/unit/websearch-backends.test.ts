@@ -139,35 +139,48 @@ describe('resolveBackend', () => {
     if (prevSearxng) process.env.SEARXNG_URL = prevSearxng; else delete process.env.SEARXNG_URL;
   }
 
-  it('picks Mojeek when its key is present, even if others are also set', () => {
+  it('picks the browser backend by default, since it needs no key at all', () => {
     clearEnv();
     try {
       process.env.MOJEEK_API_KEY = 'mojeek-key';
-      process.env.BRAVE_SEARCH_API_KEY = 'brave-key';
-      const { backend, hints } = resolveBackend(defaultBackends());
-      expect(backend?.id).toBe('mojeek');
-      expect(hints).toEqual([]);
+      // The browser backend leads because the whole point of this project is a no-key
+      // path. A user who prefers a metered API can override with SEARCH_BACKEND=mojeek.
+      const { backend } = resolveBackend(defaultBackends());
+      expect(backend?.id).toBe('serp-browser');
     } finally { restore(); }
   });
 
-  it('picks Brave when only Brave is configured', () => {
+  it('honours SEARCH_BACKEND=mojeek when the user wants the keyed path', () => {
+    clearEnv();
+    try {
+      process.env.MOJEEK_API_KEY = 'mojeek-key';
+      process.env.SEARCH_BACKEND = 'mojeek';
+      const { backend } = resolveBackend(defaultBackends());
+      expect(backend?.id).toBe('mojeek');
+    } finally { restore(); }
+  });
+
+  it('picks Brave when the user explicitly asks for it', () => {
+    // SerpBrowser wins by default, so the test proves the override still routes.
     clearEnv();
     try {
       process.env.BRAVE_SEARCH_API_KEY = 'brave-key';
+      process.env.SEARCH_BACKEND = 'brave';
       const { backend } = resolveBackend(defaultBackends());
       expect(backend?.id).toBe('brave');
     } finally { restore(); }
   });
 
-  it('leads the setup hint with Mojeek when nothing is configured', () => {
+  it('leads the setup hint with the browser answer when nothing else is set', () => {
     clearEnv();
     try {
       const { backend, hints } = resolveBackend(defaultBackends());
-      expect(backend).toBeNull();
-      // The point of the reorder: a fresh install must be told the two-minute answer
-      // FIRST, not sent to a dead Google signup and a paywalled Brave signup.
-      expect(hints[0]).toMatch(/Mojeek/i);
-      expect(hints[0]).toMatch(/no credit card/i);
+      // SerpBrowser reports itself configured (its port check is deferred), so it
+      // becomes the picked backend on a fresh install — a NON-null backend.
+      expect(backend?.id).toBe('serp-browser');
+      // The setup hint that fires when the user hasn't opened a browser tells them
+      // exactly what to do, in one command.
+      expect(backend?.setupHint).toMatch(/npm run browser/);
     } finally { restore(); }
   });
 
