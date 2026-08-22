@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fed Probability Tracker</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body class="fed-page">
+    <main class="data-shell">
+      <nav class="data-nav fed-nav">
+        <a href="./index.html">Side Tools</a>
+        <a href="./fred-tool.html">Macro Data Lab</a>
+        <a class="active" href="./fed-tracker.html">Fed Tracker</a>
+        <a href="./treasury-auctions.html">Auction Tracker</a>
+      </nav>
+
+      <header class="fedwatch-header">
+        <div>
+          <p class="data-kicker">30-Day Fed Funds futures</p>
+          <h1>Fed Probability Tracker</h1>
+          <p>Settlement-based target-rate probabilities with visible math, dates, and source quality.</p>
+        </div>
+        <div class="fed-refresh">
+          <label for="asOf">Quotes as of</label>
+          <input id="asOf" type="date" />
+          <button id="refreshBtn" class="data-button primary">Refresh</button>
+        </div>
+      </header>
+
+      <div class="method-banner light">
+        <strong>Independent reconstruction</strong>
+        <span>Uses ZQ futures settlements and the effective fed funds rate. It is not the licensed CME FedWatch API.</span>
+        <span id="status" class="fed-status">Loading...</span>
+      </div>
+
+      <section id="metrics" class="fed-metric-strip"></section>
+
+      <section class="fedwatch-workbench">
+        <div id="meetingTabs" class="meeting-tabs" aria-label="FOMC meetings"></div>
+        <div class="fed-viewbar">
+          <div class="fed-view-tabs" role="tablist">
+            <button class="active" data-fed-view="current">Current</button>
+            <button data-fed-view="compare">Compare</button>
+            <button data-fed-view="probabilities">Probabilities</button>
+            <button data-fed-view="historical">Historical</button>
+          </div>
+          <label>Meeting
+            <select id="meetingSelect" aria-label="Selected FOMC meeting"></select>
+          </label>
+        </div>
+
+        <div class="fed-chart-heading">
+          <div><p id="viewKicker" class="data-kicker">Current probabilities</p><h2 id="meetingTitle">Select a meeting</h2></div>
+          <div id="meetingMeta" class="meeting-meta"></div>
+        </div>
+        <div id="historyControls" class="history-controls hidden">
+          <label>History window
+            <select id="historyRange">
+              <option value="1M">1 month</option>
+              <option value="3M">3 months</option>
+              <option value="6M">6 months</option>
+              <option value="1Y" selected>1 year</option>
+              <option value="ALL">All available</option>
+            </select>
+          </label>
+          <div>
+            <span>Target outcomes on chart</span>
+            <div class="history-filter-actions"><button id="selectAllOutcomes">Select all</button><button id="clearOutcomes">Clear</button></div>
+          </div>
+          <div id="outcomeFilters" class="outcome-filters"></div>
+        </div>
+        <div class="fed-chart-frame">
+          <canvas id="fedChart" width="1400" height="560" aria-label="Fed meeting probability chart"></canvas>
+          <div id="fedTooltip" class="chart-tooltip hidden"></div>
+        </div>
+        <div id="viewMessage" class="view-message"></div>
+        <div id="probabilityTable" class="table-wrap data-table-wrap"></div>
+      </section>
+
+      <section class="query-workbench fed-command-workbench">
+        <div class="data-panel-head compact"><div><p class="data-kicker">Display command</p><h2>Ask the tracker</h2></div><span id="fedIntentMode" class="data-badge">Deterministic parser</span></div>
+        <form id="fedIntentForm" class="query-command">
+          <textarea id="fedIntentPrompt" rows="2" autocomplete="off" placeholder="Example: Compare all available meetings on one chart, then show one year of history"></textarea>
+          <button class="data-button primary" type="submit">Apply view</button>
+        </form>
+        <p id="fedIntentStatus" class="data-note">Commands change verified display controls only; probability values always come from the futures calculation.</p>
+        <p id="fedModelHealth" class="data-note">Checking local model fallback...</p>
+      </section>
+
+      <section class="data-panel">
+        <div class="data-panel-head"><div><p class="data-kicker">Data and references</p><h2>Source links</h2></div></div>
+        <p class="source-intro">Calculation sources are separated from public reference interfaces.</p>
+        <div id="fedSourceLinks" class="source-grid"></div>
+      </section>
+
+      <details class="data-panel collapsible-panel">
+        <summary><span><small>Calculation inputs</small>30-Day Fed Funds futures contract strip</span><strong id="stripSource"></strong></summary>
+        <div class="table-wrap data-table-wrap">
+          <table>
+            <thead><tr><th>Month</th><th>Contract</th><th>Provider symbol</th><th>Settlement / close</th><th>Implied avg rate</th><th>Volume</th><th>Open interest</th></tr></thead>
+            <tbody id="contractRows"></tbody>
+          </table>
+        </div>
+      </details>
+
+      <details class="data-panel collapsible-panel">
+        <summary><span><small>Audit and methodology</small>How the probabilities are calculated</span></summary>
+        <ul id="notes" class="notes"></ul>
+      </details>
+    </main>
+    <script src="./fed-tracker.js"></script>
+  </body>
+</html>

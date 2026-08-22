@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "tool": "treasury",
+  "seed": 3003,
+  "description": "Treasury Auction Tracker semantic contracts and fixtures.",
+  "cases": [
+    {
+      "id": "treasury.2012_10y_pdf",
+      "prompt": "give me a copy of any auction results from 2012 for the 10 year note",
+      "expected": {
+        "parse": "success",
+        "fieldEquals": {"term": "10-Year", "securityType": "Note", "startDate": "2012-01-01", "endDate": "2012-12-31"},
+        "fieldIn": {"view": ["records", "table"]},
+        "fieldContains": {"panels": ["documents"]},
+        "fieldEqualsAdditional": {"querySpecValid": true},
+        "metricsMustBeEmpty": true
+      },
+      "forbidden": {"fieldEquals": {"view": "chart"}},
+      "variants": [
+        {"kind": "metatext", "prompt": "Please return the official PDF result documents for every 10-year Treasury Note auction in calendar year 2012."},
+        {"kind": "paraphrase", "prompt": "List 2012 ten-year note auction records and link each published result PDF."},
+        {"kind": "typo", "prompt": "give me a copy of any aucton results from 2012 for the ten year note"}
+      ],
+      "invariants": ["pdf_matches_record", "missing_values_are_null", "original_term_preserved"]
+    },
+    {
+      "id": "treasury.30y_bid_cover_chart",
+      "prompt": "show me a chart of the bid to cover ratio for all 30 year auctions in the last 15 years",
+      "expected": {
+        "parse": "success",
+        "fieldEquals": {"view": "chart", "term": "30-Year", "chartType": "line"},
+        "fieldContains": {"metrics": ["bidToCoverRatio"]}
+      },
+      "variants": [
+        {"kind": "metatext", "prompt": "Please plot the historical bid-to-cover ratio for 30-year Treasury auctions over the past 15 years."},
+        {"kind": "paraphrase", "prompt": "Graph demand coverage at every 30-year bond auction across fifteen years."}
+      ],
+      "invariants": ["bid_to_cover_nonnegative", "ordered_observations", "source_traceability"]
+    },
+    {
+      "id": "treasury.latest_30y_results",
+      "prompt": "show me the latest 30 year auction results",
+      "expected": {
+        "parse": "success",
+        "fieldEquals": {"view": "latest", "term": "30-Year", "querySpecValid": true},
+        "fieldContains": {"panels": ["documents"]}
+      },
+      "variants": [
+        {"kind": "metatext", "prompt": "Show the most recent 30-year Treasury auction result and its official documents."},
+        {"kind": "paraphrase", "prompt": "Open the latest long-bond auction results."}
+      ],
+      "invariants": ["pdf_matches_record", "missing_values_are_null"]
+    },
+    {
+      "id": "treasury.tips_soma",
+      "prompt": "chart SOMA purchases for TIPS in the last 10 years",
+      "expected": {
+        "parse": "success",
+        "fieldEquals": {"view": "chart", "securityType": "TIPS", "chartType": "line"},
+        "fieldContains": {"metrics": ["somaAccepted"]}
+      },
+      "variants": [
+        {"kind": "metatext", "prompt": "Please chart official SOMA accepted-at-auction amounts for TIPS over ten years."},
+        {"kind": "paraphrase", "prompt": "Plot Federal Reserve SOMA demand at inflation-protected Treasury sales over the past decade."}
+      ],
+      "invariants": ["missing_values_are_null", "source_traceability"]
+    },
+    {
+      "id": "treasury.reopening_original_term",
+      "prompt": "show all 30 year Treasury bond reopenings in the last 5 years in a table",
+      "expected": {
+        "parse": "success",
+        "fieldEquals": {"view": "table", "term": "30-Year", "securityType": "Bond", "reopening": "only"},
+        "fieldContains": {"panels": ["table"]}
+      },
+      "variants": [
+        {"kind": "metatext", "prompt": "For review, list only 30-year Treasury Bond reopenings from the last five years."},
+        {"kind": "paraphrase", "prompt": "Display a table of reopened thirty-year bonds over five years."}
+      ],
+      "invariants": ["original_term_preserved", "ordered_observations"]
+    }
+  ],
+  "invariantSamples": {
+    "valid": {
+      "sources": [
+        {"provider": "Fiscal Data", "seriesId": "auctions_query", "url": "https://fiscaldata.treasury.gov/datasets/treasury-securities-auctions-data/"},
+        {"provider": "TreasuryDirect", "seriesId": "R_20120712_3.pdf", "url": "https://www.treasurydirect.gov/instit/annceresult/press/preanre/2012/R_20120712_3.pdf"}
+      ],
+      "auctions": [
+        {"auctionDate": "2012-07-12", "cusip": "912828VV6", "securityTerm": "9-Year 10-Month", "reopening": true, "bidToCoverRatio": 2.64, "directBidderShare": 12.4, "indirectBidderShare": 32.1, "resultPdfUrl": "https://www.treasurydirect.gov/instit/annceresult/press/preanre/2012/R_20120712_3.pdf"},
+        {"auctionDate": "2012-10-11", "cusip": "912828VX4", "securityTerm": "10-Year", "reopening": false, "bidToCoverRatio": 2.81, "directBidderShare": null, "indirectBidderShare": 34.2, "missingFields": ["directBidderShare"], "resultPdfUrl": "https://www.treasurydirect.gov/instit/annceresult/press/preanre/2012/R_20121011_3.pdf"}
+      ]
+    },
+    "invalid": {
+      "auctions": {"rows": [{"auctionDate": "2026-08-22", "bidToCoverRatio": -1.0, "directBidderShare": 101.0, "missingFields": ["highYield"], "highYield": 4.2, "reopening": true}], "expectedCodes": ["AUCTION_BID_TO_COVER_INVALID", "AUCTION_DIRECT_SHARE_INVALID", "MISSING_VALUE_NOT_NULL", "REOPENING_TERM_MISSING"]}
+    }
+  }
+}

@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Treasury Auction Tracker</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body class="treasury-page">
+    <main class="auction-shell">
+      <nav class="data-nav treasury-nav">
+        <a href="./index.html">Side Tools</a>
+        <a href="./fred-tool.html">Macro Data Lab</a>
+        <a href="./fed-tracker.html">Fed Tracker</a>
+        <a class="active" href="./treasury-auctions.html">Auction Tracker</a>
+      </nav>
+
+      <header class="auction-hero">
+        <div>
+          <p class="auction-kicker">Bureau of the Fiscal Service data</p>
+          <h1>Treasury Auction Tracker</h1>
+          <p>Every marketable Treasury auction in one auditable research database.</p>
+        </div>
+        <div class="auction-sync-box">
+          <span>Database status</span>
+          <strong id="auctionUpdated">Loading official records...</strong>
+          <small id="auctionCoverage">Checking coverage</small>
+          <button id="refreshAuctions" class="auction-button">Refresh from Treasury</button>
+        </div>
+      </header>
+
+      <section class="auction-tape" aria-label="Latest and upcoming Treasury auctions">
+        <article id="latestBanner" class="tape-card result-card"><span class="loading-line">Loading latest result</span></article>
+        <div id="upcomingTape" class="upcoming-tape"><article class="tape-card"><span class="loading-line">Loading upcoming auctions</span></article></div>
+      </section>
+
+      <section class="auction-workbench">
+        <div class="auction-section-head">
+          <div><p class="auction-kicker">Auction explorer</p><h2>Ask the database</h2></div>
+          <div id="queryMode" class="data-badge">Deterministic parser</div>
+        </div>
+        <form id="auctionQueryForm" class="auction-command">
+          <label for="auctionPrompt">Describe the data or chart you want</label>
+          <div class="command-row">
+            <textarea id="auctionPrompt" rows="2" autocomplete="off" placeholder="Example: Show the latest 30-year auction result, including bidder shares and the official PDF"></textarea>
+            <button class="auction-button primary" type="submit">Run query</button>
+          </div>
+          <details class="auction-ai-settings">
+            <summary>Optional open-model parser</summary>
+            <div>
+              <label><input id="useAuctionModel" type="checkbox" checked disabled /> Automatically use the configured local model only when the standard parser cannot understand the request</label>
+              <span id="modelStatus">Checking local model fallback...</span>
+            </div>
+          </details>
+        </form>
+
+        <div id="queryStatus" class="auction-query-status">Loading the auction database...</div>
+        <div id="resolvedQuery" class="resolved-query hidden"></div>
+        <section id="auctionSummary" class="auction-summary-strip"></section>
+
+        <div id="auctionChartPanel" class="auction-chart-panel hidden">
+          <div class="auction-section-head compact">
+            <div><p id="chartKicker" class="auction-kicker">Historical series</p><h2 id="chartTitle">Bid-to-cover ratio</h2></div>
+            <div class="chart-actions">
+              <button id="downloadQueryCsv" type="button">Download CSV</button>
+              <button id="showQueryTable" type="button" aria-controls="queryTable">Toggle result table</button>
+            </div>
+          </div>
+          <div class="auction-chart-frame">
+            <canvas id="auctionChart" width="1400" height="540" aria-label="Treasury auction historical chart"></canvas>
+            <div id="auctionTooltip" class="chart-tooltip hidden"></div>
+          </div>
+          <p id="chartAudit" class="chart-audit">The exact period, field definition, and missing observations will appear here.</p>
+        </div>
+
+        <div id="queryTable" class="auction-table-wrap hidden" aria-live="polite"></div>
+      </section>
+
+      <section class="auction-database-panel">
+        <div class="auction-section-head">
+          <div><p class="auction-kicker">Official results</p><h2>Latest auction database</h2></div>
+          <div class="auction-view-controls">
+            <label>Security <select id="resultType"><option value="all">All</option><option>Bill</option><option>Note</option><option>Bond</option><option>TIPS</option><option>FRN</option><option>CMB</option></select></label>
+            <label>Search <input id="resultSearch" type="search" placeholder="Term or CUSIP" /></label>
+          </div>
+        </div>
+        <div id="latestResults" class="auction-table-wrap"><p>Loading results...</p></div>
+        <div class="auction-pagination">
+          <span id="resultCount"></span>
+          <button id="showMoreResults" type="button">Show 10 more</button>
+          <button id="previousResults" type="button">Previous 25</button>
+          <button id="nextResults" type="button">Next 25</button>
+        </div>
+      </section>
+
+      <section class="auction-upcoming-panel">
+        <div class="auction-section-head"><div><p class="auction-kicker">Auction calendar</p><h2>Upcoming announced auctions</h2></div></div>
+        <div id="upcomingTable" class="auction-table-wrap"><p>Loading schedule...</p></div>
+      </section>
+
+      <section class="auction-source-panel">
+        <div class="auction-section-head"><div><p class="auction-kicker">Audit trail</p><h2>Sources and coverage</h2></div></div>
+        <div id="auctionSources" class="source-grid"></div>
+        <p class="coverage-note">TreasuryDirect reports TIPS announcement/results coverage beginning in 1997 and other security types beginning July 27, 1998. Many bidder-detail fields begin in April 2008. Missing historical fields remain blank and are never converted to zero.</p>
+      </section>
+    </main>
+
+    <dialog id="auctionDetail" class="auction-dialog">
+      <button id="closeAuctionDetail" class="dialog-close" aria-label="Close auction detail">Close</button>
+      <div id="auctionDetailContent"></div>
+    </dialog>
+
+    <script src="./treasury-auctions.js"></script>
+  </body>
+</html>

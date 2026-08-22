@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Macro Data Lab</title>
+    <link rel="stylesheet" href="./style.css?rev=20260816-qualifier-safe-clarifications" />
+  </head>
+  <body class="macro-page">
+    <main class="data-shell">
+      <nav class="data-nav">
+        <a href="./index.html">Side Tools</a>
+        <a class="active" href="./fred-tool.html">Macro Data Lab</a>
+        <a href="./fed-tracker.html">Fed Tracker</a>
+        <a href="./treasury-auctions.html">Auction Tracker</a>
+      </nav>
+
+      <header class="lab-header">
+        <div>
+          <p class="data-kicker">Economic and market data workbench</p>
+          <h1>Macro Data Lab</h1>
+          <p>Search S&amp;P, SEC, World Bank, Treasury, BLS, market, and FRED data, then build auditable multi-series charts.</p>
+        </div>
+        <details class="data-settings">
+          <summary>Data settings</summary>
+          <label for="fredApiKey">Optional FRED API key for final metadata fallback</label>
+          <input id="fredApiKey" type="password" autocomplete="off" placeholder="Stored only on this computer" />
+          <label for="ollamaModel">Local fallback model</label>
+          <input id="ollamaModel" autocomplete="off" placeholder="qwen3.5:9b" />
+          <div class="inline-actions">
+            <button id="saveSettingsBtn" class="data-button">Save</button>
+            <button id="doctorBtn" class="data-button ghost">Network check</button>
+          </div>
+          <p id="settingsStatus" class="data-note"></p>
+          <p id="modelHealth" class="data-note">Checking local model fallback...</p>
+          <p id="backendStamp" class="data-note"></p>
+        </details>
+      </header>
+
+      <section id="macroDashboard" class="macro-dashboard" aria-labelledby="macroDashboardTitle">
+        <div class="data-panel-head macro-dashboard-head">
+          <div>
+            <p class="data-kicker">Live dashboard</p>
+            <h2 id="macroDashboardTitle">Markets and economy at a glance</h2>
+            <p id="macroDashboardMeta">Loading the latest verified observations...</p>
+          </div>
+          <button id="refreshMacroDashboard" class="data-button ghost" type="button">Refresh snapshot</button>
+        </div>
+        <div id="macroDashboardGrid" class="macro-dashboard-grid" aria-live="polite">
+          <article class="macro-snapshot-card loading-card"><span>Market</span><strong>Loading</strong></article>
+          <article class="macro-snapshot-card loading-card"><span>Rates</span><strong>Loading</strong></article>
+          <article class="macro-snapshot-card loading-card"><span>Economy</span><strong>Loading</strong></article>
+        </div>
+      </section>
+
+      <section class="query-workbench">
+        <label for="prompt">Describe the chart and layout</label>
+        <div class="query-command">
+          <textarea id="prompt" rows="2" autocomplete="off" placeholder="Example: Compare core CPI, unemployment, and the federal funds rate over the last 20 years"></textarea>
+          <button id="runBtn" class="data-button primary">Build chart</button>
+        </div>
+      </section>
+
+      <div id="status" class="data-status">Ready.</div>
+
+      <section id="clarificationPanel" class="clarification-panel hidden" aria-labelledby="clarificationTitle">
+        <div class="clarification-heading">
+          <div>
+            <p class="data-kicker">Clarify before loading data</p>
+            <h2 id="clarificationTitle">Make the request precise</h2>
+            <p id="clarificationIntro">The app found more than one defensible interpretation. Choose explicitly so it does not guess or substitute unrelated data.</p>
+          </div>
+          <span id="clarificationCount" class="data-badge"></span>
+        </div>
+        <form id="clarificationForm">
+          <div id="clarificationQuestions" class="clarification-questions"></div>
+          <div class="clarification-actions">
+            <button id="editClarificationPrompt" class="data-button ghost" type="button">Wrong concept? Edit request</button>
+            <button id="submitClarification" class="data-button primary" type="submit">Build the clarified chart</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="chartPanel" class="graph-workbench hidden">
+        <div class="graph-topbar">
+          <div class="range-presets" aria-label="Date range presets">
+            <button data-range-years="1">1Y</button>
+            <button data-range-years="5">5Y</button>
+            <button data-range-years="10">10Y</button>
+            <button data-range-years="25">25Y</button>
+            <button data-range-max="true">Max</button>
+          </div>
+          <div class="custom-range">
+            <label>From <input id="rangeStart" type="date" /></label>
+            <label>To <input id="rangeEnd" type="date" /></label>
+            <button id="applyRangeBtn" class="data-button ghost">Apply</button>
+          </div>
+          <button id="editGraphBtn" class="data-button">Edit graph</button>
+        </div>
+
+        <div id="instructionAudit" class="instruction-audit"></div>
+        <div id="chartFrame" class="chart-frame">
+          <div class="chart-heading">
+            <h2 id="chartTitle">Series chart</h2>
+            <span id="rangeLabel"></span>
+          </div>
+          <canvas id="chart" width="1400" height="620" aria-label="Interactive macro data chart"></canvas>
+          <div id="chartTooltip" class="chart-tooltip hidden"></div>
+        </div>
+
+        <aside id="graphEditor" class="graph-editor hidden">
+          <div class="editor-tabs" role="tablist">
+            <button class="active" data-editor-tab="lines">Edit lines</button>
+            <button data-editor-tab="add">Add line</button>
+            <button data-editor-tab="format">Format</button>
+          </div>
+
+          <div id="editor-lines" class="editor-pane active">
+            <p class="editor-help">Every transformation is applied in the browser to the preserved raw observations.</p>
+            <div id="seriesEditor" class="series-editor"></div>
+          </div>
+
+          <div id="editor-add" class="editor-pane">
+            <label for="addSeriesInput">Data concept, provider ID, or market ticker</label>
+            <div class="inline-actions stretch">
+              <input id="addSeriesInput" placeholder="Examples: mortgage rate, China GDP per capita, $AAPL revenue" />
+              <button id="addSeriesBtn" class="data-button primary">Add data series</button>
+            </div>
+            <p class="editor-help">The resolver identifies the native ID and provider before adding anything to the chart.</p>
+            <div class="formula-builder">
+              <h3>Formula line</h3>
+              <div id="formulaVariables" class="formula-variables"></div>
+              <div class="formula-grid">
+                <label>Line name <input id="formulaName" placeholder="Example: 10Y minus 2Y spread" /></label>
+                <label>Formula <input id="formulaInput" placeholder="Example: B - C" /></label>
+                <button id="addFormulaBtn" class="data-button">Add formula</button>
+              </div>
+              <p class="editor-help">Supported operators: +, -, *, /, and parentheses. Values use the latest observation available on each plotted date; future observations are never carried backward.</p>
+            </div>
+          </div>
+
+          <div id="editor-format" class="editor-pane">
+            <div class="format-grid">
+              <label>Graph title <input id="graphTitleInput" /></label>
+              <label>Legend
+                <select id="legendPosition"><option value="top">Top</option><option value="bottom">Bottom</option><option value="none">Hidden</option></select>
+              </label>
+              <label>Plot color <input id="plotColor" type="color" /></label>
+              <label>Frame color <input id="frameColor" type="color" /></label>
+              <label>Text color <input id="textColor" type="color" /></label>
+              <label>Reference line <input id="referenceValue" type="number" step="any" placeholder="Optional" /></label>
+              <label class="check-field"><input id="showTitle" type="checkbox" /> Show title</label>
+              <label class="check-field"><input id="showAxisTitles" type="checkbox" /> Axis titles</label>
+              <label class="check-field"><input id="showTooltip" type="checkbox" /> Hover tooltip</label>
+              <label class="check-field"><input id="recessionShading" type="checkbox" /> U.S. recession shading</label>
+            </div>
+            <div class="axis-editor">
+              <fieldset>
+                <legend>Left axis</legend>
+                <label>Title <input id="leftAxisTitle" /></label>
+                <label>Minimum <input id="leftAxisMin" type="number" step="any" /></label>
+                <label>Maximum <input id="leftAxisMax" type="number" step="any" /></label>
+                <label class="check-field"><input id="leftAxisLog" type="checkbox" /> Log scale</label>
+              </fieldset>
+              <fieldset>
+                <legend>Right axis</legend>
+                <label>Title <input id="rightAxisTitle" /></label>
+                <label>Minimum <input id="rightAxisMin" type="number" step="any" /></label>
+                <label>Maximum <input id="rightAxisMax" type="number" step="any" /></label>
+                <label class="check-field"><input id="rightAxisLog" type="checkbox" /> Log scale</label>
+              </fieldset>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <section id="qualityPanel" class="data-panel hidden">
+        <div class="data-panel-head"><div><p class="data-kicker">Verification</p><h2>Resolution and data status</h2></div></div>
+        <div id="qualityBody" class="quality-grid"></div>
+      </section>
+
+      <section id="auditPanel" class="data-panel hidden">
+        <div class="data-panel-head"><div><p class="data-kicker">Audit trail</p><h2>Raw source inventory</h2></div></div>
+        <div class="table-wrap data-table-wrap">
+          <table>
+            <thead><tr><th>Series</th><th>Provider</th><th>Native ID</th><th>Coverage</th><th>Latest raw value</th><th>Observations</th><th>Resolution / fallback</th></tr></thead>
+            <tbody id="auditRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="sourcePanel" class="data-panel hidden">
+        <div class="data-panel-head"><div><p class="data-kicker">Primary data</p><h2>Source links</h2></div></div>
+        <p class="source-intro">Open the exact provider pages used for the currently displayed series.</p>
+        <div id="sourceLinks" class="source-grid"></div>
+      </section>
+    </main>
+  <script src="./fred-tool.js?rev=20260816-qualifier-safe-clarifications-3"></script>
+  </body>
+</html>

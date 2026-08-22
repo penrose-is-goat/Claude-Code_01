@@ -1,0 +1,4 @@
+side-tools-settings.json
+.cache/
+__pycache__/
+*.pyc

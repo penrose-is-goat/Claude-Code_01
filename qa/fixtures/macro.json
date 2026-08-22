@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "tool": "macro",
+  "seed": 3001,
+  "description": "Macro Data Lab semantic contracts and source/numerical fixtures.",
+  "cases": [
+    {
+      "id": "macro.equity_debt_market",
+      "prompt": "show me the total us equity market versus the total US debt market",
+      "expected": {
+        "parse": "success",
+        "fieldEquals": {"operation": "compare"},
+        "conceptFamilies": ["equity_market_capitalization", "debt_market_securities"],
+        "conceptIds": ["US_PUBLIC_EQUITY_MARKET_CAP", "US_DEBT_SECURITIES_OUTSTANDING"],
+        "sourceSeriesIds": ["BOGZ1LM883164115Q", "ASTDSL"]
+      },
+      "forbidden": {
+        "conceptIds": ["SP500", "TOTDTEUSQ163N", "TDSP", "DGS10"],
+        "fragments": ["me total", "on a"]
+      },
+      "variants": [
+        {"kind": "metatext", "prompt": "Please chart the total US stock market capitalization versus total outstanding US debt securities."},
+        {"kind": "paraphrase", "prompt": "Compare the market value of publicly traded United States equities with outstanding US debt securities."},
+        {"kind": "typo", "prompt": "show total US stock market capitilzation versus total outstanding United States debt securities"}
+      ],
+      "invariants": ["source_traceability", "ordered_observations", "market_cap_not_index", "debt_measure_not_ratio"]
+    },
+    {
+      "id": "macro.equity_debt_25y_axis",
+      "prompt": "show me the total us stock market capitalization versus the total US outstanding debt market on a chart over the last 25 years",
+      "expected": {
+        "parse": "success",
+        "fieldEquals": {"operation": "compare"},
+        "conceptFamilies": ["equity_market_capitalization", "debt_market_securities"],
+        "conceptIds": ["US_PUBLIC_EQUITY_MARKET_CAP", "US_DEBT_SECURITIES_OUTSTANDING"],
+        "sourceSeriesIds": ["BOGZ1LM883164115Q", "ASTDSL"]
+      },
+      "forbidden": {
+        "conceptIds": ["SP500", "TOTDTEUSQ163N", "TDSP"],
+        "fragments": ["me total", "on a"]
+      },
+      "variants": [
+        {"kind": "metatext", "prompt": "For an audited chart, compare total US public equity capitalization with the US debt securities market for 25 years."},
+        {"kind": "paraphrase", "prompt": "Graph broad US stock-market value against outstanding US bond-market debt for the past 25 years."}
+      ],
+      "invariants": ["source_traceability", "ordered_observations", "left_right_axes_do_not_change_values"]
+    },
+    {
+      "id": "macro.core_ppi_core_cpi",
+      "prompt": "graph core PPI final goods and services and core CPI over the last 25 years",
+      "expected": {
+        "parse": "success",
+        "fieldIn": {"operation": ["chart", "compare"]},
+        "conceptIds": ["WPSFD49116", "CPILFESL"]
+      },
+      "forbidden": {"conceptIds": ["PPIACO", "TDSP", "WPU00000000"]},
+      "variants": [
+        {"kind": "metatext", "prompt": "Please graph core producer prices for final demand goods and services alongside core consumer prices for the past 25 years."},
+        {"kind": "paraphrase", "prompt": "Plot core final-demand PPI against core CPI over a 25-year history."},
+        {"kind": "typo", "prompt": "graph core PPI final good and services and core CPI over the last 25 years"}
+      ],
+      "invariants": ["source_traceability", "ordered_observations", "price_level_not_silent_percent_change"]
+    },
+    {
+      "id": "macro.top_ten_percent_wealth",
+      "prompt": "graph the share of household wealth held by the top 10 percent over the last 35 years",
+      "expected": {
+        "parse": "success",
+        "conceptFamilies": ["wealth_distribution"],
+        "conceptIds": ["FED_DFA:NETWORTH:TOP_10:SHARES"],
+        "selectorMatches": [{"kind": "population_share", "direction": "top", "lower": 90.0, "upper": 100.0}]
+      },
+      "forbidden": {"fragments": ["top 10 household", "top 10 companies"]},
+      "variants": [
+        {"kind": "metatext", "prompt": "Show, as a chart, the household wealth share owned by the upper decile over the past 35 years."},
+        {"kind": "paraphrase", "prompt": "Plot the percentage of total household net worth controlled by the richest tenth for 35 years."},
+        {"kind": "typo", "prompt": "graph household wealth share held by the top ten persent over the last 35 years"}
+      ],
+      "invariants": ["source_traceability", "top_10_percent_not_top_10_count", "ordered_observations"]
+    },
+    {
+      "id": "macro.price_yield_dual_axis",
+      "prompt": "graph the S&P 500, 10-year and 2-year Treasury yields and federal funds rate for the last 25 years, put yields on the left axis and price on the right axis",
+      "expected": {
+        "parse": "success",
+        "conceptIds": ["SP500", "DGS10", "DGS2", "EFFR"],
+        "fieldIn": {"operation": ["chart", "compare"]}
+      },
+      "forbidden": {"conceptIds": ["TDSP", "GDPDEF"]},
+      "variants": [
+        {"kind": "metatext", "prompt": "Please chart the S&P 500 alongside 10-year and 2-year Treasury yields and EFFR for 25 years, with yields left and price right."},
+        {"kind": "paraphrase", "prompt": "Display the S&P 500 price index versus the 10-year and 2-year Treasury rates and federal funds rate over the prior 25 years using separate axes."}
+      ],
+      "invariants": ["source_traceability", "left_right_axes_do_not_change_values", "ordered_observations"]
+    }
+  ],
+  "invariantSamples": {
+    "valid": {
+      "sources": [
+        {"provider": "Federal Reserve Z.1", "seriesId": "BOGZ1LM883164115Q", "url": "https://fred.stlouisfed.org/series/BOGZ1LM883164115Q", "coverageStart": "1990-01-01", "coverageEnd": "2026-01-01"},
+        {"provider": "Federal Reserve Z.1", "seriesId": "ASTDSL", "url": "https://fred.stlouisfed.org/series/ASTDSL", "coverageStart": "1945-01-01", "coverageEnd": "2026-01-01"}
+      ],
+      "observations": [
+        {"date": "2025-01-01", "value": 61000000.0},
+        {"date": "2025-04-01", "value": 62500000.0},
+        {"date": "2025-07-01", "value": 64000000.0}
+      ]
+    },
+    "invalid": {
+      "observations": {"rows": [{"date": "2025-04-01", "value": 1}, {"date": "2025-04-01", "value": 2}, {"date": "bad-date", "value": "nan"}], "expectedCodes": ["OBSERVATION_DATES_NOT_STRICT", "OBSERVATION_DATE_INVALID", "OBSERVATION_VALUE_NOT_NUMERIC"]}
+    }
+  }
+}
