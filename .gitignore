@@ -1,1 +1,9 @@
-__pycache__/
+**/.cache/
+**/__pycache__/
+**/.chrome-profile/
+**/tmp/
+*.pyc
+*.pyo
+*.pyd
+side-tools/side-tools-settings.json
+side-tools/tools/cloudflared.exe

@@ -1,1015 +1,206 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FRED Tool - Natural Language Economic Charts</title>
-<style>
-:root {
-  --bg-primary:#0f1117; --bg-secondary:#1a1d27; --bg-tertiary:#242836;
-  --bg-card:#1e2233; --bg-input:#2a2e3f; --border:#2d3248; --border-light:#3d4258;
-  --text-primary:#e8eaed; --text-secondary:#9aa0a6; --text-muted:#6b7280;
-  --accent:#4f8ff7; --green:#34d399; --red:#f87171; --yellow:#fbbf24;
-  --radius:8px; --radius-lg:12px;
-  --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-  --font-mono:'JetBrains Mono','Fira Code',monospace;
-}
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:var(--font);background:var(--bg-primary);color:var(--text-primary);padding:24px;max-width:1200px;margin:0 auto}
-h1{font-size:1.4rem;margin-bottom:4px;color:var(--accent)}
-.sub{color:var(--text-muted);font-size:0.85rem;margin-bottom:20px}
-.card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:16px}
-.search-row{display:flex;gap:10px}
-.query-input{flex:1;padding:12px 16px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-size:0.95rem;outline:none}
-.query-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,143,247,0.15)}
-.btn{padding:10px 22px;border-radius:var(--radius);border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:0.9rem;font-weight:600;cursor:pointer;font-family:var(--font)}
-.btn:hover{background:#3a7be0}
-.examples{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
-.chip{padding:5px 12px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:16px;font-size:0.75rem;color:var(--text-secondary);cursor:pointer}
-.chip:hover{border-color:var(--accent);color:var(--accent)}
-.series-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;min-height:10px}
-.series-chip{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:var(--radius);font-size:0.8rem}
-.dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-.axis-toggle{cursor:pointer;font-family:var(--font-mono);font-size:0.7rem;font-weight:700;padding:2px 7px;border-radius:4px;background:var(--bg-input);color:var(--accent);border:1px solid var(--border)}
-.axis-toggle:hover{border-color:var(--accent)}
-.remove-x{cursor:pointer;color:var(--text-muted);font-size:1rem;line-height:1}
-.remove-x:hover{color:var(--red)}
-.controls{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-bottom:14px;padding:12px;background:var(--bg-tertiary);border-radius:var(--radius)}
-.range-btn{padding:4px 12px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);font-size:0.8rem;cursor:pointer;font-family:var(--font)}
-.range-btn:hover{background:#2f3447}
-.controls label{font-size:0.78rem;color:var(--text-secondary);display:inline-flex;align-items:center;gap:5px;cursor:pointer}
-.controls input[type=date]{background:var(--bg-input);border:1px solid var(--border);border-radius:5px;color:var(--text-primary);padding:4px 8px;font-size:0.78rem;font-family:var(--font)}
-.chart-wrap{position:relative;height:480px}
-.chart-wrap canvas{width:100%!important;height:100%!important;display:block}
-.footnote{color:var(--text-muted);font-size:0.72rem;margin-top:12px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px}
-.mode-live{color:var(--green);font-weight:600}
-.mode-demo{color:var(--yellow);font-weight:600}
-.status{font-size:0.8rem;color:var(--text-muted);padding:6px 0}
-.err{color:var(--red)}
-.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-right:6px}
-@keyframes spin{to{transform:rotate(360deg)}}
-@media(max-width:768px){.search-row{flex-direction:column}.chart-wrap{height:360px}}
-</style>
-</head>
-<body>
-<h1>FRED Tool</h1>
-<div class="sub">Fuzzy search across 85+ FRED series, tolerant of misspellings. <strong>This tool never invents data.</strong> It charts what it can fetch from FRED, or what you paste in as a CSV &mdash; nothing else. Hosted previews block network access, so use CSV import there.</div>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Macro Data Lab</title>
+    <link rel="stylesheet" href="./style.css?rev=20260816-qualifier-safe-clarifications" />
+  </head>
+  <body class="macro-page">
+    <main class="data-shell">
+      <nav class="data-nav">
+        <a href="./index.html">Side Tools</a>
+        <a class="active" href="./fred-tool.html">Macro Data Lab</a>
+        <a href="./fed-tracker.html">Fed Tracker</a>
+        <a href="./treasury-auctions.html">Auction Tracker</a>
+      </nav>
 
-<div class="card">
-  <div class="search-row">
-    <input class="query-input" id="query" placeholder='e.g. "show me the wilshire 5000 index and 10 year US treasury yields"'>
-    <button class="btn" id="go" data-action="run">Chart It</button>
-  </div>
-  <div class="examples" id="examples"></div>
-  <details open style="margin-top:12px;border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px">
-    <summary style="font-size:0.86rem;color:var(--accent);cursor:pointer;font-weight:700">&#128229; Import real FRED data (paste CSV) &mdash; the reliable path</summary>
-    <div style="margin-top:8px;font-size:0.76rem;color:var(--text-muted);line-height:1.6">
-      On <strong>fred.stlouisfed.org</strong>, open any series &rarr; <strong>Download</strong> &rarr; <strong>CSV</strong>, open the file and paste its contents below.
-      Repeat per series to build a multi-series chart from genuine data.
-    </div>
-    <textarea id="csv-input" placeholder="observation_date,DGS10&#10;2024-01-02,3.95&#10;2024-01-03,3.91" style="width:100%;height:88px;margin-top:8px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);padding:8px;font-family:var(--font-mono);font-size:0.72rem;resize:vertical"></textarea>
-    <button class="btn" data-action="import-csv" style="margin-top:8px;padding:7px 16px;font-size:0.8rem">Import &amp; Chart</button>
-  </details>
-  <div class="status" id="status"></div>
-</div>
+      <header class="lab-header">
+        <div>
+          <p class="data-kicker">Economic and market data workbench</p>
+          <h1>Macro Data Lab</h1>
+          <p>Search S&amp;P, SEC, World Bank, Treasury, BLS, market, and FRED data, then build auditable multi-series charts.</p>
+        </div>
+        <details class="data-settings">
+          <summary>Data settings</summary>
+          <label for="fredApiKey">Optional FRED API key for final metadata fallback</label>
+          <input id="fredApiKey" type="password" autocomplete="off" placeholder="Stored only on this computer" />
+          <label for="ollamaModel">Local fallback model</label>
+          <input id="ollamaModel" autocomplete="off" placeholder="qwen3.5:9b" />
+          <div class="inline-actions">
+            <button id="saveSettingsBtn" class="data-button">Save</button>
+            <button id="doctorBtn" class="data-button ghost">Network check</button>
+          </div>
+          <p id="settingsStatus" class="data-note"></p>
+          <p id="modelHealth" class="data-note">Checking local model fallback...</p>
+          <p id="backendStamp" class="data-note"></p>
+        </details>
+      </header>
 
-<div class="card" id="chart-card" style="display:none">
-  <div id="data-banner"></div>
-  <div class="series-chips" id="chips"></div>
-  <div class="controls">
-    <span id="range-btns">
-      <button class="range-btn" data-action="preset" data-preset="1Y">1Y</button>
-      <button class="range-btn" data-action="preset" data-preset="5Y">5Y</button>
-      <button class="range-btn" data-action="preset" data-preset="10Y">10Y</button>
-      <button class="range-btn" data-action="preset" data-preset="20Y">20Y</button>
-      <button class="range-btn" data-action="preset" data-preset="MAX">MAX</button>
-    </span>
-    <label>From <input type="date" id="d-start"></label>
-    <label>To <input type="date" id="d-end"></label>
-    <button class="range-btn" data-action="apply-range" style="border-color:var(--accent);color:var(--accent)">Apply</button>
-    <label><input type="checkbox" id="opt-norm"> Normalize (=100)</label>
-    <label><input type="checkbox" id="opt-logl"> Log left</label>
-    <label><input type="checkbox" id="opt-logr"> Log right</label>
-    <label><input type="checkbox" id="opt-rec"> Recession shading</label>
-  </div>
-  <div id="legend" style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:8px;font-size:0.78rem;color:var(--text-secondary)"></div>
-  <div class="chart-wrap"><canvas id="chart"></canvas>
-    <div id="tooltip" style="position:absolute;display:none;background:#1e2233;border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:0.75rem;pointer-events:none;z-index:10;font-family:var(--font-mono);line-height:1.6"></div>
-  </div>
-  <div class="footnote">
-    <span>Source: FRED&reg;, Federal Reserve Bank of St. Louis &mdash; fred.stlouisfed.org</span>
-    <span id="mode-label"></span>
-  </div>
-</div>
+      <section id="macroDashboard" class="macro-dashboard" aria-labelledby="macroDashboardTitle">
+        <div class="data-panel-head macro-dashboard-head">
+          <div>
+            <p class="data-kicker">Live dashboard</p>
+            <h2 id="macroDashboardTitle">Markets and economy at a glance</h2>
+            <p id="macroDashboardMeta">Loading the latest verified observations...</p>
+          </div>
+          <button id="refreshMacroDashboard" class="data-button ghost" type="button">Refresh snapshot</button>
+        </div>
+        <div id="macroDashboardGrid" class="macro-dashboard-grid" aria-live="polite">
+          <article class="macro-snapshot-card loading-card"><span>Market</span><strong>Loading</strong></article>
+          <article class="macro-snapshot-card loading-card"><span>Rates</span><strong>Loading</strong></article>
+          <article class="macro-snapshot-card loading-card"><span>Economy</span><strong>Loading</strong></article>
+        </div>
+      </section>
 
-<script>
-'use strict';
-const FT = {};
+      <section class="query-workbench">
+        <label for="prompt">Describe the chart and layout</label>
+        <div class="query-command">
+          <textarea id="prompt" rows="2" autocomplete="off" placeholder="Example: Compare core CPI, unemployment, and the federal funds rate over the last 20 years"></textarea>
+          <button id="runBtn" class="data-button primary">Build chart</button>
+        </div>
+        <div class="prompt-examples">
+          <button data-example="vix and sp500 for last 10 years">VIX + S&amp;P 500</button>
+          <button data-example="cpi, unemployment and fed funds for last 25 years">Inflation + jobs + Fed</button>
+          <button data-example="10 year, 2 year and 3 month treasury yields for last 20 years">Yield curve</button>
+          <button data-example="chart s&amp;p earnings versus s&amp;p earnings ex tech and consumer staples for the last 25 years">S&amp;P earnings ex sectors</button>
+        </div>
+      </section>
 
-/* ================= Series dictionary (70+ series) ================= */
-/* t: optional transform ('yoy' = % change vs 12 months prior) */
-FT.DICT = [
-  /* --- Treasury yields --- */
-  { id:'DGS1MO', name:'1-Month Treasury Yield', units:'pct', aliases:['1 month treasury','1 month yield','1 month tbill'] },
-  { id:'DGS3MO', name:'3-Month Treasury Yield', units:'pct', aliases:['3 month treasury','3 month yield','3 month tbill','tbill','t bill'] },
-  { id:'DGS6MO', name:'6-Month Treasury Yield', units:'pct', aliases:['6 month treasury','6 month yield'] },
-  { id:'DGS1', name:'1-Year Treasury Yield', units:'pct', aliases:['1 year treasury','1 year yield'] },
-  { id:'DGS2', name:'2-Year Treasury Yield', units:'pct', aliases:['2 year treasury','2 year yield','2 year note','2 year rate','ust 2','2 year ust'] },
-  { id:'DGS3', name:'3-Year Treasury Yield', units:'pct', aliases:['3 year treasury','3 year yield'] },
-  { id:'DGS5', name:'5-Year Treasury Yield', units:'pct', aliases:['5 year treasury','5 year yield','5 year note'] },
-  { id:'DGS7', name:'7-Year Treasury Yield', units:'pct', aliases:['7 year treasury','7 year yield'] },
-  { id:'DGS10', name:'10-Year Treasury Yield', units:'pct', aliases:['10 year treasury','10 year yield','10 year note','10 year rate','10 year government bond','10 year bond','ust 10','10 year ust'] },
-  { id:'DGS20', name:'20-Year Treasury Yield', units:'pct', aliases:['20 year treasury','20 year yield'] },
-  { id:'DGS30', name:'30-Year Treasury Yield', units:'pct', aliases:['30 year treasury','30 year yield','30 year bond','long bond'] },
-  /* --- Policy & money-market rates --- */
-  { id:'DFF', name:'Federal Funds Rate (effective)', units:'pct', aliases:['federal funds rate','fed funds rate','federal funds','fed funds','fedfunds','policy rate','effr','ffr','fed rate'] },
-  { id:'SOFR', name:'SOFR', units:'pct', aliases:['sofr','secured overnight financing'] },
-  { id:'IORB', name:'Interest on Reserve Balances', units:'pct', aliases:['iorb','interest on reserves'] },
-  { id:'DPRIME', name:'Prime Rate', units:'pct', aliases:['prime rate','prime lending'] },
-  /* --- Spreads, breakevens, real yields --- */
-  { id:'T10Y2Y', name:'10Y-2Y Treasury Spread', units:'pct', aliases:['yield curve','2s10s','10 2 spread','10 year 2 year spread','curve inversion','10y2y spread'] },
-  { id:'T10Y3M', name:'10Y-3M Treasury Spread', units:'pct', aliases:['10y 3m spread','10 year 3 month spread'] },
-  { id:'T10YIE', name:'10-Year Breakeven Inflation', units:'pct', aliases:['10 year breakeven','breakeven inflation','inflation expectations'] },
-  { id:'T5YIE', name:'5-Year Breakeven Inflation', units:'pct', aliases:['5 year breakeven'] },
-  { id:'T5YIFR', name:'5Y5Y Forward Inflation', units:'pct', aliases:['5y5y','five year forward inflation'] },
-  { id:'DFII10', name:'10-Year TIPS Real Yield', units:'pct', aliases:['tips','real yield','10 year tips','real rate'] },
-  /* --- Credit --- */
-  { id:'BAMLH0A0HYM2', name:'High Yield Spread (OAS)', units:'pct', aliases:['high yield spread','junk spread','hy spread','credit spread'] },
-  { id:'BAMLC0A0CM', name:'IG Corporate Spread (OAS)', units:'pct', aliases:['investment grade spread','ig spread','corporate spread'] },
-  { id:'DAAA', name:'Aaa Corporate Bond Yield', units:'pct', aliases:['aaa yield','aaa corporate'] },
-  { id:'DBAA', name:'Baa Corporate Bond Yield', units:'pct', aliases:['baa yield','baa corporate'] },
-  /* --- Mortgages --- */
-  { id:'MORTGAGE30US', name:'30-Year Mortgage Rate', units:'pct', aliases:['30 year mortgage','mortgage rate','mortgage rates','mortgage'] },
-  { id:'MORTGAGE15US', name:'15-Year Mortgage Rate', units:'pct', aliases:['15 year mortgage'] },
-  /* --- Inflation --- */
-  { id:'CPIAUCSL', name:'Inflation Rate (CPI YoY)', units:'pct', t:'yoy', aliases:['inflation rate','inflation'] },
-  { id:'CPIAUCSL', name:'CPI Index', units:'index', aliases:['cpi index','cpi','consumer price index'] },
-  { id:'CPILFESL', name:'Core CPI (YoY)', units:'pct', t:'yoy', aliases:['core cpi','core inflation'] },
-  { id:'PCEPI', name:'PCE Inflation (YoY)', units:'pct', t:'yoy', aliases:['pce inflation','pce price index'] },
-  { id:'PCEPILFE', name:'Core PCE (YoY)', units:'pct', t:'yoy', aliases:['core pce'] },
-  { id:'PPIACO', name:'PPI (YoY)', units:'pct', t:'yoy', aliases:['ppi','producer price','producer prices'] },
-  { id:'MICH', name:'Michigan Inflation Expectations', units:'pct', aliases:['michigan inflation','consumer inflation expectations'] },
-  /* --- Employment --- */
-  { id:'UNRATE', name:'Unemployment Rate', units:'pct', aliases:['unemployment rate','unemployment','jobless rate','u3'] },
-  { id:'U6RATE', name:'U-6 Underemployment Rate', units:'pct', aliases:['u6','underemployment'] },
-  { id:'PAYEMS', name:'Nonfarm Payrolls (thous.)', units:'level', aliases:['nonfarm payrolls','payrolls','payroll employment','jobs report'] },
-  { id:'ICSA', name:'Initial Jobless Claims', units:'level', aliases:['jobless claims','initial claims','unemployment claims'] },
-  { id:'JTSJOL', name:'Job Openings (JOLTS)', units:'level', aliases:['job openings','jolts'] },
-  { id:'CIVPART', name:'Labor Force Participation', units:'pct', aliases:['labor force participation','participation rate'] },
-  { id:'CES0500000003', name:'Avg Hourly Earnings ($)', units:'usd', aliases:['average hourly earnings','hourly earnings'] },
-  { id:'CES0500000003', name:'Wage Growth (YoY)', units:'pct', t:'yoy', aliases:['wage growth','wage inflation','wages'] },
-  /* --- Output --- */
-  { id:'GDP', name:'GDP (nominal, $B)', units:'usd_b', aliases:['nominal gdp','gdp'] },
-  { id:'GDPC1', name:'Real GDP ($B 2017)', units:'usd_b', aliases:['real gdp'] },
-  { id:'A191RL1Q225SBEA', name:'Real GDP Growth (%)', units:'pct', aliases:['real gdp growth','gdp growth','economic growth'] },
-  { id:'INDPRO', name:'Industrial Production', units:'index', aliases:['industrial production'] },
-  { id:'TCU', name:'Capacity Utilization', units:'pct', aliases:['capacity utilization'] },
-  { id:'CP', name:'Corporate Profits ($B)', units:'usd_b', aliases:['corporate profits'] },
-  /* --- Money & Fed --- */
-  { id:'M1SL', name:'M1 Money Supply ($B)', units:'usd_b', aliases:['m1','m1 money supply'] },
-  { id:'M2SL', name:'M2 Money Supply ($B)', units:'usd_b', aliases:['m2','m2 money supply','money supply'] },
-  { id:'WALCL', name:'Fed Balance Sheet ($M)', units:'usd_m', aliases:['fed balance sheet','balance sheet','walcl','fed assets'] },
-  { id:'RRPONTSYD', name:'Reverse Repo ($B)', units:'usd_b', aliases:['reverse repo','rrp'] },
-  { id:'TOTRESNS', name:'Bank Reserves ($B)', units:'usd_b', aliases:['bank reserves','reserves'] },
-  /* --- Markets --- */
-  { id:'SP500', name:'S&P 500', units:'level', aliases:['sp 500','sp500','s and p 500','s and p','spx'],
-    note:'FRED only redistributes the last 10 years of S&P 500 values (licensing). For long history use Shiller\'s monthly series back to 1871: econ.yale.edu/~shiller/data.htm' },
-  { id:'NASDAQCOM', name:'NASDAQ Composite', units:'level', aliases:['nasdaq','nasdaq composite'] },
-  { id:'NASDAQ100', name:'NASDAQ 100', units:'level', aliases:['nasdaq 100','ndx'] },
-  { id:'DJIA', name:'Dow Jones Industrial Avg', units:'level', aliases:['dow jones','djia','dow'] },
-  { id:'WILL5000IND', name:'Wilshire 5000 Total Market Index', units:'level', aliases:['wilshire 5000','wilshire','total market index','wilshire index'],
-    note:'FRED discontinued this series in early 2024 (starts 1970-12-31). For a continuing total-market proxy use VTI or the FT Wilshire 5000 (wilshireindexes.com). For pre-1970 US equity history, Robert Shiller\'s monthly series goes back to 1871: econ.yale.edu/~shiller/data.htm' },
-  { id:'VIXCLS', name:'VIX', units:'level', aliases:['vix','volatility index','fear index'] },
-  { id:'CBBTCUSD', name:'Bitcoin ($)', units:'usd', aliases:['bitcoin','btc'] },
-  { id:'CBETHUSD', name:'Ethereum ($)', units:'usd', aliases:['ethereum','eth','ether'] },
-  /* --- Housing --- */
-  { id:'HOUST', name:'Housing Starts (thous.)', units:'level', aliases:['housing starts'] },
-  { id:'PERMIT', name:'Building Permits (thous.)', units:'level', aliases:['building permits','permits'] },
-  { id:'HSN1F', name:'New Home Sales (thous.)', units:'level', aliases:['new home sales'] },
-  { id:'CSUSHPINSA', name:'Case-Shiller Home Price Index', units:'index', aliases:['case shiller','home price index','home prices','house prices','housing prices'] },
-  { id:'MSPUS', name:'Median Home Sale Price ($)', units:'usd', aliases:['median home price','median house price','median home sale'] },
-  /* --- Consumer --- */
-  { id:'RSAFS', name:'Retail Sales ($M)', units:'usd_m', aliases:['retail sales'] },
-  { id:'UMCSENT', name:'Consumer Sentiment', units:'index', aliases:['consumer sentiment','michigan sentiment','consumer confidence'] },
-  { id:'PSAVERT', name:'Personal Savings Rate', units:'pct', aliases:['savings rate','personal savings'] },
-  { id:'PCE', name:'Consumer Spending ($B)', units:'usd_b', aliases:['consumer spending','personal consumption'] },
-  { id:'PI', name:'Personal Income ($B)', units:'usd_b', aliases:['personal income'] },
-  { id:'TOTALSL', name:'Consumer Credit ($B)', units:'usd_b', aliases:['consumer credit','consumer debt'] },
-  /* --- Government --- */
-  { id:'GFDEBTN', name:'Federal Debt ($M)', units:'usd_m', aliases:['federal debt','national debt','government debt'] },
-  { id:'GFDEGDQ188S', name:'Debt to GDP (%)', units:'pct', aliases:['debt to gdp'] },
-  { id:'FYFSD', name:'Federal Deficit ($M)', units:'usd_m', aliases:['deficit','federal deficit','budget deficit'] },
-  { id:'BOPGSTB', name:'Trade Balance ($M)', units:'usd_m', aliases:['trade balance','trade deficit'] },
-  /* --- FX & commodities --- */
-  { id:'DTWEXBGS', name:'US Dollar Index', units:'index', aliases:['dollar index','dxy','dollar strength'] },
-  { id:'DEXUSEU', name:'USD per Euro', units:'level', aliases:['euro','eurusd','eur usd'] },
-  { id:'DEXJPUS', name:'Yen per USD', units:'level', aliases:['yen','usdjpy','japanese yen'] },
-  { id:'DEXCHUS', name:'Yuan per USD', units:'level', aliases:['yuan','renminbi','usdcny'] },
-  { id:'DEXUSUK', name:'USD per Pound', units:'level', aliases:['pound','gbpusd','british pound','sterling'] },
-  { id:'DCOILWTICO', name:'WTI Crude Oil ($)', units:'usd', aliases:['wti','crude oil','oil price','oil'] },
-  { id:'DCOILBRENTEU', name:'Brent Crude ($)', units:'usd', aliases:['brent'] },
-  { id:'DHHNGSP', name:'Natural Gas ($)', units:'usd', aliases:['natural gas','nat gas'] },
-  { id:'GASREGW', name:'Retail Gasoline ($/gal)', units:'usd', aliases:['gas price','gasoline'] },
-  { id:'PCOPPUSDM', name:'Copper ($/tonne)', units:'usd', aliases:['copper'] }
-];
-FT.RECESSION_ID = 'USREC';
-FT.COLORS = ['#4f8ff7','#34d399','#f87171','#fbbf24','#a78bfa','#fb923c','#22d3ee','#f472b6','#84cc16','#e879f9'];
+      <div id="status" class="data-status">Ready.</div>
 
-/* ================= Fuzzy query parser ================= */
-FT.STOP = new Set(['show','me','the','a','an','of','and','or','vs','versus','v','plot','chart','graph','display','compare','compared','with','please','for','us','u.s','usa','american','america','united','states','over','in','on','at','to','from','since','last','past','ytd','max','all','time','entire','history','data','daily','weekly','monthly','index','rate','rates','yield','yields','level','price','prices','what','is','was','how','has','have','been','i','want','see','give','get','pull','up','out','also','along','together','both','their','its','it']);
-FT.SOFT = new Set(['index','rate','rates','yield','yields','price','prices','level']); /* removable but also present in aliases */
-FT.NUMWORDS = { one:'1', two:'2', three:'3', five:'5', six:'6', seven:'7', ten:'10', fifteen:'15', twenty:'20', thirty:'30' };
+      <section id="clarificationPanel" class="clarification-panel hidden" aria-labelledby="clarificationTitle">
+        <div class="clarification-heading">
+          <div>
+            <p class="data-kicker">Clarify before loading data</p>
+            <h2 id="clarificationTitle">Make the request precise</h2>
+            <p id="clarificationIntro">The app found more than one defensible interpretation. Choose explicitly so it does not guess or substitute unrelated data.</p>
+          </div>
+          <span id="clarificationCount" class="data-badge"></span>
+        </div>
+        <form id="clarificationForm">
+          <div id="clarificationQuestions" class="clarification-questions"></div>
+          <div class="clarification-actions">
+            <button id="editClarificationPrompt" class="data-button ghost" type="button">Wrong concept? Edit request</button>
+            <button id="submitClarification" class="data-button primary" type="submit">Build the clarified chart</button>
+          </div>
+        </form>
+      </section>
 
-FT.normalizeQuery = function(s) {
-  s = s.toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/\bfifteen\b/g,'15').replace(/\btwenty\b/g,'20').replace(/\bthirty\b/g,'30')
-    .replace(/\bthree\b/g,'3').replace(/\bseven\b/g,'7').replace(/\bten\b/g,'10')
-    .replace(/\btwo\b/g,'2').replace(/\bsix\b/g,'6').replace(/\bfive\b/g,'5').replace(/\bone\b/g,'1')
-    .replace(/[^a-z0-9\s./-]/g, ' ')
-    .replace(/(\d+)[\s.-]*(?:year|yr|y)s?\b/g, '$1 year')
-    .replace(/(\d+)[\s.-]*(?:month|mo)s?\b/g, '$1 month')
-    .replace(/\bs\s*and\s*p\b/g, 'sp')
-    .replace(/\bsp\s*500\b/g, 'sp500')
-    .replace(/-/g, ' ');
-  return s;
-};
+      <section id="chartPanel" class="graph-workbench hidden">
+        <div class="graph-topbar">
+          <div class="range-presets" aria-label="Date range presets">
+            <button data-range-years="1">1Y</button>
+            <button data-range-years="5">5Y</button>
+            <button data-range-years="10">10Y</button>
+            <button data-range-years="25">25Y</button>
+            <button data-range-max="true">Max</button>
+          </div>
+          <div class="custom-range">
+            <label>From <input id="rangeStart" type="date" /></label>
+            <label>To <input id="rangeEnd" type="date" /></label>
+            <button id="applyRangeBtn" class="data-button ghost">Apply</button>
+          </div>
+          <button id="editGraphBtn" class="data-button">Edit graph</button>
+        </div>
 
-FT.singular = function(t) {
-  if (t.length > 4 && t.endsWith('ies')) return t.slice(0, -3) + 'y';
-  if (t.length > 3 && t.endsWith('s') && !t.endsWith('ss')) return t.slice(0, -1);
-  return t;
-};
+        <div id="instructionAudit" class="instruction-audit"></div>
+        <div id="chartFrame" class="chart-frame">
+          <div class="chart-heading">
+            <h2 id="chartTitle">Series chart</h2>
+            <span id="rangeLabel"></span>
+          </div>
+          <canvas id="chart" width="1400" height="620" aria-label="Interactive macro data chart"></canvas>
+          <div id="chartTooltip" class="chart-tooltip hidden"></div>
+        </div>
 
-FT.tokenize = function(s) {
-  return FT.normalizeQuery(s).split(/\s+/).filter(Boolean)
-    .map(t => FT.NUMWORDS[t] || t).map(FT.singular);
-};
+        <aside id="graphEditor" class="graph-editor hidden">
+          <div class="editor-tabs" role="tablist">
+            <button class="active" data-editor-tab="lines">Edit lines</button>
+            <button data-editor-tab="add">Add line</button>
+            <button data-editor-tab="format">Format</button>
+          </div>
 
-/* content tokens: same pipeline for queries AND aliases, stopwords removed */
-FT.contentTokens = function(s) {
-  return FT.tokenize(s).filter(t => !FT.STOP.has(t) || FT.SOFT.has(t) || /^\d/.test(t));
-};
+          <div id="editor-lines" class="editor-pane active">
+            <p class="editor-help">Every transformation is applied in the browser to the preserved raw observations.</p>
+            <div id="seriesEditor" class="series-editor"></div>
+          </div>
 
-/* Damerau-Levenshtein distance, capped at 3 */
-FT.editDist = function(a, b) {
-  if (a === b) return 0;
-  if (Math.abs(a.length - b.length) > 3) return 9;
-  const m = a.length, n = b.length;
-  const d = [];
-  for (let i = 0; i <= m; i++) { d[i] = [i]; }
-  for (let j = 0; j <= n; j++) d[0][j] = j;
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      const cost = a[i-1] === b[j-1] ? 0 : 1;
-      d[i][j] = Math.min(d[i-1][j] + 1, d[i][j-1] + 1, d[i-1][j-1] + cost);
-      if (i > 1 && j > 1 && a[i-1] === b[j-2] && a[i-2] === b[j-1])
-        d[i][j] = Math.min(d[i][j], d[i-2][j-2] + cost);
-    }
-  }
-  return d[m][n];
-};
+          <div id="editor-add" class="editor-pane">
+            <label for="addSeriesInput">Data concept, provider ID, or market ticker</label>
+            <div class="inline-actions stretch">
+              <input id="addSeriesInput" placeholder="Examples: mortgage rate, China GDP per capita, $AAPL revenue" />
+              <button id="addSeriesBtn" class="data-button primary">Add data series</button>
+            </div>
+            <p class="editor-help">The resolver identifies the native ID and provider before adding anything to the chart.</p>
+            <div class="formula-builder">
+              <h3>Formula line</h3>
+              <div id="formulaVariables" class="formula-variables"></div>
+              <div class="formula-grid">
+                <label>Line name <input id="formulaName" placeholder="Example: 10Y minus 2Y spread" /></label>
+                <label>Formula <input id="formulaInput" placeholder="Example: B - C" /></label>
+                <button id="addFormulaBtn" class="data-button">Add formula</button>
+              </div>
+              <p class="editor-help">Supported operators: +, -, *, /, and parentheses. Values use the latest observation available on each plotted date; future observations are never carried backward.</p>
+            </div>
+          </div>
 
-/* token similarity: 1 exact, fuzzy for longer tokens, 0 otherwise */
-FT.tokSim = function(q, a) {
-  if (q === a) return 1;
-  if (/^\d/.test(q) || /^\d/.test(a)) return 0;      /* numbers must be exact */
-  if (a.length >= 8 && FT.editDist(q, a) <= 2) return 0.85;
-  if (a.length >= 5 && FT.editDist(q, a) <= 1) return 0.9;
-  if (a.length >= 5 && q.length >= 4 && a.startsWith(q)) return 0.85; /* prefix */
-  return 0;
-};
+          <div id="editor-format" class="editor-pane">
+            <div class="format-grid">
+              <label>Graph title <input id="graphTitleInput" /></label>
+              <label>Legend
+                <select id="legendPosition"><option value="top">Top</option><option value="bottom">Bottom</option><option value="none">Hidden</option></select>
+              </label>
+              <label>Plot color <input id="plotColor" type="color" /></label>
+              <label>Frame color <input id="frameColor" type="color" /></label>
+              <label>Text color <input id="textColor" type="color" /></label>
+              <label>Reference line <input id="referenceValue" type="number" step="any" placeholder="Optional" /></label>
+              <label class="check-field"><input id="showTitle" type="checkbox" /> Show title</label>
+              <label class="check-field"><input id="showAxisTitles" type="checkbox" /> Axis titles</label>
+              <label class="check-field"><input id="showTooltip" type="checkbox" /> Hover tooltip</label>
+              <label class="check-field"><input id="recessionShading" type="checkbox" /> U.S. recession shading</label>
+            </div>
+            <div class="axis-editor">
+              <fieldset>
+                <legend>Left axis</legend>
+                <label>Title <input id="leftAxisTitle" /></label>
+                <label>Minimum <input id="leftAxisMin" type="number" step="any" /></label>
+                <label>Maximum <input id="leftAxisMax" type="number" step="any" /></label>
+                <label class="check-field"><input id="leftAxisLog" type="checkbox" /> Log scale</label>
+              </fieldset>
+              <fieldset>
+                <legend>Right axis</legend>
+                <label>Title <input id="rightAxisTitle" /></label>
+                <label>Minimum <input id="rightAxisMin" type="number" step="any" /></label>
+                <label>Maximum <input id="rightAxisMax" type="number" step="any" /></label>
+                <label class="check-field"><input id="rightAxisLog" type="checkbox" /> Log scale</label>
+              </fieldset>
+            </div>
+          </div>
+        </aside>
+      </section>
 
-/* Match alias token sequence against query tokens: in order, gaps allowed;
-   falls back to unordered matching (small penalty) for flipped word order */
-FT.matchAlias = function(qTokens, aliasTokens) {
-  /* pass 1: in-order with gaps */
-  let qi = 0; const positions = []; let simSum = 0;
-  let ok = true;
-  for (const at of aliasTokens) {
-    let found = -1, sim = 0;
-    for (let i = qi; i < qTokens.length; i++) {
-      const s = FT.tokSim(qTokens[i], at);
-      if (s > 0) { found = i; sim = s; break; }
-    }
-    if (found < 0) { ok = false; break; }
-    positions.push(found); simSum += sim; qi = found + 1;
-  }
-  if (ok) {
-    const span = positions[positions.length-1] - positions[0] + 1;
-    const gaps = span - aliasTokens.length;
-    if (gaps <= 2) {
-      const score = (simSum / aliasTokens.length) + aliasTokens.length * 0.15 - gaps * 0.05;
-      return { positions, score, first: positions[0] };
-    }
-  }
-  /* pass 2: unordered - digit-free aliases only (numbers are positional:
-     "5" in "last 5 years" must never satisfy "5 year treasury") */
-  if (aliasTokens.some(t => /^\d/.test(t))) return null;
-  const used = new Set(); const pos2 = []; let sim2 = 0;
-  for (const at of aliasTokens) {
-    let best = -1, bestSim = 0;
-    for (let i = 0; i < qTokens.length; i++) {
-      if (used.has(i)) continue;
-      const s = FT.tokSim(qTokens[i], at);
-      if (s > bestSim) { bestSim = s; best = i; }
-    }
-    if (best < 0) return null;
-    used.add(best); pos2.push(best); sim2 += bestSim;
-  }
-  const sorted = pos2.slice().sort((a, b) => a - b);
-  const span2 = sorted[sorted.length-1] - sorted[0] + 1;
-  const gaps2 = span2 - aliasTokens.length;
-  if (gaps2 > 1) return null;
-  const score2 = (sim2 / aliasTokens.length) + aliasTokens.length * 0.15 - gaps2 * 0.05 - 0.05;
-  return { positions: sorted, score: score2, first: sorted[0] };
-};
+      <section id="qualityPanel" class="data-panel hidden">
+        <div class="data-panel-head"><div><p class="data-kicker">Verification</p><h2>Resolution and data status</h2></div></div>
+        <div id="qualityBody" class="quality-grid"></div>
+      </section>
 
-FT.parseQuery = function(q) {
-  const tokList = FT.contentTokens(q);
-  /* collect all candidate matches */
-  const cands = [];
-  for (const s of FT.DICT) {
-    let best = null;
-    for (const alias of s.aliases) {
-      const aliasTokens = FT.contentTokens(alias);
-      if (!aliasTokens.length) continue;
-      const m = FT.matchAlias(tokList, aliasTokens);
-      if (m && (!best || m.score > best.score)) best = m;
-    }
-    if (best && best.score >= 0.9) cands.push({ series: s, m: best });
-  }
-  /* greedy consume by score: prevents 'cpi' double-charting inside 'core cpi' */
-  cands.sort((a, b) => b.m.score - a.m.score);
-  const consumed = new Set(); const picked = [];
-  for (const c of cands) {
-    const allUsed = c.m.positions.every(p => consumed.has(p));
-    if (allUsed) continue;
-    const dup = picked.some(p => p.series.id === c.series.id && (p.series.t || '') === (c.series.t || ''));
-    if (dup) continue;
-    c.m.positions.forEach(p => consumed.add(p));
-    picked.push(c);
-  }
-  picked.sort((a, b) => a.m.first - b.m.first);
-  return { series: picked.map(c => c.series).slice(0, 8), range: FT.parseTime(' ' + FT.normalizeQuery(q) + ' ') };
-};
+      <section id="auditPanel" class="data-panel hidden">
+        <div class="data-panel-head"><div><p class="data-kicker">Audit trail</p><h2>Raw source inventory</h2></div></div>
+        <div class="table-wrap data-table-wrap">
+          <table>
+            <thead><tr><th>Series</th><th>Provider</th><th>Native ID</th><th>Coverage</th><th>Latest raw value</th><th>Observations</th><th>Resolution / fallback</th></tr></thead>
+            <tbody id="auditRows"></tbody>
+          </table>
+        </div>
+      </section>
 
-FT.parseTime = function(lq) {
-  const today = new Date();
-  const iso = d => d.toISOString().split('T')[0];
-  const yearsAgo = n => { const d = new Date(today); d.setFullYear(d.getFullYear() - n); return { start: iso(d), end: iso(today) }; };
-  let m;
-  /* note: normalizeQuery collapses "years"->"year" and "-"->" " before this runs */
-  if ((m = lq.match(/(?:last|past|for)\s+(?:the\s+)?(\d+)\s*year/))) return yearsAgo(parseInt(m[1]));
-  if ((m = lq.match(/(?:last|past|for)\s+(?:the\s+)?(\d+)\s*month/))) {
-    const d = new Date(today); d.setMonth(d.getMonth() - parseInt(m[1]));
-    return { start: iso(d), end: iso(today) };
-  }
-  if ((m = lq.match(/from\s+(\d{4})\s+(?:to|through|until)\s+(\d{4})/)) ||
-      (m = lq.match(/between\s+(\d{4})\s+and\s+(\d{4})/)) ||
-      (m = lq.match(/\b(19\d{2}|20\d{2})\s+(?:to\s+|through\s+)?(19\d{2}|20\d{2})\b/))) {
-    return { start: m[1] + '-01-01', end: m[2] + '-12-31' };
-  }
-  if ((m = lq.match(/since\s+(\d{4})/))) return { start: m[1] + '-01-01', end: iso(today) };
-  if (lq.includes(' ytd')) return { start: today.getFullYear() + '-01-01', end: iso(today) };
-  if (lq.match(/\b(max|all time|entire history|all history|full history|going back)\b/)) return { start: '1900-01-01', end: iso(today) };
-  /* bare "N year" duration - but never a maturity phrase like "10 year treasury" */
-  if ((m = lq.match(/\b(\d+)\s*year(?!\s+(?:treasury|tresury|treasurie|yield|note|bond|mortgage|tips|breakeven|rate|government|swap))/))) {
-    const n = parseInt(m[1]);
-    if (n >= 1 && n <= 150) return yearsAgo(n);
-  }
-  return yearsAgo(10);
-};
-
-/* "Did you mean" - closest aliases for a failed query */
-FT.suggest = function(q) {
-  const qTokens = FT.tokenize(q).filter(t => !FT.STOP.has(t) || FT.SOFT.has(t));
-  const scored = [];
-  for (const s of FT.DICT) {
-    let best = 0;
-    for (const alias of s.aliases) {
-      for (const at of alias.split(' ').map(FT.singular)) {
-        for (const qt of qTokens) {
-          if (/^\d/.test(qt)) continue;
-          const dEd = FT.editDist(qt, at);
-          const sim = qt === at ? 1 : (dEd <= 2 && at.length >= 4 ? 1 - dEd / at.length : 0);
-          if (sim > best) best = sim;
-        }
-      }
-    }
-    if (best >= 0.6) scored.push({ s, best });
-  }
-  scored.sort((a, b) => b.best - a.best);
-  return scored.slice(0, 5).map(x => x.s.name);
-};
-
-/* ================= Data layer ================= */
-/* LIVE_DATA_START - replaced by fetch_data.py with real FRED observations. */
-FT.LIVE = null;
-/* LIVE_DATA_END */
-
-/* When served by serve.py, the page can fetch real data from its OWN origin,
-   so CORS never applies. Detected once at boot. */
-FT.backend = null;
-FT.detectBackend = async function() {
-  try {
-    const r = await fetch('/api/health', { signal: FT.tsignal(2500) });
-    if (r.ok && (await r.json()).ok) { FT.backend = true; return true; }
-  } catch (e) {}
-  FT.backend = false;
-  return false;
-};
-FT.cache = new Map();
-FT.demoMode = false;
-
-FT.tsignal = function(ms) {
-  try { if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) return AbortSignal.timeout(ms); } catch (e) {}
-  return undefined;
-};
-
-/* Returns { obs, src } where src is 'live' | 'embedded' | 'synthetic' */
-FT.fetchSeries = async function(id, start, end) {
-  const key = id + ':' + start + ':' + end;
-  if (FT.cache.has(key)) return FT.cache.get(key);
-  /* real data baked in by fetch_data.py takes priority - no network needed */
-  if (FT.LIVE && FT.LIVE.series && FT.LIVE.series[id]) {
-    const all = FT.LIVE.series[id].map(r => ({ date: r[0], value: r[1] }));
-    const win = all.filter(o => o.date >= start && o.date <= end);
-    const res = { obs: win.length >= 2 ? win : all, src: 'live' };
-    FT.cache.set(key, res);
-    return res;
-  }
-  let obs = null, src = 'live';
-  /* 1. local backend (serve.py) - real data, same origin, no CORS */
-  if (FT.backend) {
-    try {
-      const r = await fetch('/api/fred?id=' + encodeURIComponent(id) +
-                            '&start=' + start + '&end=' + end, { signal: FT.tsignal(30000) });
-      if (r.ok) {
-        const j = await r.json();
-        if (j.obs && j.obs.length >= 2) {
-          const res = { obs: j.obs.map(o => ({ date: o[0], value: o[1] })), src: 'live', origin: j.source };
-          FT.cache.set(key, res);
-          return res;
-        }
-      } else {
-        const j = await r.json().catch(() => ({}));
-        if (j.error) FT.backendError = id + ': ' + j.error;
-      }
-    } catch (e) { FT.backendError = id + ': ' + e.message; }
-  }
-  {
-    /* FRED's own CSV export. A browser cannot call it directly (CORS), so this
-       goes through a public relay - data may be altered in transit, which is
-       why the UI steers you to CSV import or fetch_data.py instead. */
-    const csvUrl = 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + id + '&cosd=' + start + '&coed=' + end;
-    for (const wrap of [
-      u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
-      u => 'https://corsproxy.io/?' + encodeURIComponent(u)
-    ]) {
-      try {
-        const r = await fetch(wrap(csvUrl), { signal: FT.tsignal(15000) });
-        if (!r.ok) continue;
-        const text = await r.text();
-        const parsed = FT.parseCsv(text, id);
-        if (parsed && parsed.length) { obs = parsed; break; }
-      } catch (e) {}
-    }
-  }
-  if (!obs) { return { obs: [], src: 'unavailable' }; }
-  const result = { obs: obs || [], src };
-  FT.cache.set(key, result);
-  return result;
-};
-
-/* ---- CSV parsing (FRED export format) ---- */
-FT.parseCsv = function(text, id) {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return null;
-  const header = lines[0].split(',');
-  let valIdx = header.findIndex(h => h.trim().replace(/"/g, '').toUpperCase() === String(id).toUpperCase());
-  if (valIdx < 0) valIdx = 1;
-  const out = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(',');
-    if (cols.length <= valIdx) continue;
-    const v = cols[valIdx];
-    if (v == null || v.trim() === '.' || v.trim() === '') continue;
-    const num = parseFloat(v);
-    const d = (cols[0] || '').trim().replace(/"/g, '');
-    if (!isNaN(num) && /^\d{4}-\d{2}-\d{2}$/.test(d)) out.push({ date: d, value: num });
-  }
-  return out;
-};
-
-/* ---- Year-over-year percent change (for CPI-style index series) ---- */
-FT.yoy = function(obs) {
-  const byMonth = new Map(obs.map(o => [o.date.substring(0, 7), o.value]));
-  const out = [];
-  for (const o of obs) {
-    const ym = o.date.substring(0, 7);
-    const prior = (parseInt(ym.substring(0, 4)) - 1) + ym.substring(4);
-    const pv = byMonth.get(prior);
-    if (pv != null && pv !== 0) out.push({ date: o.date, value: (o.value / pv - 1) * 100 });
-  }
-  return out;
-};
-
-/* No invented data ships with this tool. If FRED cannot be reached, the tool
-   says so and points at CSV import. It never draws numbers it made up. */
-FT.embedSeries = function() { return null; };
-FT.demoSeries = function() { return null; };
-
-/* ================= Alignment ================= */
-FT.forwardFill = function(seriesList) {
-  const dateSet = new Set();
-  seriesList.forEach(s => s.obs.forEach(o => dateSet.add(o.date)));
-  const dates = [...dateSet].sort();
-  const rows = seriesList.map(s => {
-    const map = new Map(s.obs.map(o => [o.date, o.value]));
-    let last = null;
-    return dates.map(d => { const v = map.get(d); if (v != null) last = v; return last; });
-  });
-  return { dates, rows };
-};
-
-/* ================= State ================= */
-FT.state = { series: [], range: null, recBands: null, render: null, geom: null, lastData: null, hoverBound: false };
-FT.RANGE_PRESETS = { '1Y':1, '5Y':5, '10Y':10, '20Y':20, 'MAX':0 };
-
-FT.run = async function() {
-  const q = document.getElementById('query').value.trim();
-  if (!q) return;
-  const parsed = FT.parseQuery(q);
-  if (!parsed.series.length) {
-    const sugg = FT.suggest(q);
-    FT.setStatus('No series matched. ' + (sugg.length ? 'Did you mean: <strong>' + sugg.join('</strong>, <strong>') + '</strong>?' : 'Try keywords like: 10 year treasury, wilshire 5000, s&amp;p 500, fed funds, inflation, unemployment, gdp, m2, vix, mortgage rate, oil, bitcoin...'), true);
-    return;
-  }
-  const keep = FT.state.series.filter(x => x.imported && x.obs && x.obs.length);
-  FT.state.series = keep.concat(parsed.series
-    .filter(d => !keep.some(k => k.def.id === d.id))
-    .map((d, i) => ({ def: d, color: FT.COLORS[(keep.length + i) % FT.COLORS.length], axis: null, obs: null })));
-  FT.state.range = parsed.range;
-  FT.state.recBands = null;
-  await FT.load();
-};
-
-FT.load = async function() {
-  FT.pendingMsg = null;
-  const r = FT.state.range;
-  FT.setStatus('<span class="spinner"></span>Fetching ' + FT.state.series.map(s => s.def.id).join(', ') + ' from FRED...');
-  document.getElementById('go').disabled = true;
-  try {
-    await Promise.all(FT.state.series.map(async s => {
-      /* imported CSV: never refetch, but DO re-slice to the requested window */
-      if (s.imported && s.fullObs) {
-        s.obs = s.fullObs.filter(o => o.date >= r.start && o.date <= r.end);
-        s.src = 'live';
-        return;
-      }
-      let res;
-      if (s.def.t === 'yoy') {
-        const pre = new Date(r.start); pre.setFullYear(pre.getFullYear() - 1);
-        res = await FT.fetchSeries(s.def.id, pre.toISOString().split('T')[0], r.end);
-        s.obs = FT.yoy(res.obs).filter(o => o.date >= r.start);
-      } else {
-        res = await FT.fetchSeries(s.def.id, r.start, r.end);
-        s.obs = res.obs;
-      }
-      s.src = res.src;
-    }));
-    const emptyWindow = FT.state.series.filter(x => x.imported && x.fullObs && x.fullObs.length && !x.obs.length);
-    if (emptyWindow.length) {
-      const covered = FT.state.series.filter(x => emptyWindow.indexOf(x) < 0 && x.obs && x.obs.length);
-      emptyWindow.forEach(x => { x.obs = x.fullObs; });
-      const cov = emptyWindow[0].fullObs;
-      FT.pendingMsg = 'No data for ' + emptyWindow.map(x => x.def.id).join(', ') + ' in that window (imported data covers ' +
-        cov[0].date + ' to ' + cov[cov.length-1].date + '). Showing its full range instead.';
-      if (!covered.length) FT.state.range = { start: cov[0].date, end: cov[cov.length-1].date };
-    }
-    const missing = FT.state.series.filter(x => !x.obs || !x.obs.length);
-    if (missing.length === FT.state.series.length) {
-      document.getElementById('chart-card').style.display = 'none';
-      const notes2 = missing.filter(x => x.def.note).map(x => '<div style="margin-top:6px;color:var(--yellow)"><strong>' + x.def.id + ':</strong> ' + x.def.note + '</div>').join('');
-      /* Turn the dead end into a workflow: one direct CSV link per series. */
-      const links = missing.map(x => {
-        const u = 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + x.def.id +
-          '&cosd=' + r.start + '&coed=' + r.end;
-        return '<a href="' + u + '" target="_blank" rel="noopener" style="display:inline-block;margin:3px 6px 3px 0;padding:4px 10px;background:var(--bg-tertiary);border:1px solid var(--accent);border-radius:14px;color:var(--accent);text-decoration:none;font-family:var(--font-mono);font-size:0.76rem">&#11015; ' + x.def.id + '.csv</a>';
-      }).join('');
-      FT.setStatus('This page cannot reach FRED (browsers are blocked by CORS; hosted previews have no network at all), and this tool never invents substitute data.' +
-        '<div style="margin-top:8px;color:var(--text-primary)"><strong>Two clicks to fix it:</strong> download each series below, then paste the file contents into the import box above.</div>' +
-        '<div style="margin-top:6px">' + links + '</div>' +
-        '<div style="margin-top:10px;padding:8px 11px;background:rgba(52,211,153,0.1);border:1px solid var(--green);border-radius:var(--radius);font-size:0.79rem;color:var(--green)">' +
-        '<strong>Skip all of this:</strong> <span style="color:var(--text-secondary)">run <code style="color:var(--green)">python3 serve.py</code> from the repo and open the link it prints. ' +
-        'The page then fetches FRED itself &mdash; no downloads, no pasting.</span></div>' +
-        notes2, true);
-      return;
-    }
-    FT.state.series = FT.state.series.filter(x => x.obs && x.obs.length);
-    FT.assignAxes();
-    document.getElementById('chart-card').style.display = 'block';
-    document.getElementById('d-start').value = FT.state.range.start;
-    document.getElementById('d-end').value = FT.state.range.end;
-    if (document.getElementById('opt-rec').checked) await FT.loadRecessions();
-    FT.redraw();
-    if (missing.length) FT.setStatus('Charted ' + FT.state.series.length + ' series. No data available for: ' + missing.map(x => x.def.id).join(', ') + ' - import a CSV for those.', true);
-    else if (FT.pendingMsg) { FT.setStatus(FT.pendingMsg, true); FT.pendingMsg = null; }
-    else FT.setStatus('');
-  } catch (e) {
-    FT.setStatus('Error: ' + e.message, true);
-  } finally {
-    document.getElementById('go').disabled = false;
-  }
-};
-
-FT.assignAxes = function() {
-  const unitGroups = [...new Set(FT.state.series.map(s => s.def.units))];
-  const leftUnit = unitGroups[0];
-  FT.state.series.forEach(s => { if (s.axis == null) s.axis = s.def.units === leftUnit ? 'yL' : 'yR'; });
-};
-
-FT.loadRecessions = async function() {
-  if (FT.state.recBands) return;
-  const r = FT.state.range;
-  const obs = (await FT.fetchSeries(FT.RECESSION_ID, r.start, r.end)).obs;
-  if (!obs.length) {
-    FT.state.recBands = null;   /* do not cache a failure - allow retry */
-    FT.recFailed = true;
-    return;
-  }
-  FT.recFailed = false;
-  const bands = []; let cur = null;
-  for (const o of obs) {
-    if (o.value >= 1) { if (!cur) cur = { start: o.date, end: o.date }; else cur.end = o.date; }
-    else if (cur) { bands.push(cur); cur = null; }
-  }
-  if (cur) bands.push(cur);
-  FT.state.recBands = bands;
-};
-
-FT.toggleRecessions = async function() {
-  if (document.getElementById('opt-rec').checked) {
-    FT.setStatus('<span class="spinner"></span>Loading recession dates (USREC)...');
-    await FT.loadRecessions();
-    if (FT.recFailed) {
-      document.getElementById('opt-rec').checked = false;
-      FT.setStatus('Recession shading needs the USREC series from FRED, which this page cannot reach. Import USREC as a CSV to enable it.', true);
-    } else { FT.setStatus(''); }
-  }
-  FT.redraw();
-};
-
-/* ================= Canvas renderer (no dependencies) ================= */
-FT.fmtNum = function(v) {
-  if (v == null || isNaN(v)) return 'n/a';
-  const a = Math.abs(v);
-  if (a >= 1e9) return (v/1e9).toFixed(2) + 'B';
-  if (a >= 1e6) return (v/1e6).toFixed(2) + 'M';
-  if (a >= 1e4) return (v/1e3).toFixed(1) + 'K';
-  return (+v).toLocaleString('en-US', { maximumFractionDigits: 2 });
-};
-
-FT.drawChart = function(hoverIdx) {
-  const cv = document.getElementById('chart');
-  const wrap = cv.parentElement;
-  const dpr = window.devicePixelRatio || 1;
-  const W = wrap.clientWidth, H = wrap.clientHeight;
-  cv.width = W * dpr; cv.height = H * dpr;
-  cv.style.width = W + 'px'; cv.style.height = H + 'px';
-  if (!W || !H) return;
-  const ctx = cv.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, W, H);
-
-  const rd = FT.state.render;
-  if (!rd || !rd.labels.length) return;
-  const padL = 62, padR = rd.usesR ? 62 : 16, padT = 12, padB = 30;
-  const pw = W - padL - padR, ph = H - padT - padB;
-  const n = rd.labels.length;
-  const xPix = i => padL + (n <= 1 ? pw / 2 : (i / (n - 1)) * pw);
-
-  function axisRange(axis, log) {
-    let mn = Infinity, mx = -Infinity;
-    rd.datasets.filter(d => d.axis === axis).forEach(d => d.data.forEach(v => {
-      if (v == null || (log && v <= 0)) return;
-      if (v < mn) mn = v; if (v > mx) mx = v;
-    }));
-    if (mn === Infinity) { mn = 0; mx = 1; }
-    if (mn === mx) { mn -= 1; mx += 1; }
-    if (log) return { lo: Math.log10(mn), hi: Math.log10(mx), log: true };
-    const pad = (mx - mn) * 0.06;
-    return { lo: mn - pad, hi: mx + pad, log: false };
-  }
-  const hasL = rd.datasets.some(d => d.axis === 'yL');
-  const rL = axisRange('yL', rd.logL);
-  const rR = rd.usesR ? axisRange('yR', rd.logR) : null;
-  function yPix(v, r) {
-    if (v == null) return null;
-    let t = r.log ? (v > 0 ? Math.log10(v) : null) : v;
-    if (t == null) return null;
-    return padT + ph - ((t - r.lo) / (r.hi - r.lo)) * ph;
-  }
-
-  if (document.getElementById('opt-rec').checked && FT.state.recBands) {
-    ctx.fillStyle = 'rgba(154,160,166,0.14)';
-    for (const b of FT.state.recBands) {
-      let i0 = rd.labels.findIndex(d => d >= b.start);
-      let i1 = rd.labels.findIndex(d => d > b.end);
-      if (i0 < 0) continue;
-      if (i1 < 0) i1 = n - 1;
-      ctx.fillRect(xPix(i0), padT, Math.max(xPix(Math.max(i1, i0 + 1)) - xPix(i0), 2), ph);
-    }
-  }
-
-  ctx.strokeStyle = 'rgba(45,50,72,0.5)'; ctx.lineWidth = 1;
-  ctx.fillStyle = '#6b7280'; ctx.font = '10px "JetBrains Mono", monospace';
-  const TICKS = 6;
-  for (let t = 0; t <= TICKS; t++) {
-    const y = padT + (t / TICKS) * ph;
-    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
-    const fracVal = r => { const raw = r.hi - (t / TICKS) * (r.hi - r.lo); return r.log ? Math.pow(10, raw) : raw; };
-    ctx.textAlign = 'right';
-    if (hasL) ctx.fillText(FT.fmtNum(fracVal(rL)), padL - 6, y + 3);
-    if (rR) { ctx.textAlign = 'left'; ctx.fillText(FT.fmtNum(fracVal(rR)), W - padR + 6, y + 3); }
-  }
-  ctx.textAlign = 'center';
-  const step = Math.max(1, Math.floor(n / 8));
-  for (let i = 0; i < n; i += step) ctx.fillText(rd.labels[i].substring(0, 7), xPix(i), H - 10);
-
-  if (hasL) {
-    ctx.save(); ctx.fillStyle = '#9aa0a6'; ctx.font = '10px Inter, sans-serif';
-    ctx.translate(12, padT + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center';
-    ctx.fillText(rd.titleL, 0, 0); ctx.restore();
-  }
-  if (rR) { ctx.save(); ctx.fillStyle = '#9aa0a6'; ctx.font = '10px Inter, sans-serif';
-    ctx.translate(W - 10, padT + ph / 2); ctx.rotate(Math.PI / 2); ctx.textAlign = 'center';
-    ctx.fillText(rd.titleR, 0, 0); ctx.restore(); }
-
-  for (const d of rd.datasets) {
-    const r = d.axis === 'yR' && rR ? rR : rL;
-    ctx.strokeStyle = d.color; ctx.lineWidth = 2; ctx.lineJoin = 'round';
-    ctx.setLineDash(d.dash ? [6, 4] : []);
-    ctx.beginPath();
-    let started = false;
-    for (let i = 0; i < n; i++) {
-      const y = yPix(d.data[i], r);
-      if (y == null) continue;
-      if (!started) { ctx.moveTo(xPix(i), y); started = true; }
-      else ctx.lineTo(xPix(i), y);
-    }
-    ctx.stroke();
-  }
-  ctx.setLineDash([]);
-
-  if (hoverIdx != null && hoverIdx >= 0 && hoverIdx < n) {
-    ctx.strokeStyle = 'rgba(154,160,166,0.5)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(xPix(hoverIdx), padT); ctx.lineTo(xPix(hoverIdx), padT + ph); ctx.stroke();
-    for (const d of rd.datasets) {
-      const r = d.axis === 'yR' && rR ? rR : rL;
-      const y = yPix(d.data[hoverIdx], r);
-      if (y == null) continue;
-      ctx.fillStyle = d.color;
-      ctx.beginPath(); ctx.arc(xPix(hoverIdx), y, 3.5, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-  FT.state.geom = { padL, padR, W, H, n };
-};
-
-FT.onHover = function(ev) {
-  const rd = FT.state.render, g = FT.state.geom;
-  if (!rd || !g) return;
-  const rect = ev.currentTarget.getBoundingClientRect();
-  const x = ev.clientX - rect.left;
-  const frac = (x - g.padL) / (g.W - g.padL - g.padR);
-  const idx = Math.round(frac * (g.n - 1));
-  const tip = document.getElementById('tooltip');
-  if (idx < 0 || idx >= g.n) { tip.style.display = 'none'; FT.drawChart(); return; }
-  FT.drawChart(idx);
-  tip.style.display = 'block';
-  tip.innerHTML = '<div style="color:#e8eaed;font-weight:700">' + rd.labels[idx] + '</div>' +
-    rd.datasets.map(d => '<div><span style="color:' + d.color + '">&#9679;</span> ' +
-      d.label.replace(/\s\[\w+\]$/, '') + ': <strong>' + FT.fmtNum(d.data[idx]) + '</strong></div>').join('');
-  const tw = tip.offsetWidth;
-  tip.style.left = Math.min(Math.max(x + 14, 0), g.W - tw - 8) + 'px';
-  tip.style.top = '10px';
-};
-
-FT.redraw = function() {
-  /* drop series with no observations BEFORE anything is painted - otherwise
-     ghost chips are live for a frame and their x/L-R act on the wrong index */
-  FT.state.series = FT.state.series.filter(s => s.obs && s.obs.length);
-  if (!FT.state.series.length) { document.getElementById('chart-card').style.display = 'none'; return; }
-  const norm = document.getElementById('opt-norm').checked;
-  const { dates, rows } = FT.forwardFill(FT.state.series);
-  FT.state.lastData = { dates, rows };
-  const datasets = FT.state.series.map((s, i) => {
-    let data = rows[i];
-    if (norm) {
-      const base = data.find(v => v != null);
-      data = data.map(v => (v == null || base == null || base === 0) ? null : (v / base) * 100);
-    }
-    return { label: s.def.name + ' [' + s.def.id + ']', data, color: s.color, axis: norm ? 'yL' : s.axis, dash: s.src === 'synthetic' };
-  });
-  const usesR = !norm && FT.state.series.some(s => s.axis === 'yR');
-  FT.state.render = {
-    labels: dates, datasets, usesR,
-    logL: document.getElementById('opt-logl').checked,
-    logR: document.getElementById('opt-logr').checked,
-    titleL: norm ? 'Indexed (start = 100)' : FT.axisTitle('yL'),
-    titleR: usesR ? FT.axisTitle('yR') : ''
-  };
-  if (dates.length) {
-    document.getElementById('d-start').value = dates[0];
-    document.getElementById('d-end').value = dates[dates.length - 1];
-  }
-  document.getElementById('legend').innerHTML = datasets.map(d =>
-    '<span><span style="color:' + d.color + '">&#9679;</span> ' + d.label + '</span>').join('') +
-    (dates.length ? '<span style="margin-left:auto;color:var(--accent);font-weight:600">Showing ' + dates[0] + ' &rarr; ' + dates[dates.length-1] + ' (' + dates.length + ' pts)</span>' : '');
-  const cv = document.getElementById('chart');
-  if (!FT.state.hoverBound) {
-    cv.addEventListener('mousemove', FT.onHover);
-    cv.addEventListener('mouseleave', () => { document.getElementById('tooltip').style.display = 'none'; FT.drawChart(); });
-    window.addEventListener('resize', () => FT.drawChart());
-    if (typeof ResizeObserver !== 'undefined') {
-      new ResizeObserver(() => FT.drawChart()).observe(cv.parentElement);
-    }
-    FT.state.hoverBound = true;
-  }
-  FT.renderChips();
-  FT.renderRangeBtns();
-  try { FT.drawChart(); } catch (err) { FT.setStatus('Chart render error: ' + err.message, true); }
-  const label = document.getElementById('mode-label');
-  if (FT.LIVE) {
-    document.getElementById('data-banner').innerHTML =
-      '<div style="background:rgba(52,211,153,0.1);border:1px solid var(--green);border-radius:var(--radius);padding:9px 13px;margin-bottom:10px;font-size:0.8rem;color:var(--green)">' +
-      '<strong>LIVE FRED DATA</strong> <span style="color:var(--text-secondary)">&mdash; ' +
-      Object.keys(FT.LIVE.series || {}).length + ' series fetched ' + (FT.LIVE.asOf || '') +
-      ' by fetch_data.py. Re-run it to refresh.</span></div>';
-  }
-  const imported = FT.state.series.filter(s => s.imported).length;
-  const fetched = FT.state.series.length - imported;
-  label.innerHTML = '<span class="mode-live">REAL DATA</span> &middot; ' +
-    (imported ? imported + ' imported from CSV' : '') + (imported && fetched ? ', ' : '') +
-    (fetched ? fetched + (FT.backend ? ' fetched live from FRED' : ' fetched via public relay') : '');
-};
-
-FT.UNIT_LABEL = { pct: 'Percent', level: 'Level', index: 'Index', usd: 'US $', usd_b: 'Billions $', usd_m: 'Millions $' };
-FT.axisTitle = function(axis) {
-  const units = [...new Set(FT.state.series.filter(s => s.axis === axis).map(s => FT.UNIT_LABEL[s.def.units] || s.def.units))];
-  return units.join(' / ');
-};
-
-FT.renderChips = function() {
-  const notes = FT.state.series.filter(x => x.def.note);
-  document.getElementById('data-banner').innerHTML = notes.length
-    ? notes.map(x => '<div style="background:rgba(251,191,36,0.1);border:1px solid var(--yellow);border-radius:var(--radius);padding:9px 13px;margin-bottom:8px;font-size:0.78rem;color:var(--yellow)"><strong>' + x.def.id + ':</strong> <span style="color:var(--text-secondary)">' + x.def.note + '</span></div>').join('')
-    : '';
-  document.getElementById('chips').innerHTML = FT.state.series.map((s, i) =>
-    '<span class="series-chip"><span class="dot" style="background:' + s.color + '"></span>' +
-    s.def.name + ' <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.7rem">' + s.def.id + '</span>' +
-    '<span class="axis-toggle" title="' + (document.getElementById('opt-norm').checked ? 'Axis toggle disabled in Normalize mode' : 'Toggle left/right axis') + '" data-action="flip-axis" data-idx="' + i + '"' + (document.getElementById('opt-norm').checked ? ' style="opacity:0.35"' : '') + '>' + (s.axis === 'yL' ? 'L' : 'R') + '</span>' +
-    '<span class="remove-x" data-action="remove-series" data-idx="' + i + '">&times;</span></span>'
-  ).join('');
-};
-
-FT.flipAxis = function(i) {
-  const s = FT.state.series[i];
-  if (!s) return;
-  s.axis = s.axis === 'yL' ? 'yR' : 'yL';
-  FT.redraw();
-};
-FT.removeSeries = function(i) {
-  if (!FT.state.series[i]) return;
-  const gone = FT.state.series[i].def.id;
-  FT.state.series.splice(i, 1);
-  if (!FT.state.series.length) {
-    document.getElementById('chart-card').style.display = 'none';
-    FT.setStatus('Removed ' + gone + '. No series left - search for one or import a CSV.');
-    return;
-  }
-  FT.redraw();
-};
-
-FT.renderRangeBtns = function() {
-  document.querySelectorAll('#range-btns .range-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.preset === FT.state.activePreset);
-  });
-};
-FT.preset = async function(k) {
-  FT.setStatus('');
-  FT.state.activePreset = k;
-  const today = new Date(); const iso = d => d.toISOString().split('T')[0];
-  const yrs = FT.RANGE_PRESETS[k];
-  const start = yrs === 0 ? '1900-01-01' : (() => { const d = new Date(today); d.setFullYear(d.getFullYear() - yrs); return iso(d); })();
-  FT.state.range = { start, end: iso(today) };
-  FT.state.recBands = null;
-  await FT.load();
-};
-FT.customRange = async function() {
-  const s = document.getElementById('d-start').value, e = document.getElementById('d-end').value;
-  if (!s || !e || s >= e) { FT.setStatus('Pick a From date earlier than the To date, then press Apply.', true); return; }
-  FT.state.activePreset = null;
-  FT.state.range = { start: s, end: e };
-  FT.state.recBands = null;
-  await FT.load();
-};
-
-FT.importCsv = function() {
-  const ta = document.getElementById('csv-input');
-  const text = (ta.value || '').trim();
-  if (!text) { FT.setStatus('Paste the contents of a FRED CSV file first.', true); return; }
-  /* allow several CSVs pasted one after another - split on each header row */
-  const blocks = text.split(/\n(?=(?:observation_date|DATE)\s*,)/i).map(b => b.trim()).filter(Boolean);
-  if (blocks.length > 1) {
-    let n = 0, names = [];
-    blocks.forEach(b => { ta.value = b; const before = FT.state.series.length; FT.importCsv();
-      if (FT.state.series.length >= before) { n++; } });
-    ta.value = '';
-    FT.setStatus('Imported ' + n + ' series from the pasted block.');
-    return;
-  }
-  const first = text.split(/\r?\n/)[0].split(',');
-  const id = (first[1] || 'SERIES').trim().toUpperCase().replace(/["\s]/g, '');
-  const obs = FT.parseCsv(text, id);
-  if (!obs || obs.length < 2) {
-    FT.setStatus('Could not parse that. Expected FRED CSV format: a header row then date,value lines.', true); return;
-  }
-  const known = FT.DICT.find(d => d.id === id && !d.t);
-  const def = known || { id: id, name: id + ' (imported)', units: 'level', aliases: [] };
-  const at = FT.state.series.findIndex(x => x.def.id === id);
-  const idx = at >= 0 ? at : FT.state.series.length;
-  const entry = { def: def, color: FT.COLORS[idx % FT.COLORS.length], axis: null, obs: obs, fullObs: obs, imported: true, src: 'live' };
-  if (at >= 0) FT.state.series[at] = entry; else FT.state.series.push(entry);
-  /* purge failed-fetch ghosts first, else their units claim the left axis */
-  FT.state.series = FT.state.series.filter(x => x.obs && x.obs.length);
-  FT.state.range = { start: obs[0].date, end: obs[obs.length - 1].date };
-  FT.state.activePreset = null;
-  FT.state.series.forEach(x => { x.axis = null; });
-  FT.assignAxes();
-  document.getElementById('chart-card').style.display = 'block';
-  document.getElementById('d-start').value = FT.state.range.start;
-  document.getElementById('d-end').value = FT.state.range.end;
-  FT.redraw();
-  ta.value = '';
-  FT.setStatus('Imported ' + obs.length + ' real observations for ' + id + ' (' + obs[0].date + ' to ' + obs[obs.length-1].date + ').');
-};
-
-FT.setStatus = function(html, isErr) {
-  const el = document.getElementById('status');
-  el.innerHTML = html || '';
-  el.className = 'status' + (isErr ? ' err' : '');
-};
-
-FT.EXAMPLES = [
-  'show me the wilshire 5000 index and 10 year US treasury yields',
-  'unemployment and inflation since 2000',
-  'mortgage rate vs 10 year treasury last 5 years',
-  'm2 money supply and cpi from 2010 to 2024',
-  's&p 500 and bitcoin last 5 years',
-  'yield curve and vix since 2006',
-  'core pce and fed funds rate last 15 years'
-];
-document.getElementById('examples').innerHTML = FT.EXAMPLES.map(e =>
-  '<span class="chip" data-action="example">' + e + '</span>'
-).join('');
-document.getElementById('query').addEventListener('keydown', e => { if (e.key === 'Enter') FT.run(); });
-
-FT.detectBackend().then(ok => {
-  const sub = document.querySelector('.sub');
-  if (ok) {
-    sub.innerHTML = 'Fuzzy search across 85+ FRED series, tolerant of misspellings. ' +
-      '<span style="color:var(--green);font-weight:600">Live backend connected</span> &mdash; ' +
-      'type what you want and it fetches real FRED data directly. Nothing to download.';
-    const d = document.querySelector('details'); if (d) d.open = false;
-  } else {
-    sub.innerHTML = 'Fuzzy search across 85+ FRED series, tolerant of misspellings. ' +
-      '<strong>This tool never invents data.</strong> For one-click live fetching run ' +
-      '<code style="color:var(--accent)">python3 serve.py</code> from the repo and open the page it prints. ' +
-      'Otherwise use CSV import below.';
-  }
-});
-
-/* ---- CSP-safe event delegation: no inline handlers anywhere ---- */
-document.addEventListener('click', function(e) {
-  const el = e.target.closest ? e.target.closest('[data-action]') : null;
-  if (!el) return;
-  const a = el.dataset.action;
-  if (a === 'run') FT.run();
-  else if (a === 'example') { document.getElementById('query').value = el.textContent; FT.run(); }
-  else if (a === 'flip-axis') { if (!document.getElementById('opt-norm').checked) FT.flipAxis(+el.dataset.idx); }
-  else if (a === 'remove-series') FT.removeSeries(+el.dataset.idx);
-  else if (a === 'preset') FT.preset(el.dataset.preset);
-  else if (a === 'apply-range') FT.customRange();
-  else if (a === 'import-csv') FT.importCsv();
-});
-document.addEventListener('change', function(e) {
-  const id = e.target.id;
-  if (id === 'd-start' || id === 'd-end') FT.customRange();
-  else if (id === 'opt-rec') FT.toggleRecessions();
-  else if (id === 'opt-norm' || id === 'opt-logl' || id === 'opt-logr') FT.redraw();
-});
-</script>
-</body>
+      <section id="sourcePanel" class="data-panel hidden">
+        <div class="data-panel-head"><div><p class="data-kicker">Primary data</p><h2>Source links</h2></div></div>
+        <p class="source-intro">Open the exact provider pages used for the currently displayed series.</p>
+        <div id="sourceLinks" class="source-grid"></div>
+      </section>
+    </main>
+  <script src="./fred-tool.js?rev=20260816-qualifier-safe-clarifications-3"></script>
+  </body>
 </html>

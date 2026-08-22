@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Portfolio Analyzer Side Tools</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <p class="eyebrow">Local market research tools</p>
+        <h1>Portfolio Analyzer Side Tools</h1>
+        <p>
+          Auditable macro, Fed probability, and Treasury auction research tools. Each result
+          shows its provider, native identifier, date coverage, and fallback status.
+        </p>
+      </section>
+
+      <section class="tool-grid">
+        <a class="tool-card accent-blue" href="./fred-tool.html">
+          <span>Macro Data Lab</span>
+          <strong>Chart market, macro, index-earnings, company-fundamental, and cross-country data.</strong>
+          <small>Routes across S&amp;P, SEC, World Bank, Treasury, BLS, market providers, and FRED.</small>
+        </a>
+        <a class="tool-card accent-green" href="./fed-tracker.html">
+          <span>Fed Tracker</span>
+          <strong>Load EFFR, target range, Fed funds futures, and implied meeting distributions.</strong>
+          <small>CME settlements primary; indicative market closes are labeled separately.</small>
+        </a>
+        <a class="tool-card accent-gold" href="./treasury-auctions.html">
+          <span>Treasury Auction Tracker</span>
+          <strong>Explore every official auction, result, bidder mix, and source document.</strong>
+          <small>Live upcoming auctions, historical charts, result PDFs, and a local searchable database.</small>
+        </a>
+      </section>
+
+      <section class="run-card">
+        <h2>Run it in VS Code</h2>
+        <p class="note">Open this folder in VS Code, choose <strong>Run and Debug</strong>, then run <strong>Run Portfolio Analyzer Side Tools</strong>. The preflight stops before opening a backend that cannot reach the data sources.</p>
+        <pre><code>python serve.py --doctor
+python serve.py --check</code></pre>
+      </section>
+    </main>
+  </body>
+</html>

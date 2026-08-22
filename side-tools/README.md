@@ -1,108 +1,105 @@
-# Side Tools
+# Portfolio Analyzer Side Tools
 
-Two standalone finance tools. **The fastest way to use them is with a live
-backend** — one command, then everything fetches its own data.
+Three local, dependency-free tools:
 
-## First: does the data work on your machine?
+- **Macro Data Lab** resolves plain-English chart and layout requests to explicit series, then provides a FRED-style editor for lines, transformations, frequencies, axes, colors, date ranges, and graph formatting while preserving a raw-source audit.
+- **Fed Tracker** reconstructs FOMC target-range probabilities from 30-Day Fed Funds futures settlements and exposes Current, Compare, Probabilities, and Historical workflows organized by meeting.
+- **Treasury Auction Tracker** maintains a normalized SQLite history of official auctions, live announcements, source documents, bidder metrics, deterministic keyword queries, and auditable custom charts.
 
-```bash
-cd side-tools
-python3 serve.py --check
+## Recommended Launch: VS Code
+
+1. Open `C:\Users\thleg\OneDrive\Documents\New project\side-tools` as the VS Code folder.
+2. Open **Run and Debug**.
+3. Choose **Run Portfolio Analyzer Side Tools** and press **F5**.
+
+The launch configuration first runs a network preflight. If Windows or the parent application blocks Python sockets with `WinError 10013`, it stops before opening a nonfunctional app and reports `NETWORK_POLICY_DENIED`.
+
+The optional direct launcher is `start-side-tools.bat`. It runs the same preflight and does not bypass VS Code security or Windows network policy.
+
+## URLs
+
+- Home: `http://127.0.0.1:8017/`
+- Macro Data Lab: `http://127.0.0.1:8017/fred-tool.html`
+- Fed Tracker: `http://127.0.0.1:8017/fed-tracker.html`
+- Treasury Auction Tracker: `http://127.0.0.1:8017/treasury-auctions.html`
+
+If port 8017 is occupied, the terminal prints the replacement port.
+
+## Data Resolution
+
+The resolver never asks a language model to invent a provider ID. It uses:
+
+- A curated catalog for common U.S. macro, rates, housing, energy, and market-index requests.
+- Direct U.S. Treasury XML data for Treasury yields from 1990 onward.
+- Direct BLS API data for CPI, core CPI, unemployment, payrolls, job openings, and producer prices.
+- Yahoo Finance for long market-index history, with an overlapping FRED comparison where available.
+- S&P Dow Jones Indices' archived official earnings workbooks for quarterly index operating EPS and validated sector earnings-contribution shares.
+- SEC Company Facts for annual company revenue, income, EPS, assets, cash flow, and R&D requests that include an explicit ticker; annual-duration filters and approved taxonomy fallbacks prevent quarterly duplicates and truncated histories.
+- World Bank API indicators for supported cross-country macro and development comparisons.
+- An optional official FRED API search as the final metadata fallback, not the universal resolver.
+
+To enable the final official FRED metadata search, create a free FRED API key and enter it under **Data settings** in Macro Data Lab. The key is stored outside the web-served folder under `%LOCALAPPDATA%\PortfolioAnalyzerSideTools\settings.json`; do not share that file. FRED responses are not written to the disk cache.
+
+The archived workbook's quarterly S&P 500 operating-EPS history begins in 1988. The latest verified public snapshot's operating-earnings contribution table begins in 2019; a cached older official snapshot can extend contribution coverage to Q4 2017. Requests for longer ex-sector periods keep the requested window visible, chart only the verifiable overlap, and show the exact coverage gap. The ex-sector formula is `S&P 500 operating EPS * (1 - excluded-sector contribution shares)`. Standalone sector-index EPS values are never subtracted from S&P 500 EPS because those series use different index divisors.
+
+### Graph Editor
+
+Use **Edit graph** after any prompt to:
+
+- Add, reorder, hide, or remove lines without retyping the prompt.
+- Create safe formula lines such as `B - C` or `(A / B) * 100`; the UI shows which chart series each letter represents and never evaluates arbitrary code.
+- Change each series between native units, index-to-100, changes, year-over-year changes, percent changes, and annualized transformations.
+- Aggregate to weekly, monthly, quarterly, or annual frequency using average, sum, or end-of-period values.
+- Assign each line to the left or right axis; change line, area, bar, or scatter type; and control color, line style, width, and markers.
+- Set custom dates, graph and axis titles, axis bounds, log scales, reference lines, recession shading, legend placement, and chart colors.
+
+Natural-language axis instructions are returned as an explicit chart specification. A phrase such as “Nasdaq Composite may be used as a substitute for S&P 500” is treated as a contingency, not an instruction to plot both; the substitute is used only if all configured S&P 500 sources fail.
+
+## Fed Tracker Method
+
+The tracker uses the current EFFR and target range, then reconstructs pre- and post-meeting rates from monthly ZQ settlements. It counts the decision day at the old rate, anchors consecutive meeting months from the next non-meeting month, and convolves meeting-only moves into cumulative target-range probabilities. Meeting dates refresh from the official Federal Reserve calendar, with a bundled fallback if that page is unavailable.
+
+Current or recent CME settlements can be reconstructed automatically when available. Deep historical FedWatch-equivalent results require imported official ZQ settlements or a licensed data feed; the app reports this limitation instead of substituting unrelated Yahoo history or scraping a webpage.
+
+The **Compare** view independently requests the current, prior-business-day, prior-week, and prior-month dated CME strips. When older official strips are unavailable, it can use a clearly labeled indicative reconstruction from dated Yahoo ZQ closes plus official policy-rate history. The **Historical** view provides up to one year of daily indicative observations, lets users select any combination of target outcomes, and replaces same-date observations with archived official CME settlements whenever available.
+
+## Treasury Auction Tracker Method
+
+The tracker backfills the official Fiscal Data Treasury Securities Auctions dataset, then reconciles current announcements and results against TreasuryDirect. It stores normalized values and untouched source payloads in SQLite, using CUSIP plus auction date as the auction key because reopenings reuse CUSIPs.
+
+Standard requests are parsed deterministically into a visible, allowlisted query specification. Macro Data Lab, Fed Tracker, and Auction Tracker share an optional Ollama integration using `qwen3.5:9b` only when unusual wording cannot be represented by the standard grammar. Model output cannot provide SQL, formulas, provider IDs, source URLs, observations, probabilities, or auction values; it must pass a tool-specific schema before the deterministic database or provider router runs.
+
+Tenor studies use the original security term so reopened 30-year bonds are not lost when their current term is displayed as 29 years and several months. Bills, nominal coupon securities, TIPS, and FRNs retain their distinct stop-out fields. Missing pre-coverage values remain null instead of becoming zero.
+
+Optional local model setup:
+
+```powershell
+winget install Ollama.Ollama
+ollama pull qwen3.5:9b
 ```
 
-That probes every source and prints exactly what is reachable — FRED series,
-the current EFFR, and the ZQ futures strip — then tells you which mode to use.
-It writes nothing and needs no browser.
+Restart Side Tools after installation. The page-level model status shows whether Ollama and the configured model are ready. The entire dashboard, deterministic prompts, filters, standard charts, tables, exports, and PDFs work without Ollama.
 
-## Run them with live data
+## Sharing and Hosting
 
-```bash
-python3 serve.py
+For the fastest tester link, first run `python .\serve.py --no-open`, then double-click `share-side-tools.bat` in a second window. The launcher uses the bundled, publisher-verified Cloudflare executable, verifies the public health endpoint, records the active URL, and prints it under `CURRENT SHAREABLE LINK`. It does not require a PowerShell execution-policy change or a PATH change. Run `python .\share_side_tools.py --status` to inspect the last recorded URL.
+
+For an always-on deployment, use a small AWS Lightsail instance behind a named Cloudflare Tunnel. Exact commands, tradeoffs, and security cautions are in [HOSTING.md](HOSTING.md).
+
+## Verification
+
+```powershell
+python serve.py --doctor
+python serve.py --check
+python -m unittest -v
 ```
 
-That starts a small local server and opens the tools in your browser:
+`--doctor` distinguishes an execution-policy block from a provider outage. `--check` validates the macro providers, Fed inputs, and Treasury auction database coverage.
 
-| | |
-|---|---|
-| **FRED Tool** | http://localhost:8000/fred-tool.html |
-| **Fed Tracker** | http://localhost:8000/fed-tracker.html |
+## Important Limits
 
-With it running:
-
-- **FRED Tool** — type *"sp500, the 10 year and 2 year treasury yields for the
-  last 30 years"* and it charts them. No CSV downloading, no pasting.
-- **Fed Tracker** — loads 30-Day Fed Funds (ZQ) settlements and your current
-  target range automatically, then computes the FOMC probability distribution.
-
-Nothing here needs an API key. Python has no CORS restriction, which is the
-whole reason this server exists — the HTML files alone cannot call FRED or CME
-from a browser.
-
-Optional: set `FRED_API_KEY` to add the official FRED API as a fallback
-(free, instant key at fredaccount.stlouisfed.org; 120 requests/min with a key).
-
-**Why Yahoo rather than CME for the futures?** Yahoo serves the *full* ZQ
-contract strip — one contract per FOMC meeting month, which is exactly what the
-probability math needs — with no key and no cookie/crumb handshake. CME's own
-feed sits behind Akamai bot protection and CME's terms discourage automated
-access, so it is opt-in via `python3 serve.py --cme` rather than the default.
-
-## Data sources
-
-| What | Source | Key? |
-|---|---|---|
-| FRED macro series | `fred.stlouisfed.org` public CSV export | no |
-| FRED (fallback) | official FRED API | free key |
-| Fed funds futures | Yahoo Finance `ZQ{M}{YY}.CBT` per-contract strip | no |
-| Fed funds futures (fallback) | Stooq `zq.f` — front month only | no |
-| Fed funds futures (opt-in) | CME quote feed, via `--cme` | no |
-| Current EFFR | NY Fed markets API, FRED `DFF` fallback | no |
-
-Every response records which source it came from, and the UI shows it. If a
-fetch fails you get the error — **no tool here ever substitutes invented
-numbers for real ones.**
-
-## Bake data in instead (offline copies)
-
-```bash
-python3 fetch_data.py
-```
-
-Writes `fred-tool-live.html` and `fed-tracker-live.html` with real data
-embedded, plus `market_data.json`. These work with no server and no network.
-
-## Without Python
-
-Open the `.html` files directly. They still work, but you supply the data:
-
-- **FRED Tool** — a failed query gives one-click CSV download links for exactly
-  the series and date range you asked for; paste the files into the import box
-  (several at once is fine).
-- **Fed Tracker** — copy the quote table off CME's 30-Day Fed Funds page and
-  paste it into the *Paste CME ZQ quotes* box, or type the prices in.
-
-## Methodology (Fed Tracker)
-
-Each ZQ price implies the average fed funds rate for its contract month
-(`100 − price`). Where the next month has no FOMC meeting, that month's implied
-average *is* the post-meeting rate; otherwise the meeting month is split at the
-decision date and solved:
-
-```
-rate_after = (N·implied − days_before·rate_before) / days_after
-```
-
-That rate is mapped onto the 25bp target-range grid by linear interpolation,
-and outcomes are chained meeting-to-meeting through a binomial tree, so
-distributions widen with horizon — the CME FedWatch approach. Verified against
-hand arithmetic to zero difference.
-
-FOMC decision dates are editable inputs, since they drive the month split.
-
-## Testing
-
-Both tools are tested in real headless Chromium (Playwright), including under
-the artifact publish wrapper and a strict CSP. Tests cover: no fabricated value
-can reach the screen, the probability math against hand-computed arithmetic,
-every control, poisoned `localStorage`, and the live-backend path against a
-stubbed server.
+- Free sources cannot guarantee that every imaginable request resolves or that licensed exchange or index history is available.
+- A FRED API key expands metadata search but does not make restricted third-party series freely redistributable.
+- Cached non-FRED responses are labeled when stale data is used. Every chart retains provider, native series ID, date range, transformations, and validation details.
+- Fed Tracker output is an independent settlement-based reconstruction, not the licensed CME FedWatch API or an intraday quote service.
+- Structured auction history begins in late 1979, while individual fields have later start dates. Each auction chart reports effective metric coverage and missing values.

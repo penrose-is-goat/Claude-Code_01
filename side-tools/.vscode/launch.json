@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Portfolio Analyzer Side Tools",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/serve.py",
+      "console": "integratedTerminal",
+      "preLaunchTask": "Side Tools: network preflight"
+    }
+  ]
+}
