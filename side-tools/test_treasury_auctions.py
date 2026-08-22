@@ -213,6 +213,51 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(spec["startDate"], "2012-01-01")
         self.assertEqual(spec["endDate"], "2012-12-31")
 
+    def test_document_only_request_has_no_implicit_bid_to_cover_metric(self):
+        spec, warnings, recognized = ta.parse_query(
+            "Give me the official result PDFs for 10 year notes from 2012",
+            date(2026, 8, 13),
+        )
+        self.assertTrue(recognized)
+        self.assertEqual(warnings, [])
+        self.assertEqual(spec["view"], "records")
+        self.assertEqual(spec["panels"], ["documents"])
+        self.assertEqual(spec["metrics"], [])
+        self.assertIsNone(spec["metric"])
+        self.assertEqual(spec["filters"]["term"], "10-Year")
+        self.assertEqual(spec["filters"]["securityType"], "Note")
+
+    def test_chart_table_and_documents_are_independent_panels(self):
+        spec, _, recognized = ta.parse_query(
+            "Chart and table the high yield for 10 year notes in 2012 with official result PDFs",
+            date(2026, 8, 13),
+        )
+        self.assertTrue(recognized)
+        self.assertEqual(spec["view"], "table")
+        self.assertEqual(spec["panels"], ["chart", "table", "documents"])
+        self.assertEqual(spec["metrics"], ["highYield"])
+        self.assertEqual(spec["filters"], {
+            "term": "10-Year",
+            "securityType": "Note",
+            "cusip": None,
+            "startDate": "2012-01-01",
+            "endDate": "2012-12-31",
+            "reopening": "all",
+        })
+
+    def test_plain_reopenings_request_selects_only_reopenings(self):
+        spec, _warnings, recognized = ta.parse_query(
+            "show all 30 year Treasury bond reopenings in the last 5 years in a table",
+            date(2026, 8, 22),
+        )
+        self.assertTrue(recognized)
+        self.assertEqual(spec["reopening"], "only")
+
+    def test_chart_without_metric_keeps_legacy_bid_to_cover_default(self):
+        spec, _, _ = ta.parse_query("Chart 30 year auctions", date(2026, 8, 13))
+        self.assertEqual(spec["panels"], ["chart"])
+        self.assertEqual(spec["metrics"], ["bidToCoverRatio"])
+
     def test_exact_date_and_cusip_filters(self):
         spec, _, recognized = ta.parse_query(
             "Find the auction result on 2025-07-10 for CUSIP 912810UK2",
@@ -243,6 +288,13 @@ class ParserTests(unittest.TestCase):
         spec["sql"] = "DROP TABLE auctions"
         with self.assertRaises(ValueError):
             ta.validate_query_spec(spec)
+
+    def test_query_spec_rejects_chart_without_metric_but_allows_document_only(self):
+        document_spec, _, _ = ta.parse_query("Show official auction result PDFs for 10 year notes")
+        self.assertEqual(ta.validate_query_spec(document_spec)["metrics"], [])
+        invalid = dict(document_spec, panels=["chart"], view="chart")
+        with self.assertRaises(ValueError):
+            ta.validate_query_spec(invalid)
 
 
 class DatabaseTests(unittest.TestCase):
@@ -326,6 +378,26 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["resultPdfCount"], 1)
         self.assertEqual(payload["rows"][0]["auctionDate"], "2012-07-12")
         self.assertTrue(payload["rows"][0]["resultPdfUrl"].endswith("/R_20120712_3.pdf"))
+
+    def test_document_and_chart_table_query_returns_separate_table_rows(self):
+        records = [
+            dict(FISCAL_30Y_REOPENING, auction_date="2012-07-12", security_type="Note", security_term="9-Year 10-Month", original_security_term="10-Year", pdf_filenm_comp_results="R_20120712_3.pdf"),
+            dict(FISCAL_30Y_REOPENING, cusip="912810ZZ9", auction_date="2012-08-09", security_type="Note", security_term="9-Year 9-Month", original_security_term="10-Year", pdf_filenm_comp_results="R_20120809_3.pdf"),
+        ]
+        with ta._db(self.db) as connection:
+            ta.upsert_records(records, source="Fiscal Data", connection=connection)
+            connection.commit()
+        with patch.object(ta, "sync_auctions", return_value={"skipped": True}):
+            payload = ta.query_payload(
+                "Chart and table the high yield for 10 year notes in 2012 with official result PDFs",
+                as_of=date(2026, 8, 13),
+                db_path=self.db,
+            )
+        self.assertEqual(payload["spec"]["panels"], ["chart", "table", "documents"])
+        self.assertEqual(payload["spec"]["metrics"], ["highYield"])
+        self.assertIsNotNone(payload["tableRows"])
+        self.assertEqual(len(payload["tableRows"]), 2)
+        self.assertEqual(payload["summary"]["resultPdfCount"], 2)
 
     def test_dashboard_latest_result_uses_same_day_update_time(self):
         later = dict(

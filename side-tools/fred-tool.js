@@ -835,7 +835,7 @@ function renderAll() {
 
 async function loadPrompt({ start = "", end = "", preserve = false, clarifications = null } = {}) {
   const prompt = promptInput.value.trim();
-  if (!prompt) { setStatus("Enter a data request or choose an example to build a chart."); return; }
+  if (!prompt) { setStatus("Enter a data request to build a chart."); return; }
   if (start && end && start > end) { setStatus("The start date must not be after the end date.", true); return; }
   if (state.promptText !== prompt) {
     state.promptText = prompt;
@@ -1040,7 +1040,6 @@ editClarificationPrompt.addEventListener("click", () => {
   setStatus("Edit the data concept or add a provider-native series ID, then build the chart again.");
 });
 promptInput.addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); loadPrompt(); } });
-document.querySelectorAll("[data-example]").forEach((button) => button.addEventListener("click", () => { promptInput.value = button.dataset.example; loadPrompt(); }));
 window.addEventListener("resize", () => requestAnimationFrame(drawChart));
 
 saveSettingsBtn.addEventListener("click", async () => {

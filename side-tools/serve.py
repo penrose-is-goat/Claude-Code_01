@@ -33,6 +33,7 @@ import time
 import urllib.parse
 import webbrowser
 import xml.etree.ElementTree as ET
+import zipfile
 from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -44,6 +45,7 @@ from data_core import (
     finish_network_trace,
     get_secret,
     http_get,
+    http_get_bytes,
     load_settings,
     public_settings,
     save_settings,
@@ -52,6 +54,7 @@ from data_core import (
 import treasury_auctions
 import macro_providers
 import model_router
+import intent_contract
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -84,6 +87,7 @@ BACKEND_SOURCE_FILES = [
         "macro_providers.py",
         "data_core.py",
         "model_router.py",
+        "intent_contract.py",
         "treasury_auctions.py",
     )
 ]
@@ -303,6 +307,88 @@ def parse_requested_range(prompt: str) -> dict[str, Any]:
 
 SERIES_CATALOG: list[dict[str, Any]] = [
     {
+        "id": "US_PUBLIC_EQUITY_MARKET_CAP",
+        "name": "U.S. Public Equity Market Capitalization",
+        "unit": "Millions of U.S. dollars",
+        "aliases": [
+            r"\b(?:total|broad|overall|entire|all)\s+(?:u\.?s\.?|united states)\s+"
+            r"(?:public\s+)?(?:equity|equities|stock)\s+market(?:\s+capitali[sz]ation|\s+cap)?\b",
+            r"\b(?:total|broad|overall|entire|all)\s+(?:u\.?s\.?|united states)\s+"
+            r"(?:stock|equity|equities)\s+market\b",
+            r"\b(?:u\.?s\.?|united states)\s+(?:public\s+)?(?:stock|equity)\s+"
+            r"market\s+capitali[sz]ation\b",
+            r"\b(?:total|broad|overall)?\s*(?:u\.?s\.?|united states)\s+public\s+"
+            r"(?:stock|equity)\s+capitali[sz]ation\b",
+            r"\bmarket value of (?:publicly traded\s+)?(?:u\.?s\.?|united states)\s+"
+            r"(?:equities|stocks)\b",
+            r"\b(?:total|broad|overall)\s+(?:u\.?s\.?|united states)\s+stock[- ]market value\b",
+        ],
+        "primary": "fed-z1",
+        "z1File": "csv/F51_1_s.csv",
+        "z1Series": "LM883164115.Q",
+        "fred": "BOGZ1LM883164115Q",
+        "origin": "Board of Governors of the Federal Reserve System, Financial Accounts of the United States",
+        "sourceUrl": "https://www.federalreserve.gov/releases/z1/",
+        "resolution": "Federal Reserve Z.1 public corporate equities issued by U.S. domestic sectors at market value",
+        "measureType": "market_capitalization",
+        "preferredUnits": "raw",
+    },
+    {
+        "id": "US_DEBT_SECURITIES_OUTSTANDING",
+        "name": "Total U.S. Debt Securities Outstanding",
+        "unit": "Millions of U.S. dollars",
+        "aliases": [
+            r"\b(?:total|broad|overall|entire|all)\s+(?:u\.?s\.?|united states)\s+"
+            r"(?:outstanding\s+)?(?:debt|fixed income|bond)\s+market"
+            r"(?:\s+(?:size|capitali[sz]ation|outstanding))?\b",
+            r"\b(?:u\.?s\.?|united states)\s+(?:total\s+)?debt securities\s+outstanding\b",
+            r"\btotal\s+(?:u\.?s\.?|united states)\s+(?:bond|fixed income)\s+market\b",
+            r"\b(?:total\s+)?outstanding\s+(?:u\.?s\.?|united states)\s+debt securities\b",
+            r"\b(?:u\.?s\.?|united states)\s+debt securities market\b",
+            r"\boutstanding\s+(?:u\.?s\.?|united states)\s+(?:bond|fixed income)[- ]market debt\b",
+        ],
+        "primary": "fed-z1",
+        "z1File": "csv/F3_s.csv",
+        "z1Series": "FL894122005.Q",
+        "fred": "ASTDSL",
+        "origin": "Board of Governors of the Federal Reserve System, Financial Accounts of the United States",
+        "sourceUrl": "https://www.federalreserve.gov/releases/z1/",
+        "resolution": "Federal Reserve Z.1 total debt securities liabilities outstanding",
+        "measureType": "debt_securities_outstanding",
+        "preferredUnits": "raw",
+    },
+    {
+        "id": "TCMDO",
+        "name": "Total U.S. Credit-Market Debt Outstanding",
+        "unit": "Millions of U.S. dollars",
+        "aliases": [
+            r"\b(?:total|all)\s+(?:u\.?s\.?|united states)\s+credit(?:[- ]market)?\s+debt\b",
+            r"\b(?:u\.?s\.?|united states)\s+debt\s+including\s+loans\b",
+            r"\btcmdo\b",
+        ],
+        "origin": "Board of Governors of the Federal Reserve System, Financial Accounts of the United States",
+        "resolution": "Federal Reserve total credit-market debt including debt securities and loans",
+        "measureType": "credit_market_debt_outstanding",
+        "preferredUnits": "raw",
+    },
+    {
+        "id": "US_FEDERAL_DEBT_OUTSTANDING",
+        "name": "Total U.S. Federal Public Debt Outstanding",
+        "unit": "Millions of U.S. dollars",
+        "aliases": [
+            r"\b(?:total\s+)?(?:u\.?s\.?|united states)\s+(?:federal|national)\s+debt(?:\s+outstanding)?\b",
+            r"\b(?:federal|national)\s+public debt(?:\s+outstanding)?\b",
+            r"\bdebt to the penny\b",
+        ],
+        "primary": "fiscal-debt",
+        "fred": "GFDEBTN",
+        "origin": "U.S. Department of the Treasury, Fiscal Data",
+        "sourceUrl": "https://fiscaldata.treasury.gov/datasets/debt-to-the-penny/",
+        "resolution": "Treasury Debt to the Penny total public debt outstanding",
+        "measureType": "federal_public_debt_outstanding",
+        "preferredUnits": "raw",
+    },
+    {
         "id": "SP500",
         "name": "S&P 500 Index",
         "unit": "Index level",
@@ -312,6 +398,7 @@ SERIES_CATALOG: list[dict[str, Any]] = [
             r"\bsp500\b",
             r"\bspx\b",
             r"\bsandp\b",
+            r"\bs\s*&\s*p\s+(?:500\s+)?price index\b",
         ],
         "yahoo": "^GSPC",
         "yahooName": "S&P 500 Index",
@@ -504,7 +591,11 @@ SERIES_CATALOG.extend(
             "name": "Core Consumer Price Index",
             "unit": "Index level",
             "origin": "U.S. Bureau of Labor Statistics",
-            "aliases": [r"\bcore cpi\b", r"\bcpilfesl\b"],
+            "aliases": [
+                r"\bcore cpi\b",
+                r"\bcore consumer price(?: index|s)?\b",
+                r"\bcpilfesl\b",
+            ],
             "excludes": [r"\bcore cpi (?:excluding|less|ex) shelter\b"],
             "bls": "CUSR0000SA0L1E",
         },
@@ -572,6 +663,8 @@ SERIES_CATALOG.extend(
             "origin": "U.S. Bureau of Labor Statistics",
             "aliases": [
                 r"\bcore\s+(?:ppi|producer price index)(?:\s+(?:for\s+)?final demand)?\b",
+                r"\bcore\s+producer prices?\s+for\s+final demand(?:\s+goods?\s+and\s+services?)?\b",
+                r"\bcore\s+final[- ]demand\s+(?:ppi|producer prices?|producer price index)\b",
                 r"\bfinal demand less foods?,? energy,? and trade services\b",
                 r"\bwpsfd49116\b",
             ],
@@ -1172,7 +1265,7 @@ def resolve_series(prompt: str) -> list[dict[str, Any]]:
 
     # Coordinated lists often state the shared instrument only once, such as
     # "1-year, 5-year and 10-year Treasury yields".
-    if re.search(r"\btreasury yields?\b", normalized) and not re.search(
+    if re.search(r"\btreasury (?:yields?|rates?)\b", normalized) and not re.search(
         r"\b(?:real|inflation[- ]indexed|tips|breakeven)\b", normalized
     ):
         treasury_tenor_text = re.sub(
@@ -1426,6 +1519,21 @@ def credible_fred_search_match(search_text: str, row: dict[str, Any]) -> bool:
 
 def _search_clauses(prompt: str) -> list[str]:
     cleaned = macro_providers.normalize_quantitative_phrasing(prompt)
+    cleaned, _corrections = intent_contract.normalize_known_typos(cleaned)
+    cleaned = intent_contract.strip_meta_prefix(cleaned)
+    cleaned = re.sub(
+        r"^\s*(?:(?:please|kindly)\s+)?(?:(?:can|could|would|will)\s+you\s+)?"
+        r"(?:show|display|graph|plot|chart|compare|give)\s+(?:me\s+)?",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r"\s+(?:on|in|as)\s+(?:a\s+)?(?:chart|graph|plot|table)\s*$",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
     cleaned = re.sub(r"(?<=\d),(?=\d{3}\b)", "", cleaned)
     cleaned = re.sub(
         r"[^,]*(?:may|can|could)\s+be\s+used\s+as\s+(?:a\s+)?(?:substitute|proxy)\s+for\s+[^,]*",
@@ -1437,6 +1545,7 @@ def _search_clauses(prompt: str) -> list[str]:
         "",
         cleaned,
     )
+    cleaned = re.sub(r"\busing\s+(?:a\s+)?separate\s+axes?\b", "", cleaned)
     cleaned = re.sub(
         r"\b(?:for|over|during|past|previous|trailing)\s+(?:the\s+)?(?:last\s+)?"
         r"\d+[\s-]*(?:years?|yrs?|months?|mos?|quarters?|decades?|weeks?|days?)\b",
@@ -1445,6 +1554,12 @@ def _search_clauses(prompt: str) -> list[str]:
     )
     cleaned = re.sub(r"\b(?:from|between)\s+(?:19|20)\d{2}\s+(?:to|and|through)\s+(?:19|20)\d{2}\b", "", cleaned)
     cleaned = re.sub(r"\bsince\s+(?:19|20)\d{2}\b|\b(?:year[ -]to[ -]date|ytd)\b", "", cleaned)
+    cleaned = re.sub(
+        r"\s+(?:on|in|as)\s+(?:a\s+)?(?:chart|graph|plot|table)\s*$",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
     protected_and = "__macro_protected_and__"
     protected_with = "__macro_protected_with__"
     cleaned = re.sub(
@@ -1591,7 +1706,9 @@ MACRO_SEMANTIC_FAMILY_PATTERNS = {
     "wages": r"\b(?:wages?|salary|salaries|hourly earnings|pay growth)\b",
     "output": r"\b(?:gdp|gross domestic product|economic output|business investment|consumption)\b",
     "rates": r"\b(?:interest|yield|treasury|fed(?:eral)? funds|sofr|basis points?|bps|mortgage rate)\b",
-    "markets": r"\b(?:s&p|sp500|nasdaq|dow jones|vix|stock market|equity index)\b",
+    "markets": r"\b(?:s&p|sp500|nasdaq|dow jones|vix|stock market|equity market|equity index)\b",
+    "market_size": r"\b(?:market cap|market capitalization|market capitalisation)\b",
+    "debt": r"\b(?:debt|debt securities|credit[- ]market debt|bond market|fixed income market)\b",
     "housing": r"\b(?:housing|home prices?|rent|rental|mortgage|real estate)\b",
     "commodities": r"\b(?:oil|gas|gasoline|gold|silver|copper|commodity|commodities)\b",
     "money": r"\b(?:money supply|\bm1\b|\bm2\b|fed balance sheet|reverse repo)\b",
@@ -1823,14 +1940,13 @@ def macro_protected_signature(source: str) -> set[tuple[Any, ...]]:
 def parse_macro_request_contract(prompt: str) -> dict[str, Any]:
     """Build one typed trace for operands, selectors, conditions, and time language."""
     text = macro_providers.normalize_quantitative_phrasing(prompt)
-    if re.search(r"\b(?:versus|vs\.?|compare|against)\b", text):
-        operation = "compare"
-    elif re.search(r"\b(?:divide|divided by|ratio)\b", text):
+    contract = intent_contract.parse_macro_contract(prompt)
+    operation = contract["operation"]
+    if re.search(r"\b(?:divide|divided by|ratio)\b", text):
         operation = "derive"
-    else:
-        operation = "chart"
     operands: list[dict[str, Any]] = []
-    for clause in _search_clauses(prompt):
+    for operand in contract["operands"]:
+        clause = macro_providers.normalize_quantitative_phrasing(operand["sourceSpan"])
         qualifiers = macro_providers.extract_quantitative_qualifiers(clause)
         rank_counts = [row for row in qualifiers if row["kind"] == "rank_count"]
         conditions = [
@@ -1841,6 +1957,7 @@ def parse_macro_request_contract(prompt: str) -> dict[str, Any]:
         operands.append(
             {
                 "sourceSpan": clause,
+                "normalizedSpan": clause,
                 "semanticFamilies": sorted(macro_semantic_families(clause)),
                 "selectors": [
                     *macro_providers.extract_population_selectors(clause),
@@ -1864,12 +1981,17 @@ def parse_macro_request_contract(prompt: str) -> dict[str, Any]:
         if row["kind"] == "duration"
     ]
     return {
+        "rawPrompt": prompt,
+        "normalizedPrompt": contract["normalizedPrompt"],
         "operation": operation,
         "operands": operands,
         "time": {
             "qualifiers": duration_rows,
             "sourceSpan": duration_rows[0]["raw"] if duration_rows else None,
+            "sourceSpans": contract["time"]["sourceSpans"],
         },
+        "presentation": contract["presentation"],
+        "normalization": contract["normalization"],
     }
 
 
@@ -1949,6 +2071,11 @@ def validate_macro_model_mappings(
 
 
 def normalize_macro_concept_phrasing(prompt: str) -> tuple[str, list[str]]:
+    normalized, typo_corrections = intent_contract.normalize_known_typos(prompt)
+    notices = [
+        f"Normalized '{row['source']}' to '{row['target']}' before concept resolution."
+        for row in typo_corrections
+    ]
     concept = (
         r"\b(?:consumer price(?: index)?|cpi|inflation|"
         r"price(?:[- ]pressure)?(?:\s+(?:gauge|measure|index))?)\b"
@@ -1960,11 +2087,10 @@ def normalize_macro_concept_phrasing(prompt: str) -> tuple[str, list[str]]:
         rf"{concept}[^,.;]{{0,80}}?{verb}[^,.;]{{0,50}}?{food}\s*(?:and|&)\s*{energy}",
         rf"{concept}[^,.;]{{0,80}}?{verb}[^,.;]{{0,50}}?{energy}\s*(?:and|&)\s*{food}",
     )
-    normalized = prompt
+    before_core_normalization = normalized
     for pattern in patterns:
         normalized = re.sub(pattern, "core CPI", normalized, flags=re.IGNORECASE)
-    notices = []
-    if normalized != prompt:
+    if normalized != before_core_normalization:
         notices.append(
             "Inflation excluding food/groceries and energy/gasoline was normalized to core CPI; "
             "the excluded operands were not requested as separate series."
@@ -2032,6 +2158,15 @@ def resolve_prompt_series(
         for entry in resolve_series(prompt)
         if not macro_providers.suppress_standard_entry(entry, prompt, special_entries)
     )
+    if re.search(r"\b(?:s\s*&\s*p\s*500|s\W*p\W*500|sp500|spx)\b", prompt, re.IGNORECASE) and re.search(
+        r"\b(?:market\s+cap|market\s+capitali[sz]ation|aggregate\s+capitali[sz]ation)\b",
+        prompt,
+        re.IGNORECASE,
+    ):
+        selected = [entry for entry in selected if entry.get("id") != "SP500"]
+        notices.append(
+            "S&P 500 market capitalization is not the S&P 500 index level; no price-index substitute was loaded."
+        )
 
     substitution_match = re.search(
         r"(?:^|,)\s*([^,]+?)\s+(?:may|can|could)\s+be\s+used\s+as\s+(?:a\s+)?"
@@ -2336,6 +2471,26 @@ BUSINESS_INVESTMENT_CHOICES = {
         "description": "Current-dollar business spending on structures, equipment, and intellectual property products.",
     },
 }
+DEBT_SCOPE_CHOICES = {
+    "debt_securities": {
+        "seriesId": "US_DEBT_SECURITIES_OUTSTANDING",
+        "label": "All U.S. debt securities outstanding",
+        "description": "Tradable debt instruments, including Treasury, agency/GSE, municipal, corporate and foreign bonds, and open-market paper; excludes loans.",
+        "sourceUrl": "https://www.federalreserve.gov/apps/fof/guide/l208.pdf",
+    },
+    "credit_market_debt": {
+        "seriesId": "TCMDO",
+        "label": "All U.S. credit-market debt",
+        "description": "The broad Financial Accounts measure that includes debt securities and loans across sectors.",
+        "sourceUrl": "https://fred.stlouisfed.org/series/TCMDO",
+    },
+    "federal_public_debt": {
+        "seriesId": "US_FEDERAL_DEBT_OUTSTANDING",
+        "label": "Federal public debt outstanding",
+        "description": "Debt held by the public plus intragovernmental holdings from Treasury Debt to the Penny.",
+        "sourceUrl": "https://fiscaldata.treasury.gov/datasets/debt-to-the-penny/",
+    },
+}
 PRICE_INDEX_SERIES_IDS = {
     "GDPDEF",
     "CPIAUCSL",
@@ -2381,6 +2536,7 @@ def validate_macro_clarifications(raw: dict[str, Any] | None) -> tuple[dict[str,
         "ppi_definition": set(PPI_DEFINITION_CHOICES),
         "yield_spread": set(YIELD_SPREAD_CHOICES),
         "business_investment": set(BUSINESS_INVESTMENT_CHOICES),
+        "debt_scope": set(DEBT_SCOPE_CHOICES),
         "price_transform": set(TRANSFORM_CHOICES),
     }
     answers: dict[str, str] = {}
@@ -2467,7 +2623,38 @@ def apply_macro_series_clarifications(
             f"Clarification selected {investment_choice['label']} "
             f"({investment_choice['seriesId']})."
         )
+
+    debt_answer = answers.get("debt_scope")
+    if debt_answer:
+        debt_choice = DEBT_SCOPE_CHOICES[debt_answer]
+        debt_ids = {choice["seriesId"] for choice in DEBT_SCOPE_CHOICES.values()}
+        refined = [entry for entry in refined if entry.get("id") not in debt_ids]
+        refined.append(CATALOG_BY_ID[debt_choice["seriesId"]])
+        notices.append(
+            f"Clarification selected {debt_choice['label']} "
+            f"({debt_choice['seriesId']})."
+        )
     return refined, notices
+
+
+def ambiguous_us_debt_scope(prompt: str) -> bool:
+    text, _corrections = intent_contract.normalize_known_typos(prompt.lower())
+    has_broad_debt = bool(
+        re.search(
+            r"\b(?:total|all)\b[^,.;]{0,45}\bdebt\b|"
+            r"\bdebt\b[^,.;]{0,25}\b(?:in|of)\s+(?:the\s+)?(?:u\.?s\.?|united states)\b",
+            text,
+        )
+    )
+    has_specific_scope = bool(
+        re.search(
+            r"\b(?:debt market|debt securities|bond market|fixed income market|credit[- ]market|"
+            r"including loans|federal debt|national debt|public debt|treasury debt|"
+            r"debt held by the public|intragovernmental)\b",
+            text,
+        )
+    )
+    return has_broad_debt and not has_specific_scope
 
 
 def macro_clarification_questions(
@@ -2587,6 +2774,29 @@ def macro_clarification_questions(
                         ],
                     }
                     for value, choice in BUSINESS_INVESTMENT_CHOICES.items()
+                ],
+            }
+        )
+    if ambiguous_us_debt_scope(prompt) and "debt_scope" not in answers:
+        questions.append(
+            {
+                "id": "debt_scope",
+                "title": "Choose the U.S. debt measure",
+                "question": (
+                    "Which outstanding U.S. debt definition should the chart use? These measures "
+                    "have different economic meanings and cannot be substituted for one another."
+                ),
+                "options": [
+                    {
+                        "value": value,
+                        "label": choice["label"],
+                        "description": choice["description"],
+                        "recommended": value == "debt_securities",
+                        "sourceUrls": [
+                            {"label": "Official source", "url": choice["sourceUrl"]}
+                        ],
+                    }
+                    for value, choice in DEBT_SCOPE_CHOICES.items()
                 ],
             }
         )
@@ -2795,6 +3005,155 @@ def parse_fred_csv(text: str, series_id: str) -> list[dict[str, Any]]:
             continue
         observations.append({"date": row_date, "value": value})
     return observations
+
+
+FED_Z1_ARCHIVE_URL = "https://www.federalreserve.gov/releases/z1/current/z1_csv_files.zip"
+
+
+def parse_fed_z1_archive(
+    content: bytes,
+    archive_path: str,
+    series_id: str,
+    start: date | None,
+    end: date | None,
+) -> list[dict[str, Any]]:
+    """Read one audited Z.1 level series from the official release archive."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            with archive.open(archive_path) as source:
+                text = io.TextIOWrapper(source, encoding="utf-8-sig", newline="")
+                reader = csv.DictReader(text)
+                if not reader.fieldnames or series_id not in reader.fieldnames:
+                    raise RuntimeError(
+                        f"Federal Reserve Z.1 file {archive_path} does not contain {series_id}."
+                    )
+                observations: list[dict[str, Any]] = []
+                for row in reader:
+                    quarter = str(row.get("date") or "").strip()
+                    match = re.fullmatch(r"((?:19|20)\d{2}):Q([1-4])", quarter)
+                    raw_value = row.get(series_id)
+                    if not match or raw_value in (None, "", "ND", "NA"):
+                        continue
+                    year, quarter_number = int(match.group(1)), int(match.group(2))
+                    month = quarter_number * 3
+                    row_date = date(year, month, calendar.monthrange(year, month)[1])
+                    if start and row_date < start:
+                        continue
+                    if end and row_date > end:
+                        continue
+                    try:
+                        value = float(str(raw_value).replace(",", "").strip())
+                    except ValueError:
+                        continue
+                    # A zero market value represents unavailable historical detail,
+                    # not a real zero-sized U.S. market.
+                    if value <= 0:
+                        continue
+                    observations.append({"date": row_date.isoformat(), "value": value})
+    except (zipfile.BadZipFile, KeyError) as exc:
+        raise RuntimeError(f"Invalid Federal Reserve Z.1 archive: {exc}") from exc
+    if not observations:
+        raise RuntimeError(
+            f"No usable Federal Reserve Z.1 observations for {series_id} in the requested range."
+        )
+    return observations
+
+
+def fetch_fed_z1_series(
+    entry: dict[str, Any], start: date | None, end: date | None
+) -> dict[str, Any]:
+    response = http_get_bytes(
+        FED_Z1_ARCHIVE_URL,
+        headers={"Accept": "*/*"},
+        timeout=30,
+        cache_ttl=24 * 60 * 60,
+        allow_stale=True,
+    )
+    observations = parse_fed_z1_archive(
+        response.content,
+        str(entry["z1File"]),
+        str(entry["z1Series"]),
+        start,
+        end,
+    )
+    result = {
+        "id": entry["id"],
+        "name": entry["name"],
+        "unit": entry["unit"],
+        "provider": "Federal Reserve Financial Accounts (direct Z.1 archive)",
+        "providerSeries": entry["z1Series"],
+        "sourceUrl": entry["sourceUrl"],
+        "origin": entry["origin"],
+        "resolution": entry["resolution"],
+        "observations": observations,
+        "firstDate": observations[0]["date"],
+        "lastDate": observations[-1]["date"],
+        "latest": observations[-1]["value"],
+        "fetchedAt": response.fetched_at,
+        "transport": response.transport,
+        "fromCache": response.from_cache,
+        "stale": response.stale,
+        "measureType": entry.get("measureType"),
+        "preferredUnits": entry.get("preferredUnits"),
+    }
+    if response.warning:
+        result["providerWarning"] = response.warning
+    return result
+
+
+def fetch_fiscal_debt_series(
+    entry: dict[str, Any], start: date | None, end: date | None
+) -> dict[str, Any]:
+    params: dict[str, Any] = {
+        "fields": "record_date,tot_pub_debt_out_amt",
+        "sort": "record_date",
+        "page[size]": "10000",
+    }
+    filters = []
+    if start:
+        filters.append(f"record_date:gte:{start.isoformat()}")
+    if end:
+        filters.append(f"record_date:lte:{end.isoformat()}")
+    if filters:
+        params["filter"] = ",".join(filters)
+    payload = http_get_json(
+        "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/"
+        "v2/accounting/od/debt_to_penny",
+        params=params,
+        headers={"Accept": "application/json"},
+        cache_ttl=6 * 60 * 60,
+        allow_stale=True,
+    )
+    rows = payload.get("data") if isinstance(payload, dict) else None
+    observations = []
+    for row in rows or []:
+        row_date = str(row.get("record_date") or "")[:10]
+        try:
+            # Treasury publishes dollars; Macro Data Lab standardizes market
+            # aggregates to millions so equity and debt can share one axis.
+            value = float(str(row.get("tot_pub_debt_out_amt") or "")) / 1_000_000.0
+            date.fromisoformat(row_date)
+        except (TypeError, ValueError):
+            continue
+        observations.append({"date": row_date, "value": value})
+    if not observations:
+        raise RuntimeError("Treasury Debt to the Penny returned no usable observations.")
+    return {
+        "id": entry["id"],
+        "name": entry["name"],
+        "unit": entry["unit"],
+        "provider": "U.S. Treasury Fiscal Data",
+        "providerSeries": "tot_pub_debt_out_amt",
+        "sourceUrl": entry["sourceUrl"],
+        "origin": entry["origin"],
+        "resolution": entry["resolution"],
+        "observations": observations,
+        "firstDate": observations[0]["date"],
+        "lastDate": observations[-1]["date"],
+        "latest": observations[-1]["value"],
+        "measureType": entry.get("measureType"),
+        "preferredUnits": entry.get("preferredUnits"),
+    }
 
 
 def fetch_fred_series(series_id: str, start: date | None, end: date | None) -> dict[str, Any]:
@@ -3146,6 +3505,50 @@ def fetch_display_series(entry: dict[str, Any], start: date | None, end: date | 
     if entry.get("primary") in {"sp-earnings", "world-bank", "sec-companyfacts", "fed-dfa"}:
         return macro_providers.fetch_special_series(entry, start, end)
 
+    if entry.get("primary") == "fed-z1":
+        try:
+            return fetch_fed_z1_series(entry, start, end)
+        except NetworkPolicyError:
+            raise
+        except Exception as z1_exc:  # noqa: BLE001 - exact FRED mirror is the declared fallback.
+            fred_result = fetch_fred_series(str(entry["fred"]), start, end)
+            fred_result.update(
+                {
+                    "id": entry["id"],
+                    "name": entry["name"],
+                    "unit": entry["unit"],
+                    "origin": entry["origin"],
+                    "sourceUrl": entry["sourceUrl"],
+                    "resolution": "FRED mirror fallback for the same Federal Reserve Z.1 series",
+                    "fallbackReason": f"Direct Federal Reserve Z.1 archive failed: {z1_exc}",
+                    "measureType": entry.get("measureType"),
+                    "preferredUnits": entry.get("preferredUnits"),
+                }
+            )
+            return fred_result
+
+    if entry.get("primary") == "fiscal-debt":
+        try:
+            return fetch_fiscal_debt_series(entry, start, end)
+        except NetworkPolicyError:
+            raise
+        except Exception as fiscal_exc:  # noqa: BLE001 - GFDEBTN is the exact quarterly fallback.
+            fred_result = fetch_fred_series(str(entry["fred"]), start, end)
+            fred_result.update(
+                {
+                    "id": entry["id"],
+                    "name": entry["name"],
+                    "unit": entry["unit"],
+                    "origin": entry["origin"],
+                    "sourceUrl": entry["sourceUrl"],
+                    "resolution": "FRED quarterly mirror fallback for Treasury total public debt",
+                    "fallbackReason": f"Treasury Debt to the Penny failed: {fiscal_exc}",
+                    "measureType": entry.get("measureType"),
+                    "preferredUnits": entry.get("preferredUnits"),
+                }
+            )
+            return fred_result
+
     if entry.get("primary") == "treasury":
         try:
             treasury_result = fetch_treasury_yield_series(
@@ -3336,6 +3739,8 @@ def fetch_display_series(entry: dict[str, Any], start: date | None, end: date | 
             "unit": entry["unit"],
             "origin": entry.get("origin"),
             "resolution": entry.get("resolution", "curated series mapping"),
+            "measureType": entry.get("measureType"),
+            "preferredUnits": entry.get("preferredUnits"),
         }
     )
     return fred_result
@@ -3449,16 +3854,17 @@ def handle_fred_query(
         clarifications
     )
     selected, resolution_notices = resolve_prompt_series(prompt)
+    request_contract = parse_macro_request_contract(prompt)
     intent_resolution: dict[str, Any] = {
         "parser": "deterministic",
         "usedModel": False,
         "model": None,
         "dataValuesFromModel": False,
-        "requestContract": parse_macro_request_contract(prompt),
+        "requestContract": request_contract,
     }
-    normalized_for_missing, _ = normalize_macro_concept_phrasing(prompt)
     unresolved_pairs: list[tuple[str, str]] = []
-    for clause in _search_clauses(normalized_for_missing):
+    for operand in request_contract["operands"]:
+        clause, _notices = normalize_macro_concept_phrasing(operand["sourceSpan"])
         residual = unresolved_clause_residual(clause)
         dynamic_match = any(
             macro_providers.normalize_quantitative_phrasing(str(entry.get("resolvedClause") or ""))
@@ -3472,15 +3878,9 @@ def handle_fred_query(
             continue
         unresolved_pairs.append((clause.strip(), residual))
 
-    # A numeric qualifier is meaningful only with its subject. Asking the user to
-    # correct an orphan such as "below 5%" recreates the ambiguity we are trying to
-    # prevent, so retain the complete source clause in that case.
-    missing_concepts = list(
-        dict.fromkeys(
-            clause if protected_macro_quantitative_qualifiers(residual) else residual
-            for clause, residual in unresolved_pairs
-        )
-    )
+    # Clarification and model routing receive complete operand spans. Residuals are
+    # used only to detect whether an operand still has unresolved meaning.
+    missing_concepts = list(dict.fromkeys(clause for clause, _residual in unresolved_pairs))
     if re.search(r"\bbusiness investment\b", prompt, re.IGNORECASE) and not re.search(
         r"\b(?:private nonresidential fixed investment|pnfi(?:c1)?)\b",
         prompt,
@@ -3491,8 +3891,13 @@ def handle_fred_query(
             for concept in missing_concepts
             if not re.search(r"\bbusiness investment\b", concept, re.IGNORECASE)
         ]
-    remaining_missing = list(missing_concepts)
-    if not selected or remaining_missing:
+    domain_clarification_pending = ambiguous_us_debt_scope(prompt)
+    remaining_missing = [
+        concept
+        for concept in missing_concepts
+        if not (domain_clarification_pending and re.search(r"\bdebt\b", concept, re.IGNORECASE))
+    ]
+    if (not selected and not domain_clarification_pending) or remaining_missing:
         model_status = model_router.ollama_status()
         source_concepts = remaining_missing or [prompt]
         protected_sources = [
@@ -3585,7 +3990,9 @@ def handle_fred_query(
             "generatedAt": utc_now_iso(),
             "backend": backend_status(),
         }
-    if not selected:
+    initial_clarification_questions = macro_clarification_questions(prompt, selected, {})
+    initial_question_ids = [question["id"] for question in initial_clarification_questions]
+    if not selected and not initial_clarification_questions:
         model_status = model_router.ollama_status()
         raise ValueError(
             (
@@ -3596,8 +4003,6 @@ def handle_fred_query(
             + f" Local fallback status: {model_status['message']}"
         )
 
-    initial_clarification_questions = macro_clarification_questions(prompt, selected, {})
-    initial_question_ids = [question["id"] for question in initial_clarification_questions]
     expected_clarification_token = macro_clarification_token(prompt, initial_question_ids)
     if clarification_answers:
         if not initial_question_ids or not hmac.compare_digest(
@@ -3817,8 +4222,13 @@ FED_MONTH_NAMES = {
 
 
 def parse_fed_tracker_intent(prompt: str, meeting_dates: list[str]) -> dict[str, Any]:
-    text = prompt.lower().strip()
+    text, typo_corrections = intent_contract.normalize_known_typos(prompt)
+    text = text.lower().strip()
     meeting_dates = sorted(dict.fromkeys(meeting_dates))
+    today = date.today()
+    future_meeting_dates = [
+        value for value in meeting_dates if date.fromisoformat(value) >= today
+    ]
     if re.search(
         r"\b(?:backtest|calculate|compute|sum|average|mean|median|forecast|predict|"
         r"download|export|email|odds ratio)\b|\bwhat is the probability\b|[{}]",
@@ -3831,15 +4241,45 @@ def parse_fed_tracker_intent(prompt: str, meeting_dates: list[str]) -> dict[str,
     view = "current"
     recognized = False
     view_matches: list[str] = []
-    if re.search(r"\bhistorical probabilities\b|\bprobability history\b|\bprobability path\b|\bover time\b", text):
+    if re.search(
+        r"\bhistorical probabilities\b|\bprobability history\b|\bprobability path\b|"
+        r"\bover time\b|\bfull[- ]history\b|\bevery available dated (?:odds|probability) snapshot\b",
+        text,
+    ):
         view_matches.append("historical")
-    if re.search(r"\bcompare\b|\bversus\b|\bvs\.?\b", text):
+    if re.search(
+        r"\bcompare\b|\bcontrast\b|\bversus\b|\bvs\.?\b|\bweek[ -]over[ -]week\b|"
+        r"\bchanged?\b[^.]{0,30}\b(?:last|prior|previous) week\b",
+        text,
+    ):
         view_matches.append("compare")
-    if re.search(r"\ball (?:meetings?|meeting probabilities|probabilities)\b|\bmatrix\b", text):
+    if re.search(
+        r"\ball (?:meetings?|meeting probabilities|probabilities)\b|\bmatrix\b|"
+        r"\bfull upcoming fomc outcomes table\b|\bmeeting-by-meeting\b",
+        text,
+    ):
         view_matches.append("probabilities")
-    if re.search(r"\bcurrent\b|\blatest\b|\bnext meeting\b", text):
+    # Meeting selection and display mode are independent slots. In particular,
+    # "compare next meeting to prior snapshots" selects the next meeting while
+    # retaining the comparison view; "next meeting" must not imply current view.
+    if re.search(
+        r"\bcurrent\s+(?:meeting\s+)?probabilit(?:y|ies)\b|"
+        r"\bcurrent\b[^.]{0,35}\b(?:odds|probabilit(?:y|ies))\b|"
+        r"\blatest\s+(?:odds|probabilit(?:y|ies))\b|\bcurrent\s+view\b",
+        text,
+    ):
         view_matches.append("current")
     view_matches = list(dict.fromkeys(view_matches))
+    if (
+        "compare" in view_matches
+        and "current" in view_matches
+        and re.search(
+            r"\bcurrent\s+(?:odds|probabilit(?:y|ies))\b[^.]{0,45}"
+            r"\b(?:prior|earlier|previous|dated)\b[^.]{0,25}\bsnapshots?\b",
+            text,
+        )
+    ):
+        view_matches.remove("current")
     if len(view_matches) > 1:
         raise ValueError("The request contains conflicting Fed Tracker views. Choose current, compare, historical, or all meetings.")
     if view_matches:
@@ -3848,7 +4288,7 @@ def parse_fed_tracker_intent(prompt: str, meeting_dates: list[str]) -> dict[str,
 
     history_range = "1Y"
     range_patterns = [
-        (r"\ball (?:available|history)\b|\bfull history\b|\bmax\b", "ALL"),
+        (r"\ball (?:available|history)\b|\bevery available\b|\bfull[- ]history\b|\bmax\b", "ALL"),
         (r"\b(?:last\s+)?1\s*(?:month|mo)\b", "1M"),
         (r"\b(?:last\s+)?3\s*(?:months?|mos?)\b", "3M"),
         (r"\b(?:last\s+)?6\s*(?:months?|mos?)\b", "6M"),
@@ -3903,6 +4343,11 @@ def parse_fed_tracker_intent(prompt: str, meeting_dates: list[str]) -> dict[str,
             if date.fromisoformat(value).month == month
             and (year is None or date.fromisoformat(value).year == year)
         ]
+        if year is None:
+            future_candidates = [
+                value for value in candidates if date.fromisoformat(value) >= today
+            ]
+            candidates = future_candidates or candidates[-1:]
         if not candidates:
             label = f"{month:02d}/{year}" if year else f"month {month}"
             raise ValueError(f"No published meeting matches {label} in the current tracker calendar.")
@@ -3914,10 +4359,34 @@ def parse_fed_tracker_intent(prompt: str, meeting_dates: list[str]) -> dict[str,
     if len(meeting_candidates) > 1:
         raise ValueError("The request names more than one meeting, but this view supports one selected meeting.")
     meeting_date = meeting_candidates[0] if meeting_candidates else None
-    if not meeting_date and re.search(r"\b(?:next|latest) meeting\b", text):
-        meeting_date = meeting_dates[0] if meeting_dates else None
+    meeting_selection = "explicit" if meeting_date else "default"
+    if not meeting_date and re.search(r"\b(?:next|latest|upcoming|nearest)[ -](?:fomc[ -])?meeting\b", text):
+        meeting_date = (
+            future_meeting_dates[0]
+            if future_meeting_dates
+            else (meeting_dates[-1] if meeting_dates else None)
+        )
+        meeting_selection = "next"
     if meeting_date:
         recognized = True
+
+    comparison_dates: list[str] = []
+    if view == "compare":
+        comparison_dates = (
+            ["current", "one-week-prior"]
+            if re.search(r"\b(?:week[ -]over[ -]week|last week|prior week|previous week)\b", text)
+            else ["current", "prior-available"]
+        )
+    outcome_selection = "all"
+    if re.search(r"\b(?:rate\s+)?hikes?|\braises? rates?\b", text):
+        outcome_selection = "hike"
+    elif re.search(r"\b(?:rate\s+)?cuts?|\blowers? rates?\b", text):
+        outcome_selection = "cut"
+    elif re.search(r"\bhold\b|\bno change\b", text):
+        outcome_selection = "hold"
+    if outcome_selection != "all":
+        recognized = True
+    chart_type = "line" if view in {"historical", "compare"} else "bar"
 
     parser = "deterministic"
     model = None
@@ -3935,6 +4404,12 @@ def parse_fed_tracker_intent(prompt: str, meeting_dates: list[str]) -> dict[str,
             "for the September meeting over all available history'. "
             f"Local fallback status: {status['message']}"
         )
+    # Recompute derived display slots after the optional wording model so the
+    # contract always describes the final accepted controls.
+    if parser == "local-open-model":
+        meeting_selection = "explicit" if meeting_date else "default"
+        comparison_dates = ["current", "prior-available"] if view == "compare" else []
+        chart_type = "line" if view in {"historical", "compare"} else "bar"
     return {
         "prompt": prompt,
         "parser": parser,
@@ -3945,6 +4420,22 @@ def parse_fed_tracker_intent(prompt: str, meeting_dates: list[str]) -> dict[str,
             "view": view,
             "meetingDate": meeting_date,
             "historyRange": history_range,
+            "meetingSelection": meeting_selection,
+            "comparisonDates": comparison_dates,
+            "outcomeSelection": outcome_selection,
+            "chartType": chart_type,
+        },
+        "requestContract": {
+            "operation": "display-fed-probabilities",
+            "view": view,
+            "meetingSelection": meeting_selection,
+            "meetingDate": meeting_date,
+            "historyRange": history_range,
+            "comparisonDates": comparison_dates,
+            "outcomeSelection": outcome_selection,
+            "chartType": chart_type,
+            "presentation": "chart-and-table",
+            "typoCorrections": typo_corrections,
         },
         "verification": {
             "status": "pass",

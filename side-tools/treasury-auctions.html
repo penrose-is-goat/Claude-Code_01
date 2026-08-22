@@ -45,13 +45,6 @@
             <textarea id="auctionPrompt" rows="2" autocomplete="off" placeholder="Example: Show the latest 30-year auction result, including bidder shares and the official PDF"></textarea>
             <button class="auction-button primary" type="submit">Run query</button>
           </div>
-          <div class="auction-examples">
-            <button type="button" data-auction-example="Show me the latest 30 year auction results">Latest 30-year result</button>
-            <button type="button" data-auction-example="Chart the high yield for 10 year auctions in the last 5 years">10-year high yield</button>
-            <button type="button" data-auction-example="Compare direct and indirect bidder shares for 20 year auctions in the last 3 years">Bidder shares</button>
-            <button type="button" data-auction-example="Table of SOMA accepted for all TIPS auctions in the last 10 years">TIPS SOMA</button>
-            <button type="button" data-auction-example="Give me a copy of any auction results from 2012 for the 10 year note">2012 result PDFs</button>
-          </div>
           <details class="auction-ai-settings">
             <summary>Optional open-model parser</summary>
             <div>
@@ -70,7 +63,7 @@
             <div><p id="chartKicker" class="auction-kicker">Historical series</p><h2 id="chartTitle">Bid-to-cover ratio</h2></div>
             <div class="chart-actions">
               <button id="downloadQueryCsv" type="button">Download CSV</button>
-              <button id="showQueryTable" type="button">Table</button>
+              <button id="showQueryTable" type="button" aria-controls="queryTable">Toggle result table</button>
             </div>
           </div>
           <div class="auction-chart-frame">
@@ -80,7 +73,7 @@
           <p id="chartAudit" class="chart-audit">The exact period, field definition, and missing observations will appear here.</p>
         </div>
 
-        <div id="queryTable" class="auction-table-wrap hidden"></div>
+        <div id="queryTable" class="auction-table-wrap hidden" aria-live="polite"></div>
       </section>
 
       <section class="auction-database-panel">

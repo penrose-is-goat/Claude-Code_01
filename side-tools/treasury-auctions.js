@@ -13,7 +13,11 @@ const refs = {
   sources: $("#auctionSources"), detail: $("#auctionDetail"), detailContent: $("#auctionDetailContent"),
 };
 
-const state = { dashboard: null, query: null, latestLimit: 15, page: 0, chartHits: [], queryRequestId: 0, queryController: null, sort: { key: "auctionDate", direction: -1 } };
+const state = {
+  dashboard: null, query: null, latestLimit: 15, page: 0, chartHits: [], queryRequestId: 0, queryController: null,
+  sort: { key: "auctionDate", direction: -1 },
+  queryTable: { key: "auctionDate", direction: -1, page: 0, pageSize: 25 },
+};
 const ctx = refs.chart.getContext("2d");
 const METRICS = {
   bidToCoverRatio: { label: "Bid-to-cover ratio", digits: 2, format: "number" },
@@ -161,19 +165,30 @@ function renderDatabaseStatus() {
   refs.coverage.textContent = `${Number(db.rowCount || db.count || state.dashboard.totalCount || 0).toLocaleString("en-US")} auctions · ${db.firstAuctionDate || db.firstDate || "1997"} to ${db.lastAuctionDate || db.lastDate || "present"}${db.stale ? " · cached" : ""}`;
 }
 
-function queryRows(payload) { return payload.rows || payload.auctions || payload.data || []; }
+function queryRows(payload, { table = false } = {}) {
+  if (table && Array.isArray(payload.tableRows)) return payload.tableRows;
+  return payload.rows || payload.auctions || payload.data || [];
+}
+function queryPanels(payload) {
+  const spec = payload.spec || payload.querySpec || {};
+  if (Array.isArray(spec.panels) && spec.panels.length) return spec.panels;
+  if (spec.view === "chart") return ["chart"];
+  if (spec.view === "records") return ["documents"];
+  if (spec.view === "latest") return ["table", "documents"];
+  return ["table"];
+}
+function hasQueryPanel(payload, panel) { return queryPanels(payload).includes(panel); }
 function queryMetrics(payload) {
   const spec = payload.spec || payload.querySpec || {};
-  const requested = spec.metrics || payload.chart?.metrics || (spec.metric || payload.chart?.metric ? [spec.metric || payload.chart?.metric] : ["bidToCoverRatio"]);
+  const requested = spec.metrics || payload.chart?.metrics || (spec.metric || payload.chart?.metric ? [spec.metric || payload.chart?.metric] : []);
   return [...new Set(requested)].filter((metric) => METRICS[metric]);
 }
-function queryMetric(payload) { return queryMetrics(payload)[0] || "bidToCoverRatio"; }
+function queryMetric(payload) { return queryMetrics(payload)[0] || null; }
 
 function renderResolved(payload) {
   const spec = payload.spec || payload.querySpec || {}; const chips = [];
-  const view = spec.view || spec.action;
-  if (view) chips.push(view === "records" ? "Official result records" : view);
-  if (view !== "records") (spec.metrics || [spec.metric]).filter(Boolean).forEach((value) => chips.push(METRICS[value]?.label || value));
+  queryPanels(payload).forEach((panel) => chips.push(panel === "documents" ? "Official result documents" : panel));
+  (spec.metrics || [spec.metric]).filter(Boolean).forEach((value) => chips.push(METRICS[value]?.label || value));
   const terms = spec.terms || spec.securityTerms || (spec.term ? [spec.term] : []); terms.forEach((value) => chips.push(value));
   chips.push(spec.securityType || spec.type || "All security types");
   if (spec.startDate || spec.start) chips.push(`From ${spec.startDate || spec.start}`);
@@ -191,22 +206,22 @@ function queryScopeLabel(payload) {
 }
 
 function renderQuerySummary(payload) {
-  const rows = queryRows(payload); const summary = payload.summary || {}; const metric = queryMetric(payload);
-  if (payload.spec?.view === "records") {
+  const rows = queryRows(payload); const tableRows = queryRows(payload, { table: true }); const summary = payload.summary || {}; const metric = queryMetric(payload);
+  if (hasQueryPanel(payload, "documents") && !metric) {
     refs.summary.innerHTML = [
-      ["Matching auctions", summary.observationCount ?? rows.length, summary.truncated ? `${summary.returnedCount} records returned; refine the query to inspect every match` : "Official completed auction records"],
+      ["Matching auctions", summary.observationCount ?? tableRows.length, summary.tableTruncated ? `${summary.tableReturnedCount} records returned; refine the query to inspect every match` : "Official completed auction records"],
       ["Coverage", summary.firstDate && summary.lastDate ? `${summary.firstDate} to ${summary.lastDate}` : "No matches", "Auction dates, not issue dates"],
-      ["Result PDFs", summary.resultPdfCount ?? rows.filter((row) => row.resultPdfUrl).length, "Direct official Treasury result files"],
-      ["Missing PDFs", summary.missingResultPdfCount ?? rows.filter((row) => !row.resultPdfUrl).length, "Structured records remain available"],
+      ["Result PDFs", summary.resultPdfCount ?? tableRows.filter((row) => row.resultPdfUrl).length, "Direct official Treasury result files"],
+      ["Missing PDFs", summary.missingResultPdfCount ?? tableRows.filter((row) => !row.resultPdfUrl).length, "Structured records remain available"],
     ].map(([label, value, detail]) => `<article><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(detail)}</small></article>`).join("");
     return;
   }
-  const values = rows.map((row) => Number(row[metric])).filter(Number.isFinite); const mean = values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+  const values = metric ? rows.map((row) => Number(row[metric])).filter(Number.isFinite) : []; const mean = values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
   refs.summary.innerHTML = [
     ["Auctions", summary.observationCount ?? rows.length, summary.sampled ? `${summary.returnedCount} date-spanning points plotted for speed` : summary.truncated ? `${summary.returnedCount} records returned; refine filters for the remainder` : "Records matching the visible specification"],
     ["Coverage", summary.firstDate && summary.lastDate ? `${summary.firstDate} to ${summary.lastDate}` : rows.length ? `${String(rows[0].auctionDate).slice(0, 10)} to ${String(rows.at(-1).auctionDate).slice(0, 10)}` : "No observations", "Auction dates, not issue dates"],
-    ["Average", mean === null ? "n/a" : metricValue(mean, metric), METRICS[metric]?.label || metric],
-    ["Missing", summary.missingCount ?? rows.filter((row) => !Number.isFinite(Number(row[metric]))).length, "Retained as blank, never zero-filled"],
+    ["Average", mean === null ? "n/a" : metricValue(mean, metric), metric ? (METRICS[metric]?.label || metric) : "No numeric metric requested"],
+    ["Missing", metric ? (summary.missingCount ?? rows.filter((row) => !Number.isFinite(Number(row[metric]))).length) : "n/a", metric ? "Retained as blank, never zero-filled" : "No metric was implied by this request"],
   ].map(([label, value, detail]) => `<article><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(detail)}</small></article>`).join("");
 }
 
@@ -217,7 +232,8 @@ function prepareCanvas() {
 }
 
 function drawChart(payload) {
-  const metrics = queryMetrics(payload); const metric = metrics[0]; const meta = METRICS[metric] || { label: metric, digits: 2, format: "number" };
+  const metrics = queryMetrics(payload); const metric = metrics[0];
+  if (!metric) return;
   const rows = queryRows(payload).filter((row) => row.auctionDate && metrics.some((key) => Number.isFinite(Number(row[key])))).sort((a, b) => String(a.auctionDate).localeCompare(String(b.auctionDate)));
   const { plot } = prepareCanvas(); refs.chartTitle.textContent = metrics.map((key) => METRICS[key].label).join(" vs. "); refs.chartKicker.textContent = `${queryScopeLabel(payload)} - historical series`;
   if (!rows.length) { ctx.fillStyle = "#4f5f6c"; ctx.font = "600 18px Georgia, serif"; ctx.textAlign = "center"; ctx.fillText("No numeric observations matched this query.", plot.x + plot.w / 2, plot.y + plot.h / 2); return; }
@@ -237,28 +253,46 @@ function drawChart(payload) {
   const summary = payload.summary || {}; refs.chartAudit.textContent = `${Number(summary.observationCount || rows.length).toLocaleString("en-US")} matching auctions from ${summary.firstDate || rows[0].auctionDate.slice(0, 10)} through ${summary.lastDate || rows.at(-1).auctionDate.slice(0, 10)}.${summary.sampled ? ` ${rows.length.toLocaleString("en-US")} date-spanning points are plotted for responsive rendering.` : ""} ${summary.missingCount || 0} missing requested values were excluded from their lines. Click a point to inspect its official auction result.`;
 }
 
+function compareQueryRows(left, right, key, direction) {
+  const a = left[key]; const b = right[key];
+  const aNumber = Number(a); const bNumber = Number(b);
+  if (Number.isFinite(aNumber) && Number.isFinite(bNumber)) return (aNumber - bNumber) * direction;
+  return String(a ?? "").localeCompare(String(b ?? ""), undefined, { numeric: true, sensitivity: "base" }) * direction;
+}
+
+function queryTableColumn(key, label, state) {
+  const arrow = state.key === key ? (state.direction === 1 ? " ↑" : " ↓") : "";
+  return `<th><button type="button" data-query-sort="${escapeHtml(key)}">${escapeHtml(label)}${arrow}</button></th>`;
+}
+
 function renderQueryTable(payload) {
-  const rows = queryRows(payload); const metrics = queryMetrics(payload);
-  const visibleRows = rows.slice(0, 100);
+  const panels = queryPanels(payload); const includeDocuments = panels.includes("documents"); const rows = [...queryRows(payload, { table: true })]; const metrics = queryMetrics(payload);
+  const tableState = state.queryTable; rows.sort((a, b) => compareQueryRows(a, b, tableState.key, tableState.direction));
+  const total = Number(payload.summary?.observationCount || rows.length); const start = tableState.page * tableState.pageSize;
+  if (start >= rows.length && tableState.page) { tableState.page = Math.max(0, Math.ceil(rows.length / tableState.pageSize) - 1); return renderQueryTable(payload); }
+  const visibleRows = rows.slice(start, start + tableState.pageSize);
   const extraMetrics = metrics.filter((metric) => !["bidToCoverRatio", "stopOutValue", "highYield", "highDiscountRate", "highDiscountMargin", "offeringAmount"].includes(metric));
-  const heading = payload.spec?.view === "records" ? "Matching official auction results" : "Matching auction records";
-  const total = Number(payload.summary?.observationCount || rows.length);
-  const description = rows.length ? `Showing ${visibleRows.length.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} matching auctions. Refine broad filters to inspect more rows; chart sampling preserves the full date span.` : "No completed auction records matched the resolved filters.";
-  refs.queryTable.innerHTML = `<div class="query-result-heading"><div><p class="auction-kicker">Database results</p><h2>${escapeHtml(heading)}</h2><p>${escapeHtml(description)}</p></div></div>${rows.length ? `<table><thead><tr><th>Auction date</th><th>Security</th><th>CUSIP</th><th>Issue date</th><th>Offering</th><th>Stop-out</th><th>Bid-to-cover</th>${extraMetrics.map((metric) => `<th>${escapeHtml(METRICS[metric].label)}</th>`).join("")}<th>Official files</th></tr></thead><tbody>${visibleRows.map((row) => { const stop = resultMetric(row); return `<tr><td>${escapeHtml(String(row.auctionDate || "").slice(0, 10))}</td><td><strong>${escapeHtml(auctionLabel(row))}</strong><small>${escapeHtml(tenorLineage(row))}${escapeHtml(row.reopening ? "Reopening" : "New issue")}</small></td><td>${escapeHtml(row.cusip || "n/a")}</td><td>${escapeHtml(String(row.issueDate || "n/a").slice(0, 10))}</td><td>${compactMoney(row.offeringAmount)}</td><td>${numberText(stop.value, 3)}${Number.isFinite(Number(stop.value)) ? "%" : ""}<small>${escapeHtml(stop.label)}</small></td><td>${numberText(row.bidToCoverRatio, 2)}</td>${extraMetrics.map((metric) => `<td>${metricValue(row[metric], metric)}</td>`).join("")}<td><div class="official-file-links">${sourceLink(row.resultPdfUrl, "Result PDF")}${sourceLink(row.announcementPdfUrl, "Announcement PDF")}<button class="row-inspect" data-auction-key="${escapeHtml(row.auctionKey || row.key || "")}">Inspect</button></div></td></tr>`; }).join("")}</tbody></table>` : ""}`;
+  const heading = includeDocuments && !panels.includes("table") ? "Matching official auction documents" : "Matching auction records";
+  const loaded = `${rows.length.toLocaleString("en-US")} loaded`;
+  const description = rows.length ? `Showing ${start + 1}-${Math.min(start + visibleRows.length, rows.length)} of ${loaded} from ${total.toLocaleString("en-US")} matching auctions.${payload.summary?.tableTruncated ? " Refine the filters to inspect records beyond the verified table limit." : ""}` : "No completed auction records matched the resolved filters.";
+  const filesHeader = includeDocuments ? "Official files" : "Record";
+  const showStandardMetrics = panels.includes("table") || metrics.length > 0;
+  const standardHeaders = showStandardMetrics ? `${queryTableColumn("offeringAmount", "Offering", tableState)}${queryTableColumn("stopOutValue", "Stop-out", tableState)}${queryTableColumn("bidToCoverRatio", "Bid-to-cover", tableState)}` : "";
+  refs.queryTable.innerHTML = `<div class="query-result-heading"><div><p class="auction-kicker">Database results</p><h2>${escapeHtml(heading)}</h2><p>${escapeHtml(description)}</p></div></div>${rows.length ? `<table><thead><tr>${queryTableColumn("auctionDate", "Auction date", tableState)}${queryTableColumn("term", "Security", tableState)}${queryTableColumn("cusip", "CUSIP", tableState)}${queryTableColumn("issueDate", "Issue date", tableState)}${standardHeaders}${extraMetrics.map((metric) => queryTableColumn(metric, METRICS[metric].label, tableState)).join("")}<th>${filesHeader}</th></tr></thead><tbody>${visibleRows.map((row) => { const stop = resultMetric(row); const files = includeDocuments ? `${sourceLink(row.resultPdfUrl, "Result PDF")}${sourceLink(row.announcementPdfUrl, "Announcement PDF")}` : ""; const standardCells = showStandardMetrics ? `<td>${compactMoney(row.offeringAmount)}</td><td>${numberText(stop.value, 3)}${Number.isFinite(Number(stop.value)) ? "%" : ""}<small>${escapeHtml(stop.label)}</small></td><td>${numberText(row.bidToCoverRatio, 2)}</td>` : ""; return `<tr><td>${escapeHtml(String(row.auctionDate || "").slice(0, 10))}</td><td><strong>${escapeHtml(auctionLabel(row))}</strong><small>${escapeHtml(tenorLineage(row))}${escapeHtml(row.reopening ? "Reopening" : "New issue")}</small></td><td>${escapeHtml(row.cusip || "n/a")}</td><td>${escapeHtml(String(row.issueDate || "n/a").slice(0, 10))}</td>${standardCells}${extraMetrics.map((metric) => `<td>${metricValue(row[metric], metric)}</td>`).join("")}<td><div class="official-file-links">${files}<button class="row-inspect" data-auction-key="${escapeHtml(row.auctionKey || row.key || "")}">Inspect</button></div></td></tr>`; }).join("")}</tbody></table><div class="auction-pagination query-pagination"><span>${escapeHtml(description)}</span><button type="button" data-query-page="previous" ${tableState.page === 0 ? "disabled" : ""}>Previous 25</button><button type="button" data-query-page="next" ${start + tableState.pageSize >= rows.length ? "disabled" : ""}>Next 25</button></div>` : ""}`;
 }
 
 function applyQueryView(payload) {
-  const view = payload.spec?.view || "chart";
-  const showChart = view === "chart";
+  const showChart = hasQueryPanel(payload, "chart");
+  const showTable = hasQueryPanel(payload, "table") || hasQueryPanel(payload, "documents");
   refs.chartPanel.classList.toggle("hidden", !showChart);
-  refs.queryTable.classList.toggle("hidden", showChart);
+  refs.queryTable.classList.toggle("hidden", !showTable);
   if (showChart) drawChart(payload);
 }
 
 async function runQuery() {
   const prompt = refs.prompt.value.trim();
   if (!prompt) {
-    refs.queryStatus.textContent = "Enter an auction request or choose an example to search the database.";
+    refs.queryStatus.textContent = "Enter an auction request to search the database.";
     refs.queryStatus.classList.remove("error");
     return;
   }
@@ -274,11 +308,15 @@ async function runQuery() {
     refs.queryMode.textContent = payload.parser === "ollama" || payload.usedModel ? `Validated open model · ${payload.model || "Qwen3.5 9B"}` : "Deterministic parser";
     refs.modelStatus.textContent = payload.parser === "ollama" || payload.usedModel ? "Model output passed the same allowlisted query schema; all values still came from Treasury records." : "The standard parser handled this request; no model was called.";
     renderResolved(payload); renderQuerySummary(payload);
-    if (payload.spec?.view === "chart") refs.queryTable.innerHTML = ""; else renderQueryTable(payload);
+    state.queryTable = { key: "auctionDate", direction: -1, page: 0, pageSize: 25 };
+    if (hasQueryPanel(payload, "table") || hasQueryPanel(payload, "documents")) renderQueryTable(payload); else refs.queryTable.innerHTML = "";
     applyQueryView(payload);
-    const rows = queryRows(payload); const pdfCount = payload.summary?.resultPdfCount ?? rows.filter((row) => row.resultPdfUrl).length;
-    const total = Number(payload.summary?.observationCount || rows.length);
-    refs.queryStatus.textContent = payload.message || (payload.spec?.view === "records" ? `Found ${total.toLocaleString("en-US")} official auction results; ${pdfCount.toLocaleString("en-US")} result PDFs are available in the returned records.` : `Matched ${total.toLocaleString("en-US")} auction records${payload.summary?.sampled ? `; plotted ${rows.length.toLocaleString("en-US")} date-spanning points` : ""}.`);
+    const rows = queryRows(payload); const tableRows = queryRows(payload, { table: true }); const pdfCount = payload.summary?.resultPdfCount ?? tableRows.filter((row) => row.resultPdfUrl).length;
+    const total = Number(payload.summary?.observationCount || tableRows.length);
+    const panels = queryPanels(payload);
+    const chartText = panels.includes("chart") ? `; plotted ${rows.length.toLocaleString("en-US")} date-spanning points` : "";
+    const documentText = panels.includes("documents") ? `; ${pdfCount.toLocaleString("en-US")} official result PDFs are available` : "";
+    refs.queryStatus.textContent = payload.message || `Matched ${total.toLocaleString("en-US")} auction records${chartText}${documentText}.`;
     if (payload.detail || (payload.spec?.view === "latest" && queryRows(payload)[0])) openDetail(queryRows(payload)[0]);
   } catch (error) {
     if (error.name !== "AbortError" && requestId === state.queryRequestId) { refs.queryStatus.textContent = error.message; refs.queryStatus.classList.add("error"); }
@@ -313,24 +351,27 @@ async function loadDashboard(force = false) {
 }
 
 refs.queryForm.addEventListener("submit", (event) => { event.preventDefault(); runQuery(); });
-document.querySelectorAll("[data-auction-example]").forEach((button) => button.addEventListener("click", () => { refs.prompt.value = button.dataset.auctionExample; runQuery(); }));
 refs.refresh.addEventListener("click", () => loadDashboard(true));
 refs.resultType.addEventListener("change", () => { state.page = 0; state.latestLimit = 15; renderLatestResults(); });
 refs.resultSearch.addEventListener("input", () => { state.page = 0; renderLatestResults(); });
 $("#showMoreResults").addEventListener("click", () => { state.latestLimit = Math.min(25, state.latestLimit + 10); renderLatestResults(); });
 $("#previousResults").addEventListener("click", () => { state.page = Math.max(0, state.page - 1); renderLatestResults(); });
 $("#nextResults").addEventListener("click", () => { state.page += 1; renderLatestResults(); });
-$("#showQueryTable").addEventListener("click", () => refs.queryTable.classList.toggle("hidden"));
+  $("#showQueryTable").addEventListener("click", () => refs.queryTable.classList.toggle("hidden"));
 $("#downloadQueryCsv").addEventListener("click", downloadCsv);
 $("#closeAuctionDetail").addEventListener("click", () => refs.detail.close());
-document.addEventListener("click", (event) => {
-  const sort = event.target.closest("[data-sort]"); if (sort) { const key = sort.dataset.sort; state.sort.direction = state.sort.key === key ? -state.sort.direction : -1; state.sort.key = key; renderLatestResults(); return; }
+  document.addEventListener("click", (event) => {
+    const querySort = event.target.closest("[data-query-sort]");
+    if (querySort && state.query) { const key = querySort.dataset.querySort; state.queryTable.direction = state.queryTable.key === key ? -state.queryTable.direction : -1; state.queryTable.key = key; state.queryTable.page = 0; renderQueryTable(state.query); return; }
+    const queryPage = event.target.closest("[data-query-page]");
+    if (queryPage && state.query) { const direction = queryPage.dataset.queryPage; state.queryTable.page = direction === "next" ? state.queryTable.page + 1 : Math.max(0, state.queryTable.page - 1); renderQueryTable(state.query); return; }
+    const sort = event.target.closest("[data-sort]"); if (sort) { const key = sort.dataset.sort; state.sort.direction = state.sort.key === key ? -state.sort.direction : -1; state.sort.key = key; renderLatestResults(); return; }
   const detail = event.target.closest("[data-auction-key]"); if (detail?.dataset.auctionKey) openDetail(detail.dataset.auctionKey);
 });
 refs.chart.addEventListener("mousemove", (event) => { const rect = refs.chart.getBoundingClientRect(); const x = event.clientX - rect.left; const y = event.clientY - rect.top; const hit = state.chartHits.find((item) => Math.hypot(item.x - x, item.y - y) < 10); if (!hit) { refs.tooltip.classList.add("hidden"); return; } refs.tooltip.innerHTML = `<strong>${displayDate(hit.row.auctionDate, true)} · ${escapeHtml(auctionLabel(hit.row))}</strong><span>${escapeHtml(METRICS[hit.metric]?.label || hit.metric)}: ${metricValue(hit.row[hit.metric], hit.metric)}</span><span>Bid-to-cover: ${numberText(hit.row.bidToCoverRatio, 2)} · CUSIP ${escapeHtml(hit.row.cusip || "")}</span>`; refs.tooltip.style.left = `${Math.min(rect.width - 250, Math.max(8, x + 12))}px`; refs.tooltip.style.top = `${Math.max(8, y - 78)}px`; refs.tooltip.classList.remove("hidden"); });
 refs.chart.addEventListener("click", (event) => { const rect = refs.chart.getBoundingClientRect(); const x = event.clientX - rect.left; const y = event.clientY - rect.top; const hit = state.chartHits.find((item) => Math.hypot(item.x - x, item.y - y) < 12); if (hit) openDetail(hit.row); });
 let chartResizeFrame = 0;
-window.addEventListener("resize", () => { window.cancelAnimationFrame(chartResizeFrame); chartResizeFrame = window.requestAnimationFrame(() => { if (state.query?.spec?.view === "chart") drawChart(state.query); }); });
+window.addEventListener("resize", () => { window.cancelAnimationFrame(chartResizeFrame); chartResizeFrame = window.requestAnimationFrame(() => { if (state.query && hasQueryPanel(state.query, "chart")) drawChart(state.query); }); });
 loadModelStatus();
 
 loadDashboard();

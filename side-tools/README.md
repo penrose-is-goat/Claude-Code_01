@@ -31,6 +31,8 @@ The resolver never asks a language model to invent a provider ID. It uses:
 
 - A curated catalog for common U.S. macro, rates, housing, energy, and market-index requests.
 - Direct U.S. Treasury XML data for Treasury yields from 1990 onward.
+- Direct Federal Reserve Financial Accounts (Z.1) archives for broad U.S. public-equity market capitalization and total debt securities outstanding, with exact FRED mirrors as fallbacks.
+- Treasury Fiscal Data's Debt to the Penny API for federal public debt, kept distinct from debt securities and credit-market debt definitions.
 - Direct BLS API data for CPI, core CPI, unemployment, payrolls, job openings, and producer prices.
 - Yahoo Finance for long market-index history, with an overlapping FRED comparison where available.
 - S&P Dow Jones Indices' archived official earnings workbooks for quarterly index operating EPS and validated sector earnings-contribution shares.
@@ -92,9 +94,11 @@ For an always-on deployment, use a small AWS Lightsail instance behind a named C
 python serve.py --doctor
 python serve.py --check
 python -m unittest -v
+python -m qa.runner --tool all --strict
 ```
 
 `--doctor` distinguishes an execution-policy block from a provider outage. `--check` validates the macro providers, Fed inputs, and Treasury auction database coverage.
+The semantic QA gate uses fixed Macro, Fed, and Treasury corpora with typo, metatext, and paraphrase variants; it also validates source, probability, observation, and auction invariants without calling a model.
 
 ## Important Limits
 

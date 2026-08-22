@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "tool": "fed",
+  "seed": 3002,
+  "description": "Fed Funds Futures / Fed Probability Tracker semantic contracts and fixtures.",
+  "cases": [
+    {
+      "id": "fed.compare_next_meeting_prior_snapshots",
+      "prompt": "compare next meeting to prior snapshots",
+      "expected": {
+        "parse": "success",
+        "fieldEquals": {"view": "compare"},
+        "requiredFields": ["meetingSelection", "comparisonDates"]
+      },
+      "forbidden": {"fieldEquals": {"view": "current"}},
+      "variants": [
+        {"kind": "metatext", "prompt": "Please compare the next FOMC meeting with prior probability snapshots."},
+        {"kind": "paraphrase", "prompt": "Show the next meeting's current odds versus earlier dated snapshots."},
+        {"kind": "typo", "prompt": "compare the next meeting to prior snapshotes"}
+      ],
+      "invariants": ["probability_range", "outcomes_sum_to_100", "meeting_selector_is_not_view"]
+    },
+    {
+      "id": "fed.next_meeting_hike_probability",
+      "prompt": "show the probability of a rate hike at the next meeting",
+      "expected": {
+        "parse": "success",
+        "fieldEquals": {"view": "current"}
+      },
+      "variants": [
+        {"kind": "metatext", "prompt": "For the dashboard, show current next-meeting hike odds."},
+        {"kind": "paraphrase", "prompt": "Display the chance that the Fed raises rates at its upcoming meeting."}
+      ],
+      "invariants": ["probability_range", "meeting_dates_valid"]
+    },
+    {
+      "id": "fed.compare_week_over_week",
+      "prompt": "compare this week's next-meeting probabilities with last week's",
+      "expected": {
+        "parse": "success",
+        "fieldEquals": {"view": "compare"},
+        "requiredFields": ["meetingSelection", "comparisonDates"]
+      },
+      "variants": [
+        {"kind": "metatext", "prompt": "Please compare the upcoming-meeting odds as of this week with the prior week."},
+        {"kind": "paraphrase", "prompt": "Show how next FOMC probabilities changed week over week."}
+      ],
+      "invariants": ["probability_range", "historical_as_of_dates_preserved"]
+    },
+    {
+      "id": "fed.historical_september_all_history",
+      "prompt": "show historical probabilities for the September meeting over all available history",
+      "expected": {
+        "parse": "success",
+        "fieldEquals": {"view": "historical", "historyRange": "ALL"}
+      },
+      "variants": [
+        {"kind": "metatext", "prompt": "Build a full-history probability path for the September FOMC meeting."},
+        {"kind": "paraphrase", "prompt": "Display every available dated odds snapshot for September's meeting."}
+      ],
+      "invariants": ["probability_range", "meeting_dates_valid"]
+    },
+    {
+      "id": "fed.all_meeting_outcomes",
+      "prompt": "show all meeting probabilities for the next year",
+      "expected": {
+        "parse": "success",
+        "fieldEquals": {"view": "probabilities"}
+      },
+      "variants": [
+        {"kind": "metatext", "prompt": "Please display the meeting-by-meeting probability matrix for the coming year."},
+        {"kind": "paraphrase", "prompt": "Show the full upcoming FOMC outcomes table."}
+      ],
+      "invariants": ["probability_range", "outcomes_sum_to_100"]
+    }
+  ],
+  "invariantSamples": {
+    "valid": {
+      "sources": [
+        {"provider": "CME Group", "seriesId": "ZQU26", "url": "https://www.cmegroup.com/markets/ interest-rates/fed-funds.html"},
+        {"provider": "Federal Reserve", "seriesId": "FOMC-2026-09-16", "url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"}
+      ],
+      "probabilities": [
+        {"date": "2026-08-21", "outcomes": [{"label": "cut", "probability": 10.0}, {"label": "hold", "probability": 80.0}, {"label": "hike", "probability": 10.0}]},
+        {"date": "2026-08-22", "outcomes": [{"label": "cut", "probability": 12.0}, {"label": "hold", "probability": 78.0}, {"label": "hike", "probability": 10.0}]}
+      ]
+    },
+    "invalid": {
+      "probabilities": {"rows": [{"date": "2026-08-22", "outcomes": [{"label": "hold", "probability": 110.0}, {"label": "hike", "probability": -10.0}]}], "expectedCodes": ["PROBABILITY_OUT_OF_RANGE", "PROBABILITY_TOTAL_INVALID"]}
+    }
+  }
+}

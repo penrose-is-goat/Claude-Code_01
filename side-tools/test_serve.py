@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import io
 import unittest
+import zipfile
 from datetime import date, timedelta
 from unittest.mock import patch
 
@@ -9,6 +11,131 @@ import serve
 
 
 class ResolverTests(unittest.TestCase):
+    def test_macro_contract_separates_commands_presentation_and_operands(self):
+        prompt = "show me the total us equity market versus the total US debt market on a chart"
+        contract = serve.parse_macro_request_contract(prompt)
+        self.assertEqual(contract["operation"], "compare")
+        self.assertEqual(
+            [operand["sourceSpan"] for operand in contract["operands"]],
+            ["the total us equity market", "the total us debt market"],
+        )
+        self.assertEqual(contract["presentation"]["outputs"], ["chart"])
+        self.assertNotIn("me", " ".join(row["sourceSpan"] for row in contract["operands"]))
+
+    def test_equity_and_debt_market_concepts_resolve_without_model(self):
+        prompts = (
+            "show me the total us equity market versus the total US debt market",
+            "show me the total us stock market capitilzation versus the total US oustanding debt market on a chart",
+        )
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                selected, _ = serve.resolve_prompt_series(prompt, allow_fred_search=False)
+                self.assertEqual(
+                    {entry["id"] for entry in selected},
+                    {"US_PUBLIC_EQUITY_MARKET_CAP", "US_DEBT_SECURITIES_OUTSTANDING"},
+                )
+
+    def test_equity_debt_request_loads_raw_market_levels_without_clarification(self):
+        prompt = "show me the total us equity market versus the total US debt market over the last 25 years"
+
+        def fake_series(entry, _start, _end):
+            observations = [
+                {"date": "2001-09-30", "value": 10_000_000.0},
+                {"date": "2026-03-31", "value": 20_000_000.0},
+            ]
+            return {
+                "id": entry["id"], "name": entry["name"], "unit": entry["unit"],
+                "provider": "Federal Reserve Z.1 fixture", "providerSeries": entry["z1Series"],
+                "sourceUrl": entry["sourceUrl"], "observations": observations,
+                "firstDate": observations[0]["date"], "lastDate": observations[-1]["date"],
+                "latest": observations[-1]["value"], "resolution": entry["resolution"],
+                "preferredUnits": entry["preferredUnits"],
+            }
+
+        with patch.object(serve, "fetch_display_series", side_effect=fake_series), patch.object(
+            serve.model_router, "macro_intent"
+        ) as model:
+            payload = serve.handle_fred_query(prompt)
+        self.assertFalse(payload.get("requiresClarification", False))
+        self.assertEqual(
+            {series["id"] for series in payload["series"]},
+            {"US_PUBLIC_EQUITY_MARKET_CAP", "US_DEBT_SECURITIES_OUTSTANDING"},
+        )
+        self.assertEqual(
+            {spec["units"] for spec in payload["chartConfig"]["series"]},
+            {"raw"},
+        )
+        model.assert_not_called()
+
+    def test_ambiguous_total_us_debt_asks_relevant_scope_question(self):
+        prompt = "show total outstanding debt in United States over the last 25 years"
+        with patch.object(serve.model_router, "ollama_status", return_value={"ready": False, "message": "off"}):
+            payload = serve.handle_fred_query(prompt)
+        self.assertTrue(payload["requiresClarification"])
+        question = payload["clarification"]["questions"][0]
+        self.assertEqual(question["id"], "debt_scope")
+        self.assertEqual(
+            {option["value"] for option in question["options"]},
+            {"debt_securities", "credit_market_debt", "federal_public_debt"},
+        )
+        self.assertNotIn("concept-edit", {row.get("kind") for row in payload["clarification"]["questions"]})
+
+    def test_debt_scope_clarification_loads_the_selected_definition(self):
+        prompt = "show total outstanding debt in United States over the last 25 years"
+        first = serve.handle_fred_query(prompt)
+        token = first["clarification"]["token"]
+
+        def fake_series(entry, _start, _end):
+            observations = [
+                {"date": "2001-09-30", "value": 10.0},
+                {"date": "2026-03-31", "value": 20.0},
+            ]
+            return {
+                "id": entry["id"], "name": entry["name"], "unit": entry["unit"],
+                "provider": "Fixture", "providerSeries": entry["id"],
+                "sourceUrl": entry.get("sourceUrl") or "https://example.test/source",
+                "observations": observations, "firstDate": observations[0]["date"],
+                "lastDate": observations[-1]["date"], "latest": observations[-1]["value"],
+                "resolution": entry["resolution"], "preferredUnits": "raw",
+            }
+
+        with patch.object(serve, "fetch_display_series", side_effect=fake_series):
+            payload = serve.handle_fred_query(
+                prompt,
+                clarifications={"_token": token, "debt_scope": "credit_market_debt"},
+            )
+        self.assertEqual([series["id"] for series in payload["series"]], ["TCMDO"])
+
+    def test_sp500_market_capitalization_never_resolves_to_price_index(self):
+        selected, notices = serve.resolve_prompt_series(
+            "show S&P 500 market capitalization over the last 25 years",
+            allow_fred_search=False,
+        )
+        self.assertNotIn("SP500", {entry["id"] for entry in selected})
+        self.assertTrue(any("not the S&P 500 index level" in notice for notice in notices))
+
+    def test_official_z1_archive_parser_reads_requested_series_and_skips_zero_history(self):
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, "w") as archive:
+            archive.writestr(
+                "csv/F51_1_s.csv",
+                "date,LM883164115.Q\n1996:Q3,0\n1996:Q4,15000000\n1997:Q1,16000000\n",
+            )
+        observations = serve.parse_fed_z1_archive(
+            stream.getvalue(),
+            "csv/F51_1_s.csv",
+            "LM883164115.Q",
+            date(1996, 1, 1),
+            date(1997, 12, 31),
+        )
+        self.assertEqual(
+            observations,
+            [
+                {"date": "1996-12-31", "value": 15000000.0},
+                {"date": "1997-03-31", "value": 16000000.0},
+            ],
+        )
+
     def test_household_wealth_percentiles_resolve_without_model_or_clarification(self):
         prompt = "Graph top 10% household wealth versus bottom 50% household wealth over 30 years"
 
@@ -828,14 +955,10 @@ class ResolverTests(unittest.TestCase):
             "show historical probabilities for the September meeting over all available history",
             ["2026-09-16", "2026-10-28"],
         )
-        self.assertEqual(
-            payload["spec"],
-            {
-                "view": "historical",
-                "meetingDate": "2026-09-16",
-                "historyRange": "ALL",
-            },
-        )
+        self.assertEqual(payload["spec"]["view"], "historical")
+        self.assertEqual(payload["spec"]["meetingDate"], "2026-09-16")
+        self.assertEqual(payload["spec"]["historyRange"], "ALL")
+        self.assertEqual(payload["spec"]["chartType"], "line")
         self.assertFalse(payload["usedModel"])
         self.assertFalse(payload["dataValuesFromModel"])
 
@@ -855,6 +978,31 @@ class ResolverTests(unittest.TestCase):
         ):
             with self.subTest(prompt=prompt), self.assertRaises(ValueError):
                 serve.parse_fed_tracker_intent(prompt, meetings)
+
+    def test_fed_compare_next_meeting_keeps_compare_view(self):
+        payload = serve.parse_fed_tracker_intent(
+            "compare next meeting to prior snapshots",
+            ["2026-09-16", "2026-10-28"],
+        )
+        self.assertEqual(payload["spec"]["view"], "compare")
+        self.assertEqual(payload["spec"]["meetingDate"], "2026-09-16")
+        self.assertEqual(payload["requestContract"]["meetingSelection"], "next")
+        self.assertEqual(payload["spec"]["comparisonDates"], ["current", "prior-available"])
+
+    def test_fed_next_meeting_skips_historical_calendar_entries(self):
+        payload = serve.parse_fed_tracker_intent(
+            "compare next meeting to prior snapshots",
+            ["2022-01-26", "2026-09-16", "2026-10-28"],
+        )
+        self.assertEqual(payload["spec"]["meetingDate"], "2026-09-16")
+
+    def test_fed_explicit_current_probabilities_remains_current_view(self):
+        payload = serve.parse_fed_tracker_intent(
+            "show current probabilities for the next meeting",
+            ["2026-09-16", "2026-10-28"],
+        )
+        self.assertEqual(payload["spec"]["view"], "current")
+        self.assertEqual(payload["spec"]["meetingDate"], "2026-09-16")
 
     def test_macro_model_fallback_is_re_resolved_and_never_supplies_values(self):
         entry = next(row for row in serve.SERIES_CATALOG if row["id"] == "UNRATE")

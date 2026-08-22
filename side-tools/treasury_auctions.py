@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from data_core import http_get
+import intent_contract
 import model_router
 
 
@@ -43,7 +44,7 @@ METRICS: dict[str, dict[str, str]] = {
 }
 
 METRIC_ALIASES = [
-    (r"\bbid[ -]?(?:to[ -]?)?cover\b|\bbtc\b", "bidToCoverRatio"),
+    (r"\bbid[ -]?(?:to[ -]?)?cover\b|\bdemand coverage\b|\bbtc\b", "bidToCoverRatio"),
     (r"\bhigh(?:est)? yield\b|\bstop[ -]?out yield\b", "highYield"),
     (r"\bhigh(?:est)? (?:discount )?rate\b|\bstop[ -]?out rate\b", "highDiscountRate"),
     (r"\binvestment rate\b", "highInvestmentRate"),
@@ -62,7 +63,12 @@ MODEL_SCHEMA = {
     "additionalProperties": False,
     "properties": {
         "view": {"enum": ["chart", "table", "records", "latest"]},
-        "metrics": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"enum": list(METRICS)}},
+        "metric": {"type": ["string", "null"]},
+        # Panels are independent output surfaces. `view` remains for callers that
+        # predate multi-panel requests, while `panels` is the canonical UI contract.
+        "panels": {"type": "array", "minItems": 1, "maxItems": 3, "items": {"enum": ["chart", "table", "documents"]}},
+        "metrics": {"type": "array", "minItems": 0, "maxItems": 4, "items": {"enum": list(METRICS)}},
+        "filters": {"type": "object"},
         "term": {"type": ["string", "null"]},
         "securityType": {"enum": ["Bill", "Note", "Bond", "TIPS", "FRN", "CMB", None]},
         "cusip": {"type": ["string", "null"]},
@@ -73,6 +79,30 @@ MODEL_SCHEMA = {
     },
     "required": ["view", "metrics", "term", "securityType", "cusip", "startDate", "endDate", "reopening", "chartType"],
 }
+
+OUTPUT_PANELS = {"chart", "table", "documents"}
+
+
+def _legacy_panels(view: Any) -> list[str]:
+    """Translate the original one-view contract without changing old callers."""
+    if view == "chart":
+        return ["chart"]
+    if view == "records":
+        return ["documents"]
+    if view == "latest":
+        return ["table", "documents"]
+    return ["table"]
+
+
+def _primary_view(panels: list[str], *, latest: bool = False) -> str:
+    """Retain a deterministic legacy view for the HTTP/UI clients that read it."""
+    if latest:
+        return "latest"
+    if panels == ["documents"]:
+        return "records"
+    if panels == ["chart"]:
+        return "chart"
+    return "table"
 
 
 def _utc_now() -> str:
@@ -608,7 +638,8 @@ def parse_query(prompt: str, as_of: date | None = None) -> tuple[dict[str, Any],
     if not prompt.strip():
         raise ValueError("Enter an auction query.")
     as_of = as_of or date.today()
-    text = prompt.lower()
+    text, _typo_corrections = intent_contract.normalize_known_typos(prompt)
+    text = text.lower()
     number_words = {
         "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
         "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
@@ -632,15 +663,30 @@ def parse_query(prompt: str, as_of: date | None = None) -> tuple[dict[str, Any],
         raise ValueError("A side-by-side original-issue versus reopening comparison is not supported by this single-filter query.")
     recognized = False
     latest_intent = bool(re.search(r"\blatest\b|\bmost recent\b", text))
-    chart_intent = bool(re.search(r"\bchart\b|\bplot\b|\btrend\b|\bhistory\b|\bhow has\b.*\bchanged\b", text))
-    record_intent = bool(
+    chart_intent = bool(re.search(r"\bchart\b|\bgraph\b|\bplot\b|\btrend\b|\bhistory\b|\bhow has\b.*\bchanged\b", text))
+    table_intent = bool(re.search(r"\btable\b|\btabular\b|\brows?\b|\blist\b", text))
+    document_intent = bool(
         re.search(
             r"\bauction results?\b|\bresults?\b|\bresults? (?:copy|copies|release|releases|pdfs?|documents?)\b|"
             r"\b(?:copy|copies|pdfs?|documents?) (?:of|for)\b|\bofficial results?\b",
             text,
         )
     )
-    view = "latest" if latest_intent else "chart" if chart_intent else "records" if record_intent else "table"
+    panels: list[str] = []
+    if chart_intent:
+        panels.append("chart")
+    if table_intent:
+        panels.append("table")
+    if document_intent:
+        panels.append("documents")
+    # A latest result is inherently inspectable as a record and may have official
+    # files. Preserve that useful legacy behavior without assigning a metric.
+    if latest_intent and not panels:
+        panels.extend(["table", "documents"])
+    if not panels:
+        panels.append("table")
+    panels = list(dict.fromkeys(panels))
+    view = _primary_view(panels, latest=latest_intent)
     recognized = recognized or bool(
         re.search(
             r"\blatest\b|\bmost recent\b|\bchart\b|\bplot\b|\btable\b|\bshow\b|\bcompare\b|"
@@ -657,7 +703,9 @@ def parse_query(prompt: str, as_of: date | None = None) -> tuple[dict[str, Any],
         if re.search(pattern, text) and metric not in metrics:
             metrics.append(metric)
             recognized = True
-    if not metrics:
+    if not metrics and "chart" in panels:
+        # A numeric field is required to draw a chart. Keep the historic default
+        # only for chart requests, never for a table or official-document request.
         if re.search(r"\bauction yields?\b|\byield history\b|\b(?:year|note|bond|tips) yields?\b", text):
             metrics = ["highYield"]
         else:
@@ -666,7 +714,7 @@ def parse_query(prompt: str, as_of: date | None = None) -> tuple[dict[str, Any],
     term = None
     term_text = re.sub(
         r"\b(?:last|past|previous)\s+\d{1,4}\s+(?:days?|weeks?|months?|years?)\b|"
-        r"\b(?:for|over)\s+(?:the\s+)?\d{1,4}\s+(?:days|weeks|months|years)\b",
+        r"\b(?:for|over|across)\s+(?:the\s+)?\d{1,4}\s+(?:days|weeks|months|years)\b",
         " ",
         text,
     )
@@ -685,6 +733,9 @@ def parse_query(prompt: str, as_of: date | None = None) -> tuple[dict[str, Any],
         else:
             canonical_terms.append(_canonical_term(int(term_match.group(4)), term_match.group(5)))
     canonical_terms = list(dict.fromkeys(canonical_terms))
+    if re.search(r"\blong[- ]bond\b", term_text):
+        canonical_terms.append("30-Year")
+        canonical_terms = list(dict.fromkeys(canonical_terms))
     unsupported_terms = [
         match.group(0)
         for match in re.finditer(r"\b\d{1,3}[ -]?(?:day|week|wk|month|year|yr)s?\b", term_text)
@@ -709,7 +760,7 @@ def parse_query(prompt: str, as_of: date | None = None) -> tuple[dict[str, Any],
         security_type = "Bill"
     elif re.search(r"\bnotes?\b", text):
         security_type = "Note"
-    elif re.search(r"\bbonds?\b", text):
+    elif re.search(r"\bbonds?\b|\blong[- ]bond\b", text):
         security_type = "Bond"
     mentioned_types = [
         label
@@ -719,7 +770,7 @@ def parse_query(prompt: str, as_of: date | None = None) -> tuple[dict[str, Any],
             (r"\bcmbs?\b|cash management", "CMB"),
             (r"\bbills?\b", "Bill"),
             (r"\bnotes?\b", "Note"),
-            (r"\bbonds?\b", "Bond"),
+            (r"\bbonds?\b|\blong[- ]bond\b", "Bond"),
         )
         if re.search(pattern, text)
     ]
@@ -747,7 +798,7 @@ def parse_query(prompt: str, as_of: date | None = None) -> tuple[dict[str, Any],
 
     start_date = None
     end_date = as_of.isoformat()
-    years = re.search(r"\b(?:last|past|previous)\s+(\d{1,3})\s+years?\b|\b(?:for|over)\s+(?:the\s+)?(\d{1,3})\s+years\b", text)
+    years = re.search(r"\b(?:last|past|previous)\s+(\d{1,3})\s+years?\b|\b(?:for|over|across)\s+(?:the\s+)?(\d{1,3})\s+years\b", text)
     previous_decade = bool(re.search(r"\b(?:last|past|previous|prior)\s+(?:one\s+)?decade\b", text))
     months = re.search(r"\b(?:last|past|previous)\s+(\d{1,3})\s+months?\b|\b(?:for|over)\s+(?:the\s+)?(\d{1,3})\s+months\b", text)
     days = re.search(r"\b(?:last|past|previous)\s+(\d{1,4})\s+days?\b|\b(?:for|over)\s+(?:the\s+)?(\d{1,4})\s+days\b", text)
@@ -760,6 +811,8 @@ def parse_query(prompt: str, as_of: date | None = None) -> tuple[dict[str, Any],
     if len(set(year_mentions)) > 1 and not between:
         raise ValueError("This query names multiple calendar years. Use one year or an explicit date range.")
     calendar_year = re.search(r"\b(?:in|from|during|for)(?:\s+calendar\s+year)?\s+((?:19|20)\d{2})\b", text)
+    if not calendar_year and len(set(year_mentions)) == 1 and re.search(r"\bauctions?\b", text):
+        calendar_year = re.search(r"\b((?:19|20)\d{2})\b", text)
     if between:
         start_date, end_date = between.group(1), between.group(2)
     elif exact_date:
@@ -784,11 +837,17 @@ def parse_query(prompt: str, as_of: date | None = None) -> tuple[dict[str, Any],
         start_date = (as_of - timedelta(days=int(days.group(1) or days.group(2)))).isoformat()
     elif since:
         start_date = since.group(1) if len(since.group(1)) == 10 else f"{since.group(1)}-01-01"
-    elif view == "chart":
+    elif "chart" in panels:
         start_date = _subtract_years(as_of, 10).isoformat()
 
     exclude_reopenings = bool(re.search(r"\bexclude reopenings?\b|\bnew\b[^.]{0,40}\bissues? only\b", text))
-    only_reopenings = bool(re.search(r"\breopenings? only\b", text))
+    only_reopenings = bool(
+        re.search(r"\breopenings? only\b|\bonly\b[^.]{0,30}\breopenings?\b", text)
+        or (
+            re.search(r"\breopenings?\b|\breopened\b", text)
+            and not re.search(r"\b(?:include|including|with)\s+reopenings?\b", text)
+        )
+    )
     if exclude_reopenings and only_reopenings:
         raise ValueError("The reopening filters conflict. Choose reopenings only or exclude reopenings.")
     reopening = "exclude" if exclude_reopenings else "only" if only_reopenings else "all"
@@ -806,8 +865,9 @@ def parse_query(prompt: str, as_of: date | None = None) -> tuple[dict[str, Any],
     return (
         {
             "view": view,
+            "panels": panels,
             "metrics": metrics,
-            "metric": metrics[0],
+            "metric": metrics[0] if metrics else None,
             "term": term,
             "securityType": security_type,
             "cusip": cusip,
@@ -815,6 +875,14 @@ def parse_query(prompt: str, as_of: date | None = None) -> tuple[dict[str, Any],
             "endDate": end_date,
             "reopening": reopening,
             "chartType": chart_type,
+            "filters": {
+                "term": term,
+                "securityType": security_type,
+                "cusip": cusip,
+                "startDate": start_date,
+                "endDate": end_date,
+                "reopening": reopening,
+            },
         },
         warnings,
         recognized,
@@ -826,14 +894,28 @@ def validate_query_spec(spec: dict[str, Any]) -> dict[str, Any]:
     if set(spec) - allowed:
         raise ValueError("The query specification contains unsupported fields.")
     view = spec.get("view")
+    panels = spec.get("panels")
+    if panels is None:
+        panels = _legacy_panels(view)
+    if not isinstance(panels, list) or not panels or len(panels) > len(OUTPUT_PANELS) or any(panel not in OUTPUT_PANELS for panel in panels):
+        raise ValueError("Unsupported auction output panel.")
+    if len(set(panels)) != len(panels):
+        raise ValueError("Auction output panels must not be repeated.")
     metrics = spec.get("metrics")
     security_type = spec.get("securityType")
     reopening = spec.get("reopening")
     chart_type = spec.get("chartType")
     if view not in {"chart", "table", "records", "latest"}:
         raise ValueError("Unsupported auction view.")
-    if not isinstance(metrics, list) or not 1 <= len(metrics) <= 4 or any(metric not in METRICS for metric in metrics):
+    if not isinstance(metrics, list) or len(metrics) > 4 or any(metric not in METRICS for metric in metrics):
         raise ValueError("Unsupported auction metric.")
+    if "chart" in panels and not metrics:
+        raise ValueError("A chart request requires an allowlisted auction metric.")
+    if len(set(metrics)) != len(metrics):
+        raise ValueError("Auction metrics must not be repeated.")
+    legacy_metric = spec.get("metric")
+    if legacy_metric is not None and legacy_metric not in metrics:
+        raise ValueError("The legacy auction metric must be one of the requested metrics.")
     if security_type not in {None, "Bill", "Note", "Bond", "TIPS", "FRN", "CMB"}:
         raise ValueError("Unsupported security type.")
     cusip = spec.get("cusip")
@@ -847,9 +929,24 @@ def validate_query_spec(spec: dict[str, Any]) -> dict[str, Any]:
     if term is not None and not re.fullmatch(r"\d{1,3}-(?:Day|Week|Month|Year)", str(term)):
         raise ValueError("Unsupported original security term.")
     normalized = dict(spec)
+    normalized["panels"] = panels
+    normalized["metric"] = metrics[0] if metrics else None
     for key in ("startDate", "endDate"):
         if normalized.get(key):
             normalized[key] = date.fromisoformat(str(normalized[key])).isoformat()
+    # Keep the UI contract explicit: predicates are separate from the output
+    # panels and are copied only from validated top-level compatibility fields.
+    supplied_filters = normalized.get("filters")
+    if supplied_filters is not None and not isinstance(supplied_filters, dict):
+        raise ValueError("Unsupported auction filters.")
+    normalized["filters"] = {
+        "term": normalized.get("term"),
+        "securityType": normalized.get("securityType"),
+        "cusip": normalized.get("cusip"),
+        "startDate": normalized.get("startDate"),
+        "endDate": normalized.get("endDate"),
+        "reopening": normalized.get("reopening"),
+    }
     return normalized
 
 
@@ -876,6 +973,7 @@ def _ollama_spec(prompt: str, deterministic: dict[str, Any]) -> tuple[dict[str, 
         parsed["endDate"] = deterministic.get("endDate")
         parsed["reopening"] = deterministic.get("reopening", "all")
         parsed["chartType"] = deterministic.get("chartType", "line")
+        parsed["panels"] = parsed.get("panels") or deterministic.get("panels") or _legacy_panels(parsed.get("view"))
         return validate_query_spec(parsed), model
     except Exception as exc:
         raise RuntimeError(
@@ -905,6 +1003,9 @@ def _execute_spec(spec: dict[str, Any], db_path: Path | str) -> dict[str, Any]:
         where.append("reopening=1")
     elif spec.get("reopening") == "exclude":
         where.append("reopening=0")
+    panels = set(spec.get("panels") or _legacy_panels(spec.get("view")))
+    chart_requested = "chart" in panels
+    table_requested = bool(panels & {"table", "documents"})
     order = "DESC" if spec.get("view") in {"latest", "table", "records"} else "ASC"
     timestamp_order = ",COALESCE(updated_timestamp,'') DESC" if order == "DESC" else ""
     view = spec.get("view")
@@ -915,13 +1016,15 @@ def _execute_spec(spec: dict[str, Any], db_path: Path | str) -> dict[str, Any]:
             params,
         ).fetchone()
         total = int(coverage["count"])
+        table_rows: list[dict[str, Any]] | None = None
+        table_truncated = False
         if view == "latest":
             rows = _load_rows(
                 connection,
                 f"SELECT payload_json FROM auctions WHERE {where_sql} ORDER BY auction_date DESC,COALESCE(updated_timestamp,'') DESC,cusip ASC LIMIT 1",
                 params,
             )
-        elif view == "chart" and total > 600:
+        elif chart_requested and total > 600:
             stride = max(1, math.ceil(total / 600))
             rows = _load_rows(
                 connection,
@@ -938,16 +1041,25 @@ def _execute_spec(spec: dict[str, Any], db_path: Path | str) -> dict[str, Any]:
         else:
             rows = _load_rows(
                 connection,
-                f"SELECT payload_json FROM auctions WHERE {where_sql} ORDER BY auction_date {order}{timestamp_order},cusip ASC LIMIT 500",
+                f"SELECT payload_json FROM auctions WHERE {where_sql} ORDER BY auction_date {order}{timestamp_order},cusip ASC LIMIT 5000",
                 params,
             )
+        if table_requested and view != "latest":
+            table_rows = _load_rows(
+                connection,
+                f"SELECT payload_json FROM auctions WHERE {where_sql} ORDER BY auction_date DESC,COALESCE(updated_timestamp,'') DESC,cusip ASC LIMIT 5000",
+                params,
+            )
+            table_truncated = total > len(table_rows)
         return {
             "rows": rows,
+            "tableRows": table_rows,
             "totalMatched": total,
             "firstDate": coverage["first_date"],
             "lastDate": coverage["last_date"],
-            "sampled": view == "chart" and total > len(rows),
-            "truncated": view != "chart" and total > len(rows),
+            "sampled": chart_requested and total > len(rows),
+            "truncated": not chart_requested and total > len(rows),
+            "tableTruncated": table_truncated,
         }
 
 
@@ -973,29 +1085,33 @@ def query_payload(
     spec = validate_query_spec({key: spec.get(key) for key in MODEL_SCHEMA["properties"]})
     execution = _execute_spec(spec, db_path)
     rows = execution["rows"]
+    record_rows = execution["tableRows"] if execution["tableRows"] is not None else rows
     metrics = spec["metrics"]
     missing_count = sum(1 for row in rows for metric in metrics if row.get(metric) is None)
     dated = [row["auctionDate"] for row in rows]
-    result_pdf_count = sum(1 for row in rows if row.get("resultPdfUrl"))
+    result_pdf_count = sum(1 for row in record_rows if row.get("resultPdfUrl"))
     return {
         "prompt": prompt,
         "parser": parser,
         "usedModel": parser == "ollama",
         "model": model,
-        "spec": {**spec, "metric": metrics[0]},
+        "spec": {**spec, "metric": metrics[0] if metrics else None},
         "interpretation": "Original-tenor filters include reopenings unless explicitly excluded. All values are read from normalized official records.",
         "warnings": warnings,
         "rows": rows,
+        "tableRows": execution["tableRows"],
         "summary": {
             "observationCount": execution["totalMatched"],
             "returnedCount": len(rows),
+            "tableReturnedCount": len(record_rows),
             "firstDate": execution["firstDate"],
             "lastDate": execution["lastDate"],
             "sampled": execution["sampled"],
             "truncated": execution["truncated"],
+            "tableTruncated": execution["tableTruncated"],
             "missingCount": missing_count,
             "resultPdfCount": result_pdf_count,
-            "missingResultPdfCount": len(rows) - result_pdf_count,
+            "missingResultPdfCount": len(record_rows) - result_pdf_count,
             "metricDefinitions": {metric: METRICS[metric] for metric in metrics},
         },
         "detail": rows[0] if spec["view"] == "latest" and rows else None,
