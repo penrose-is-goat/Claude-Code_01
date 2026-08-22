@@ -242,3 +242,65 @@ describe('resolveBackend', () => {
     expect(resolveBackend([unconfigured], 'nope').hints[0]).toMatch(/not a known backend/);
   });
 });
+
+/**
+ * The stopping conditions the completeness engine adds.
+ *
+ * A sweep that stops at the budget when the market is actually covered wastes queries;
+ * a sweep that never stops when every axis is dry burns them on nothing. Each end
+ * condition here is what the report shows the user, so testing it is testing the truth
+ * the report tells.
+ */
+describe('stopReason — the sweep knows why it ended', () => {
+  // zpids must be numeric — parseHomedetailsUrl requires it. A base offset per prefix
+  // keeps zpids unique across calls so successive queries don't collide on identity.
+  let seq = 1;
+  const homes = (n: number, prefix: string) => Array.from({ length: n }, (_, i) => {
+    const zpid = 100000 + seq * 1000 + i; seq++;
+    return {
+      url: `https://www.zillow.com/homedetails/${1 + i}-${prefix}-St-Boulder-CO-80302/${zpid}_zpid/`,
+      title: `${1 + i} ${prefix} St, Boulder, CO 80302 | MLS #${zpid} | Zillow`,
+      description: `Zillow has 3 photos of this $500,000 3 beds, 2 baths, 1,500 Square Feet single family home located at ${1 + i} ${prefix} St.`,
+    };
+  });
+
+  it('reports "coverage" when the harvest reaches Zillow\'s published count', async () => {
+    const { backend } = fakeBackend({
+      '~homes for sale': [{
+        url: 'https://www.zillow.com/boulder-co/houses/',
+        title: 'Boulder CO Single Family Homes For Sale - 10 Homes | Zillow',
+      }],
+      '~2 beds': homes(10, 'Peach'),
+    });
+    const report = await sweep(backend, TARGET, { queryBudget: 30, minIntervalMs: 0, now: NOW });
+    expect(report.stopReason).toBe('coverage');
+    expect(report.coverage!.ratio).toBeGreaterThanOrEqual(0.95);
+  });
+
+  it('reports "exhausted" when several queries in a row add nothing', async () => {
+    // Only one query has any homes; the rest return duplicates or nothing. After a
+    // dry streak the sweep stops rather than keep asking.
+    const { backend } = fakeBackend({ '~2 beds': homes(3, 'Peach') });
+    const report = await sweep(backend, TARGET, { queryBudget: 40, minIntervalMs: 0, now: NOW });
+    expect(report.stopReason).toBe('exhausted');
+    // And it stopped well before the budget — proving the exit fired for the right reason.
+    expect(report.queriesSpent).toBeLessThan(40);
+  });
+
+  it('reports "budget" only when there is real work left', async () => {
+    // Every query returns fresh homes until the budget expires, so nothing else can end
+    // the loop.
+    let counter = 0;
+    const backend = {
+      id: 'productive', displayName: 'productive', setupHint: '', isConfigured: () => true,
+      async search() {
+        counter++;
+        return homes(10, `Round${counter}`);
+      },
+    } satisfies SearchBackend;
+
+    const report = await sweep(backend, TARGET, { queryBudget: 8, minIntervalMs: 0, now: NOW });
+    expect(report.stopReason).toBe('budget');
+    expect(report.queriesSpent).toBe(8);
+  });
+});

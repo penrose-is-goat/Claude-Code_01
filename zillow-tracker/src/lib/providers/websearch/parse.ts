@@ -1,5 +1,6 @@
-import type { ListingStatus, NormalizedListing, PropertyType } from '../normalized';
+import type { ListingStatus, NormalizedListing, NormalizedOpenHouse, PropertyType } from '../normalized';
 import { splitAddress } from '../zillow/parse';
+import { parseOpenHouses } from './openHouse';
 
 /**
  * Parses the data Zillow publishes *for search engines*.
@@ -445,6 +446,13 @@ export interface ToListingContext {
   providerId?: string;
   /** Drop anything not positively for sale. Defaults to true. */
   requireForSale?: boolean;
+  /**
+   * IANA zone to attach to any open houses parsed out of the snippet. Open-house times
+   * are local wall-clock, and rendering "Sat 11am" as UTC would show 11am at whatever
+   * time zone the viewer is in — right for nobody. Defaults to America/New_York, which
+   * is at least a real zone; a caller who knows the listing's true zone should pass it.
+   */
+  timezone?: string;
 }
 
 export interface ToListingOutcome {
@@ -498,10 +506,34 @@ export function toListing(result: SearchResult, ctx: ToListingContext): ToListin
     listingUrl: ref.canonicalUrl,
     // Search results carry no photo URLs, and photos are never stored regardless.
     photos: [],
-    openHouses: [],
+    // Open-house times, when the snippet stated any. Nothing is inferred — a start
+    // without an end, a stale cached date, or ambiguous text yields no event, because
+    // an invented open house sends someone to a stranger's door.
+    openHouses: parseSnippetOpenHouses(result, ctx),
     raw: { url: result.url, title: result.title, description: result.description, verdict },
     fetchedAt: ctx.fetchedAt,
   };
 
   return { listing };
+}
+
+/**
+ * Reads any open houses stated in the snippet's title or description.
+ *
+ * Assembles a NormalizedOpenHouse for each one — start and end are the local wall clock
+ * the source published, kept in the listing's own time zone.
+ */
+function parseSnippetOpenHouses(result: SearchResult, ctx: ToListingContext): NormalizedOpenHouse[] {
+  const timezone = ctx.timezone ?? 'America/New_York';
+  const text = `${result.title ?? ''} ${result.description ?? ''}`.trim();
+  const events = parseOpenHouses(text, { today: ctx.fetchedAt, timezone });
+
+  return events.map((e) => ({
+    startsAt: new Date(`${e.localStart}:00Z`),
+    endsAt: new Date(`${e.localEnd}:00Z`),
+    timezone,
+    appointmentOnly: false,
+    virtual: false,
+    note: e.dateSource === 'weekday' ? 'weekday inferred from snippet' : undefined,
+  }));
 }

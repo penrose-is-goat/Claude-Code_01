@@ -4,6 +4,7 @@ import {
   parseHomedetailsUrl, parseIndexPage, toListing,
   type IndexPageFacts, type SearchResult,
 } from './parse';
+import { identityKey, mergeListings } from './merge';
 
 /**
  * Enumerating a market from the public search index.
@@ -109,6 +110,8 @@ export interface SweepReport {
    * unknown, rather than implying completeness.
    */
   coverage?: { found: number; published: number; ratio: number; scope: string };
+  /** Why the loop stopped: budget, coverage target hit, or a dry stretch. */
+  stopReason?: 'budget' | 'coverage' | 'exhausted';
 }
 
 const DEFAULT_BUDGET = Number(process.env.SEARCH_QUERY_BUDGET ?? 40);
@@ -232,7 +235,11 @@ export async function sweep(
   const fetchedAt = opts.now?.() ?? new Date();
   const minIntervalMs = opts.minIntervalMs ?? 1100;
 
-  const byZpid = new Map<string, NormalizedListing>();
+  // Identity-keyed accumulator: same home under different keys collapses on merge.
+  const byKey = new Map<string, NormalizedListing>();
+  const byKeyOrder: string[] = [];
+  // Query yield history — a stopping signal that does not require Zillow's count.
+  const queryYield: number[] = [];
   const queries: SweepReport['queries'] = [];
   const published: IndexPageFacts[] = [];
   const dropped: Record<string, number> = {};
@@ -283,13 +290,23 @@ export async function sweep(
       const street = streetOf(listing.addressLine1);
       if (street) streetsSeen.add(street);
 
-      if (!byZpid.has(listing.sourceListingId)) added++;
-      byZpid.set(listing.sourceListingId, listing);
+      // A record can arrive twice in one query (map + list results); merge as it lands
+      // so the count reflects distinct homes, not raw rows.
+      const key = identityKey(listing);
+      const existing = byKey.get(key);
+      if (existing) {
+        byKey.set(key, mergeListings([existing, listing]).merged[0]);
+      } else {
+        byKey.set(key, listing);
+        byKeyOrder.push(key);
+        added++;
+      }
     }
 
     queries.push({ query, results: results.length, newListings: added });
+    queryYield.push(added);
     opts.onProgress?.({
-      queriesSpent: spent, queryBudget, listingsFound: byZpid.size, lastQuery: query,
+      queriesSpent: spent, queryBudget, listingsFound: byKey.size, lastQuery: query,
     });
   };
 
@@ -323,13 +340,14 @@ export async function sweep(
   }
 
   return {
-    listings: [...byZpid.values()],
+    listings: byKeyOrder.map((k) => byKey.get(k)!),
     queriesSpent: spent,
     queryBudget,
     queries,
     published,
     dropped,
-    coverage: computeCoverage(byZpid.size, published, opts.openHouseOnly ?? false, target),
+    coverage: computeCoverage(byKey.size, published, opts.openHouseOnly ?? false, target),
+    stopReason: decideStop(queryYield, spent, queryBudget, byKey.size, published, opts.openHouseOnly ?? false, target),
   };
 }
 
@@ -384,4 +402,47 @@ function computeCoverage(
   const total = best.count ?? 0;
 
   return { found, published: total, ratio: found / total, scope: best.scopeLabel };
+}
+
+/**
+ * Decides whether to stop asking.
+ *
+ * Three stopping conditions, evaluated in order:
+ *
+ *  1. `coverage` — Zillow's published count is the truth, and reaching ≥95% of it means
+ *     the market is covered. This only fires when a count is available.
+ *  2. `exhausted` — a stretch of recent queries added nothing new. Overlap in a healthy
+ *     sweep is ~5%, so a run of empty additions means every axis being tried is spent.
+ *  3. `budget`   — the query allowance ran out. Reported alongside how many were found
+ *     and how many are published, so a shortfall reads as a shortfall.
+ *
+ * Only `coverage` and `exhausted` count as done; `budget` says "try again with more".
+ */
+function decideStop(
+  yields: number[],
+  spent: number,
+  budget: number,
+  found: number,
+  published: IndexPageFacts[],
+  openHouseOnly: boolean,
+  target: SweepTarget,
+): 'budget' | 'coverage' | 'exhausted' | undefined {
+  const cov = computeCoverage(found, published, openHouseOnly, target);
+  if (cov && cov.ratio >= 0.95) return 'coverage';
+
+  // Every axis considered spent when the last several queries added nothing. Measured
+  // in queries rather than in listings so the check is scale-free — a market of 20 and
+  // a market of 2,000 both use the same signal.
+  //
+  // Discovery queries yield 0 by design (they hit index pages, not homes), so this only
+  // fires AFTER something has actually been found — otherwise a sweep that got as far
+  // as its discovery phase would be reported "exhausted" before any real query ran.
+  const DRY_STREAK = 6;
+  if (found > 0 && yields.length >= DRY_STREAK && yields.slice(-DRY_STREAK).every((n) => n === 0)) {
+    return 'exhausted';
+  }
+
+  // Falling out of the loop with budget unspent means the planner ran out of things
+  // to ask — every phase completed, no more streets to discover — which IS exhaustion.
+  return spent >= budget ? 'budget' : 'exhausted';
 }

@@ -44,7 +44,7 @@ export class SearchBackendError extends Error {
 export class BraveBackend implements SearchBackend {
   readonly id = 'brave';
   readonly displayName = 'Brave Search API';
-  readonly setupHint = 'Set BRAVE_SEARCH_API_KEY (free tier at brave.com/search/api).';
+  readonly setupHint = 'Set BRAVE_SEARCH_API_KEY at brave.com/search/api (a credit card is required as of 2026).';
 
   constructor(private key = process.env.BRAVE_SEARCH_API_KEY ?? '') {}
 
@@ -90,8 +90,8 @@ export class GoogleCseBackend implements SearchBackend {
   readonly id = 'google-cse';
   readonly displayName = 'Google Programmable Search';
   readonly setupHint =
-    'Set GOOGLE_CSE_KEY and GOOGLE_CSE_CX (console.cloud.google.com + programmablesearchengine.google.com). ' +
-    'The engine must have "Search the entire web" enabled.';
+    'Set GOOGLE_CSE_KEY and GOOGLE_CSE_CX (closed to new customers since 2026; existing keys still work; ' +
+    'the engine must have "Search the entire web" enabled).';
 
   constructor(
     private key = process.env.GOOGLE_CSE_KEY ?? '',
@@ -177,6 +177,114 @@ export class SearxngBackend implements SearchBackend {
 }
 
 /**
+ * Mojeek's web-search API.
+ *
+ * The one no-credit-card option that remains in 2026: 2,000 queries a month, up to one
+ * per second, no card on file. Mojeek runs its own crawl rather than reselling somebody
+ * else's, so its Zillow coverage differs from Google's and Bing's — narrower on tail
+ * queries, still substantial on the head. It is the default when nothing else is
+ * configured because it is the one thing a fresh install can turn on in two minutes.
+ *
+ * Response shape is written DEFENSIVELY. I could not reach mojeek.com from this project's
+ * container to confirm the exact field names against a live response, so this reads the
+ * shape it expects and degrades to an empty array on anything else. The two names most
+ * likely to shift — the results array location and the snippet field — are tolerated in
+ * every form the docs and community examples have used. If Mojeek adds a field or renames
+ * one, wrong shape becomes "no results", never wrong results.
+ *
+ * To confirm the contract against the real API, one query returned to stderr is enough:
+ *   curl -sS 'https://www.mojeek.com/search?q=test&fmt=json&api_key=$MOJEEK_API_KEY' | jq
+ */
+export class MojeekBackend implements SearchBackend {
+  readonly id = 'mojeek';
+  readonly displayName = 'Mojeek Search API';
+  readonly setupHint = 'Set MOJEEK_API_KEY at mojeek.com/services/search/web-search-api (2,000 queries/month, no credit card).';
+
+  constructor(
+    private key = process.env.MOJEEK_API_KEY ?? '',
+    private fetchImpl: typeof fetch = globalThis.fetch,
+  ) {}
+
+  isConfigured(): boolean {
+    return this.key.trim().length > 0;
+  }
+
+  async search(query: string, opts: SearchBackendOptions = {}): Promise<SearchResult[]> {
+    if (!this.isConfigured()) throw new SearchBackendError(this.setupHint);
+
+    const url = new URL('https://www.mojeek.com/search');
+    url.searchParams.set('q', query);
+    url.searchParams.set('fmt', 'json');
+    url.searchParams.set('api_key', this.key);
+    if (opts.count) url.searchParams.set('t', String(Math.min(opts.count, 50)));
+    if (opts.offset) url.searchParams.set('s', String(opts.offset));
+
+    const res = await this.fetchImpl(url, {
+      headers: { Accept: 'application/json' },
+      signal: opts.signal,
+    });
+
+    // Distinct messages for each failure class, so a support answer is one line instead
+    // of "HTTP 429" left for the user to look up. No key value is ever interpolated —
+    // an error message that echoes a secret is a leak.
+    if (res.status === 401 || res.status === 403) {
+      throw new SearchBackendError(`Mojeek rejected the API key (HTTP ${res.status}).`, res.status);
+    }
+    if (res.status === 429) {
+      throw new SearchBackendError(
+        'Mojeek rate limit or monthly quota reached (HTTP 429). ' +
+        'The free tier is 2,000 queries a month; wait or reduce the query budget.',
+        429,
+      );
+    }
+    if (res.status >= 500) {
+      throw new SearchBackendError(`Mojeek server error (HTTP ${res.status}).`, res.status);
+    }
+    if (!res.ok) throw new SearchBackendError(`Mojeek returned HTTP ${res.status}.`, res.status);
+
+    const body: unknown = await res.json().catch(() => null);
+    return extractMojeekResults(body);
+  }
+}
+
+/** Reads Mojeek's results array without trusting any one field name. */
+export function extractMojeekResults(body: unknown): SearchResult[] {
+  if (!body || typeof body !== 'object') return [];
+
+  // `response.results` is the documented location; a bare `results` at the top level
+  // has been observed in older examples. Neither being present is a real answer — the
+  // query legitimately returned nothing — and NOT the same failure as a shape change.
+  const outer = body as Record<string, unknown>;
+  const response = outer.response as Record<string, unknown> | undefined;
+  const raw = pickArray(response?.results) ?? pickArray(outer.results);
+  if (!raw) return [];
+
+  const out: SearchResult[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== 'object') continue;
+    const r = row as Record<string, unknown>;
+    const url = str(r.url) ?? str(r.link);
+    const title = str(r.title);
+    if (!url || !title) continue;
+
+    // `desc` in current examples; `description` and `snippet` accepted in case the
+    // field is renamed. Absent snippet is fine — the URL and title alone still identify
+    // a listing and the parser handles a missing description.
+    const description = str(r.desc) ?? str(r.description) ?? str(r.snippet);
+    out.push({ url, title, description });
+  }
+  return out;
+}
+
+function pickArray(v: unknown): unknown[] | null {
+  return Array.isArray(v) ? v : null;
+}
+
+function str(v: unknown): string | undefined {
+  return typeof v === 'string' && v.trim() ? v.trim() : undefined;
+}
+
+/**
  * Replays results captured earlier into the same parser.
  *
  * This is how a harvest run performed with a search tool outside the app — see
@@ -206,7 +314,10 @@ export class CapturedBackend implements SearchBackend {
  * with instructions, never as "no homes found".
  */
 export function defaultBackends(): SearchBackend[] {
-  return [new BraveBackend(), new GoogleCseBackend(), new SearxngBackend()];
+  // Mojeek first: it is the only option here that a fresh install can turn on without a
+  // credit card or a prior Google account. The others are kept for anyone who already
+  // has those keys, but nobody should be sent to sign up for them in 2026.
+  return [new MojeekBackend(), new BraveBackend(), new GoogleCseBackend(), new SearxngBackend()];
 }
 
 export function resolveBackend(
@@ -224,9 +335,18 @@ export function resolveBackend(
   }
 
   const configured = available.find((b) => b.isConfigured());
-  return configured
-    ? { backend: configured, hints: [] }
-    : { backend: null, hints: available.map((b) => `${b.displayName}: ${b.setupHint}`) };
+  if (configured) return { backend: configured, hints: [] };
+
+  // A fresh install has nothing set. Naming Mojeek first is the difference between "here
+  // is the two-minute answer" and a wall of signup links to services that have retired,
+  // gone paywalled, or closed to new customers.
+  const mojeek = available.find((b) => b.id === 'mojeek');
+  const rest = available.filter((b) => b.id !== 'mojeek');
+  const hints = [
+    ...(mojeek ? [`${mojeek.displayName}: ${mojeek.setupHint}`] : []),
+    ...rest.map((b) => `${b.displayName}: ${b.setupHint}`),
+  ];
+  return { backend: null, hints };
 }
 
 /** Search APIs return titles with <strong> around the matched terms. */
