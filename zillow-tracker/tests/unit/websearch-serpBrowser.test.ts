@@ -83,7 +83,7 @@ describe.skipIf(!ready)('SerpBrowserBackend — real Chrome, real navigation, re
     const backend = new (class extends SerpBrowserBackend {
       // Redirect the "search engine" URL to the local server, so the assertion is about
       // parsing rather than about Bing's live behaviour.
-      override async search() {
+      override async search(_query: string) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const anySelf = this as any;
         const browser = await anySelf.attach();
