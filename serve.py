@@ -58,7 +58,7 @@ import intent_contract
 
 
 APP_DIR = Path(__file__).resolve().parent
-APP_VERSION = "side-tools.v1.2"
+APP_VERSION = "side-tools.v1.2.1"
 DEFAULT_PORT = 8017
 HTTP_TIMEOUT = 18
 STATIC_FILES = {
@@ -1670,6 +1670,8 @@ def filter_satisfied_macro_residuals(
     output: list[str] = []
     for residual in residuals:
         normalized = re.sub(r"[^a-z0-9]+", " ", residual.lower()).strip()
+        normalized = re.sub(r"\b(\d+)\s*(?:yrs?|years?)\b", r"\1 year", normalized)
+        normalized = re.sub(r"\b(\d+)\s*(?:mos?|months?)\b", r"\1 month", normalized)
         tenor_residual_ids = {
             "1 month": "DGS1MO",
             "3 month": "DGS3MO",
@@ -1683,6 +1685,16 @@ def filter_satisfied_macro_residuals(
             "20 year": "DGS20",
             "30 year": "DGS30",
         }
+        # U.S. is a scope qualifier, not a third data concept. Reconcile it only
+        # when the already-selected series is an official U.S. Treasury tenor.
+        us_treasury_residual = normalized
+        if ids & set(TREASURY_FIELDS):
+            us_treasury_residual = re.sub(
+                r"\b(?:u\s+s|us|united states|american)\b",
+                " ",
+                us_treasury_residual,
+            )
+            us_treasury_residual = re.sub(r"\s+", " ", us_treasury_residual).strip()
         satisfied = (
             (normalized == "headline" and bool(ids & {"CPIAUCSL", "PCEPI", "WPSFD4"}))
             or (normalized == "funds" and bool(ids & {"EFFR", "DFF", "FEDFUNDS"}))
@@ -1704,7 +1716,17 @@ def filter_satisfied_macro_residuals(
                 normalized in {"price", "prices"}
                 and any(entry.get("primary") == "yahoo" for entry in selected)
             )
-            or (normalized in tenor_residual_ids and tenor_residual_ids[normalized] in ids)
+            or (
+                (
+                    not us_treasury_residual
+                    or us_treasury_residual in tenor_residual_ids
+                )
+                and (
+                    not us_treasury_residual
+                    or tenor_residual_ids[us_treasury_residual] in ids
+                )
+                and bool(ids & set(TREASURY_FIELDS))
+            )
         )
         if not satisfied:
             output.append(residual)
@@ -1742,7 +1764,7 @@ def macro_semantic_families(text: str) -> set[str]:
 MACRO_CONCEPT_STOP_WORDS = {
     "a", "an", "and", "annual", "chart", "compare", "data", "for", "gauge", "household",
     "households", "index", "level", "market", "of", "over", "rate", "series", "show",
-    "the", "total", "versus", "with", "year", "years",
+    "the", "total", "versus", "with", "year", "years", "yr", "yrs", "mo", "mos",
 }
 MACRO_GENERIC_FAMILY_WORDS = {
     "housing", "home", "income", "labor", "population", "price", "prices", "wealth",
@@ -1760,7 +1782,8 @@ MACRO_CONCEPT_SYNONYMS = {
 
 
 def macro_concept_terms(text: str) -> set[str]:
-    normalized = macro_providers.normalize_quantitative_phrasing(text)
+    concept_text, _notices = normalize_macro_concept_phrasing(text)
+    normalized = macro_providers.normalize_quantitative_phrasing(concept_text)
     normalized = re.sub(r"\bgross domestic product\b", " gdp ", normalized)
     normalized = re.sub(r"\bconsumer price index\b", " cpi ", normalized)
     terms = {
@@ -2011,8 +2034,10 @@ def parse_macro_request_contract(prompt: str) -> dict[str, Any]:
 
 def macro_model_mapping_is_safe(source: str, canonical: str) -> tuple[bool, str]:
     """Require a model rewrite to preserve both concept family and protected qualifiers."""
-    source_normalized = macro_providers.normalize_quantitative_phrasing(source)
-    canonical_normalized = macro_providers.normalize_quantitative_phrasing(canonical)
+    source_concept, _source_notices = normalize_macro_concept_phrasing(source)
+    canonical_concept, _canonical_notices = normalize_macro_concept_phrasing(canonical)
+    source_normalized = macro_providers.normalize_quantitative_phrasing(source_concept)
+    canonical_normalized = macro_providers.normalize_quantitative_phrasing(canonical_concept)
     source_families = macro_semantic_families(source_normalized)
     canonical_families = macro_semantic_families(canonical_normalized)
     if not source_families:
@@ -2094,6 +2119,35 @@ def normalize_macro_concept_phrasing(prompt: str) -> tuple[str, list[str]]:
         f"Normalized '{row['source']}' to '{row['target']}' before concept resolution."
         for row in typo_corrections
     ]
+    before_treasury_normalization = normalized
+    normalized = re.sub(
+        r"\b(\d+)\s*(?:yr|yrs|year|years)\b(?=\s+(?:(?:u\.?s\.?|united states|american)\s+)?treasury\b)",
+        r"\1-year",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        r"\b(?:u\.?s\.?|united states|american)\s+(\d+)\s*(?:yr|yrs|year|years)\b(?=\s+treasury\b)",
+        r"\1-year",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        r"\b(\d+-year)\s+(?:u\.?s\.?|united states|american)\s+(?=treasury\b)",
+        r"\1 ",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        r"\b(?:u\.?s\.?|united states|american)\s+(?=(?:\d+-year\s+)?treasury\b)",
+        "",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if normalized != before_treasury_normalization:
+        notices.append(
+            "Normalized an explicit U.S. Treasury tenor phrase without changing its scope."
+        )
     concept = (
         r"\b(?:consumer price(?: index)?|cpi|inflation|"
         r"price(?:[- ]pressure)?(?:\s+(?:gauge|measure|index))?)\b"

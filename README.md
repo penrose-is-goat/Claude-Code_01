@@ -1,6 +1,6 @@
 # Portfolio Analyzer Side Tools
 
-Release: **side-tools.v1.2**
+Release: **side-tools.v1.2.1**
 
 Three local, dependency-free tools:
 
@@ -59,7 +59,7 @@ Use **Edit graph** after any prompt to:
 
 Natural-language axis instructions are returned as an explicit chart specification. A phrase such as “Nasdaq Composite may be used as a substitute for S&P 500” is treated as a contingency, not an instruction to plot both; the substitute is used only if all configured S&P 500 sources fail.
 
-Version 1.2 parses each Macro Data Lab request into one typed contract before data lookup. Economic concepts, time windows, transformations, chart types, colors, styles, and axis instructions are separated so presentation wording never becomes a provider search term. Heterogeneous native units use independent left and right axes automatically unless the user explicitly requests one scale.
+Version 1.2.1 parses each Macro Data Lab request into one typed contract before data lookup. Economic concepts, time windows, transformations, chart types, colors, styles, and axis instructions are separated so presentation wording never becomes a provider search term. Heterogeneous native units use independent left and right axes automatically unless the user explicitly requests one scale. Compact and reordered U.S. Treasury tenor phrases such as `10yr US Treasury yield` are normalized deterministically, while foreign sovereign scopes and numeric conditions remain fail-closed instead of being silently substituted.
 
 ## Fed Tracker Method
 
@@ -104,7 +104,7 @@ python -m qa.v1_2_gate --strict --repeat 2
 
 `--doctor` distinguishes an execution-policy block from a provider outage. `--check` validates the macro providers, Fed inputs, and Treasury auction database coverage.
 The semantic QA gate uses fixed Macro, Fed, and Treasury corpora with typo, metatext, and paraphrase variants; it also validates source, probability, observation, and auction invariants without calling a model.
-The v1.2 release gate executes 31,183 deterministic semantic and layout cases twice, compares stable result hashes, and makes no network or model calls.
+The v1.2.1 release gate executes 33,599 deterministic semantic and layout cases twice, including 2,400 U.S. Treasury language variants and 15 foreign-scope negative controls. It compares stable result hashes and makes no network or model calls.
 
 ## Important Limits
 

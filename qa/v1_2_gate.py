@@ -1,10 +1,10 @@
-"""Independent deterministic semantic/layout release gate for Side Tools v1.2.
+"""Independent deterministic semantic/layout release gate for Side Tools v1.2.1.
 
 This module is intentionally QA-only.  It does not change application parsers,
 provider code, browser code, Git state, or portfolio-analyzer files.
 
 The expected contract is written by this module's oracle.  It is never inferred
-from the parser under test.  The default matrix contains 31,104 generated
+from the parser under test.  The default matrix contains 33,589 generated
 macro cases plus representative Fed Tracker and Treasury Auction actions.  It
 does not make network calls and never invokes Ollama.
 
@@ -14,10 +14,8 @@ Run from the side-tools directory::
     python -m qa.v1_2_gate --strict --json --artifact-dir qa/artifacts/v1_2
     python -m qa.v1_2_gate --case macro.gold-yield.opposite-axis
 
-The current application is expected to fail the exact gold/yield case until
-its parser separates presentation language from data concepts.  That is the
-purpose of this release gate: a strict run must remain non-zero until the
-application satisfies the independent contract.
+The matrix includes exact gold/yield regressions, compact U.S. Treasury tenor
+phrasing, presentation mutations, and fail-closed foreign-scope controls.
 """
 
 from __future__ import annotations
@@ -32,11 +30,11 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 
-GATE_VERSION = "side-tools.v1.2"
+GATE_VERSION = "side-tools.v1.2.1"
 ORACLE_SEED = 1201
 AS_OF = date(2026, 8, 22)
 MIN_CASES = 10_000
-TARGET_MATRIX_CASES = 31_104
+TARGET_MATRIX_CASES = 33_599
 
 
 @dataclass(frozen=True)
@@ -65,6 +63,7 @@ class AxisMode:
 
 CONCEPTS: tuple[Concept, ...] = (
     Concept("DGS10", "10-year Treasury yield", "10-Year Treasury Yield", "Percent", "rate"),
+    Concept("DGS20", "20-year Treasury yield", "20-Year Treasury Yield", "Percent", "rate"),
     Concept("DGS2", "2-year Treasury yield", "2-Year Treasury Yield", "Percent", "rate"),
     Concept("DGS5", "5-year Treasury yield", "5-Year Treasury Yield", "Percent", "rate"),
     Concept("DGS30", "30-year Treasury yield", "30-Year Treasury Yield", "Percent", "rate"),
@@ -283,6 +282,87 @@ def exact_gold_yield_case() -> dict[str, Any]:
     return case
 
 
+def exact_gold_us_yield_case() -> dict[str, Any]:
+    """Exact regression for compact tenor plus explicit U.S. Treasury scope."""
+
+    concepts = [CONCEPT_BY_ID["GOLD_PRICE"], CONCEPT_BY_ID["DGS10"]]
+    expected = _expected_macro(concepts, DATE_FORMS[2], "auto")
+    expected["time"] = None
+    case = _macro_case(
+        "macro.gold-us-yield.exact",
+        concepts,
+        "show me the price of gold against the 10yr US treasury yield",
+        expected,
+        mutation_group="gold-us-yield-exact",
+        family="exact-regression",
+        seed=ORACLE_SEED + 1,
+    )
+    case["resolutionCheckpoint"] = True
+    return case
+
+
+def _treasury_language_cases() -> Iterator[dict[str, Any]]:
+    """2,400 U.S. Treasury wording cases plus 15 fail-closed foreign controls."""
+
+    tenor_ids = ((2, "DGS2"), (5, "DGS5"), (10, "DGS10"), (20, "DGS20"), (30, "DGS30"))
+    phrase_forms = (
+        "{tenor}yr US Treasury yield",
+        "US {tenor}-year Treasury yield",
+        "{tenor} year United States Treasury yield",
+        "American {tenor}yr Treasury yield",
+        "{tenor}yrs U.S. Treasury rate",
+        "U.S. {tenor} year Treasury rate",
+        "{tenor}-year American Treasury yield",
+        "United States {tenor}yr Treasury yield",
+    )
+    dates = DATE_FORMS[:3]
+    gold = CONCEPT_BY_ID["GOLD_PRICE"]
+    case_number = 0
+    for tenor, series_id in tenor_ids:
+        treasury = CONCEPT_BY_ID[series_id]
+        for phrase_form in phrase_forms:
+            treasury_phrase = phrase_form.format(tenor=tenor)
+            for connector in CONNECTORS:
+                for axis_index, axis_mode in enumerate(AXIS_MODES):
+                    for date_form in dates:
+                        case_number += 1
+                        prompt = f"show me the price of gold {connector} the {treasury_phrase} {date_form.text}"
+                        axis_text = _axis_phrase(case_number + axis_index, axis_mode)
+                        if axis_text:
+                            prompt += f" {axis_text}"
+                        case = _macro_case(
+                            f"macro.treasury-language.{case_number:04d}",
+                            [gold, treasury],
+                            prompt,
+                            _expected_macro([gold, treasury], date_form, axis_mode.key),
+                            mutation_group=f"treasury-language-{tenor}-{phrase_forms.index(phrase_form)}-{date_form.key}",
+                            family="treasury-language",
+                            seed=ORACLE_SEED + 90_000 + case_number,
+                        )
+                        case["resolutionCheckpoint"] = True
+                        yield case
+
+    negative_number = 0
+    for tenor, series_id in tenor_ids:
+        treasury = CONCEPT_BY_ID[series_id]
+        for country in ("German", "UK", "Japanese"):
+            negative_number += 1
+            expected = _expected_macro([gold], DATE_FORMS[2], "auto")
+            expected["noClarification"] = False
+            expected["unresolvedResidual"] = True
+            case = _macro_case(
+                f"macro.treasury-foreign-control.{negative_number:03d}",
+                [gold],
+                f"show gold price versus the {country} {tenor}-year Treasury yield over the last 10 years",
+                expected,
+                mutation_group=f"treasury-foreign-{country.lower()}-{tenor}",
+                family="treasury-negative-control",
+                seed=ORACLE_SEED + 95_000 + negative_number,
+            )
+            case["resolutionCheckpoint"] = True
+            yield case
+
+
 def _semantic_cases() -> Iterator[dict[str, Any]]:
     """12,800 cases: 128 semantic seeds x 5 connectors x 5 dates x 4 axes."""
 
@@ -489,6 +569,8 @@ def generate_cases() -> list[dict[str, Any]]:
 
     cases = [
         exact_gold_yield_case(),
+        exact_gold_us_yield_case(),
+        *_treasury_language_cases(),
         *_semantic_cases(),
         *_presentation_cases(),
         *_series_cases(),
@@ -581,6 +663,8 @@ def _observe_macro(prompt: str, expected_ids: list[str], *, resolve: bool) -> di
         for operand in contract.get("operands", [])
     ]
     residuals = [value for value in residuals if value]
+    if resolve:
+        residuals = serve.filter_satisfied_macro_residuals(residuals, selected)
     return {
         "status": "parsed",
         "conceptIds": selected_ids,
@@ -681,9 +765,12 @@ def _compare_macro(case: dict[str, Any], observed: dict[str, Any]) -> list[dict[
     if observed.get("time") != expected["time"]:
         findings.append(_finding("DATE_FORM_MISMATCH", "The requested date form was not preserved in the typed contract.", case, observed))
     presentation_words = re.compile(r"\b(?:axis|axes|opposite|secondary|separate|scale|chart|graph|plot|line|bar|area|scatter|indexed|percent|change|native|blue|orange|color|using|put|place|same)\b", re.IGNORECASE)
-    if any(presentation_words.search(residual) for residual in observed.get("residuals", [])):
+    expects_unresolved = bool(expected.get("unresolvedResidual"))
+    if expects_unresolved and not observed.get("residuals"):
+        findings.append(_finding("FAIL_CLOSED_RESIDUAL_MISSING", "A foreign Treasury scope was silently treated as the U.S. series.", case, observed, severity="P0"))
+    elif any(presentation_words.search(residual) for residual in observed.get("residuals", [])):
         findings.append(_finding("PRESENTATION_LEAKED_INTO_CONCEPT", "Chart instructions remained in an unresolved data concept.", case, observed))
-    elif observed.get("residuals"):
+    elif observed.get("residuals") and not expects_unresolved:
         findings.append(_finding("UNRESOLVED_CONCEPT_RESIDUAL", "A known oracle concept left an unresolved residual.", case, observed))
     chart = observed.get("chart", {})
     specs = chart.get("series", [])
@@ -777,6 +864,11 @@ def _validate_oracle(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
             findings.append({"code": "GOLD_CASE_AXIS_ORACLE_INVALID", "severity": "P0", "message": "Gold/yield oracle axis assignment is not exact."})
         if expected.get("presentation", {}).get("unitsById") != {"DGS10": "raw", "GOLD_PRICE": "raw"}:
             findings.append({"code": "GOLD_CASE_UNITS_ORACLE_INVALID", "severity": "P0", "message": "Gold/yield oracle units are not native/raw."})
+    exact_us = next((case for case in cases if case["id"] == "macro.gold-us-yield.exact"), None)
+    if exact_us is None:
+        findings.append({"code": "GOLD_US_CASE_MISSING", "severity": "P0", "message": "The exact compact U.S. Treasury regression case is missing."})
+    elif exact_us["expected"].get("conceptIds") != ["GOLD_PRICE", "DGS10"]:
+        findings.append({"code": "GOLD_US_CASE_ORACLE_INVALID", "severity": "P0", "message": "Compact U.S. Treasury oracle IDs are not exact."})
     return findings
 
 
@@ -888,6 +980,8 @@ def run_gate(
             "semantic": 12_800,
             "presentation": 16_384,
             "seriesShape": 1_920,
+            "treasuryLanguage": len([case for case in generated_cases if case.get("family") == "treasury-language"]),
+            "treasuryNegativeControls": len([case for case in generated_cases if case.get("family") == "treasury-negative-control"]),
             "crossToolRepresentative": len([case for case in generated_cases if case["tool"] != "macro"]),
             "resolutionCheckpointCount": sum(bool(case.get("resolutionCheckpoint")) for case in generated_cases),
         },

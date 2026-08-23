@@ -894,6 +894,91 @@ class ResolverTests(unittest.TestCase):
                 )
                 self.assertFalse(any("did not exactly match" in notice for notice in notices))
 
+    def test_us_treasury_tenor_variants_are_resolved_without_clarification(self):
+        forms = (
+            "{tenor}yr US Treasury yield",
+            "US {tenor}-year Treasury yield",
+            "{tenor} year United States Treasury yield",
+            "American {tenor}yr Treasury yield",
+        )
+        connectors = ("versus", "against", "compared with")
+        tenor_ids = {2: "DGS2", 5: "DGS5", 10: "DGS10", 20: "DGS20", 30: "DGS30"}
+        for tenor, series_id in tenor_ids.items():
+            for form in forms:
+                for connector in connectors:
+                    prompt = f"show me the price of gold {connector} the {form.format(tenor=tenor)}"
+                    with self.subTest(prompt=prompt):
+                        selected, _ = serve.resolve_prompt_series(prompt, allow_fred_search=False)
+                        self.assertEqual([entry["id"] for entry in selected], ["GOLD_PRICE", series_id])
+                        contract = serve.parse_macro_request_contract(prompt)
+                        residuals = [
+                            serve.unresolved_clause_residual(str(row.get("sourceSpan") or ""))
+                            for row in contract["operands"]
+                        ]
+                        self.assertEqual(
+                            serve.filter_satisfied_macro_residuals(
+                                [residual for residual in residuals if residual],
+                                selected,
+                            ),
+                            [],
+                        )
+
+    def test_treasury_residual_reconciliation_remains_fail_closed(self):
+        selected, _ = serve.resolve_prompt_series(
+            "gold price versus 10-year Treasury yield",
+            allow_fred_search=False,
+        )
+        for residual in ("german 10 year", "uk 10 year", "japanese 10 year", "above 5%"):
+            with self.subTest(residual=residual):
+                self.assertEqual(
+                    serve.filter_satisfied_macro_residuals([residual], selected),
+                    [residual],
+                )
+        for country in ("German", "UK", "Japanese"):
+            with self.subTest(country=country):
+                foreign_selected, _ = serve.resolve_prompt_series(
+                    f"gold price versus {country} 10-year Treasury yield",
+                    allow_fred_search=False,
+                )
+                self.assertEqual([entry["id"] for entry in foreign_selected], ["GOLD_PRICE"])
+
+    def test_treasury_tenor_abbreviation_is_safe_for_model_canonicalization(self):
+        safe, reason = serve.macro_model_mapping_is_safe(
+            "the 10yr US Treasury yield",
+            "10-year Treasury yield",
+        )
+        self.assertTrue(safe, reason)
+
+    def test_exact_gold_against_us_treasury_prompt_skips_model_and_clarification(self):
+        prompt = "show me the price of gold against the 10yr US treasury yield"
+
+        def fake_series(entry, _start, _end):
+            observations = [
+                {"date": "2024-01-01", "value": 100.0},
+                {"date": "2025-01-01", "value": 102.0},
+            ]
+            return {
+                "id": entry["id"], "name": entry["name"], "unit": entry["unit"],
+                "provider": "Test provider", "providerSeries": entry["id"],
+                "sourceUrl": f"https://example.test/{entry['id']}",
+                "observations": observations, "firstDate": "2024-01-01",
+                "lastDate": "2025-01-01", "latest": 102.0,
+                "resolution": "test mapping",
+            }
+
+        with (
+            patch.object(serve, "fetch_display_series", side_effect=fake_series),
+            patch.object(serve.model_router, "macro_intent") as model_operands,
+        ):
+            payload = serve.handle_fred_query(prompt)
+        model_operands.assert_not_called()
+        self.assertFalse(payload.get("requiresClarification", False))
+        self.assertEqual([series["id"] for series in payload["series"]], ["GOLD_PRICE", "DGS10"])
+        self.assertEqual(
+            {row["id"]: row["axis"] for row in payload["chartConfig"]["series"]},
+            {"GOLD_PRICE": "right", "DGS10": "left"},
+        )
+
     def test_core_cpi_ex_shelter_is_not_silently_dropped(self):
         selected, _ = serve.resolve_prompt_series(
             "core CPI excluding shelter and core CPI",
@@ -1120,7 +1205,7 @@ class ResolverTests(unittest.TestCase):
 
     def test_backend_status_exposes_build_and_detects_source_changes(self):
         status = serve.backend_status()
-        self.assertEqual(status["version"], "side-tools.v1.2")
+        self.assertEqual(status["version"], "side-tools.v1.2.1")
         self.assertEqual(status["build"], serve.BACKEND_BUILD)
         self.assertTrue(status["startedAt"])
         self.assertFalse(status["restartRequired"])

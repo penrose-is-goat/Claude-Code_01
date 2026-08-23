@@ -7,6 +7,7 @@ import unittest
 from qa.v1_2_gate import (
     MIN_CASES,
     TARGET_MATRIX_CASES,
+    exact_gold_us_yield_case,
     exact_gold_yield_case,
     generate_cases,
     observe_case,
@@ -26,7 +27,7 @@ class V12OracleTests(unittest.TestCase):
         self.assertEqual(len({case["id"] for case in self.cases}), len(self.cases))
         self.assertGreaterEqual(
             sum(bool(case.get("resolutionCheckpoint")) for case in self.cases),
-            10_000,
+            15_000,
         )
 
     def test_exact_gold_yield_prompt_contract_is_independent_and_exact(self):
@@ -51,6 +52,19 @@ class V12OracleTests(unittest.TestCase):
             case["expected"]["presentation"]["axisById"],
         )
 
+    def test_exact_compact_us_treasury_prompt_is_a_resolution_checkpoint(self):
+        case = exact_gold_us_yield_case()
+        self.assertEqual(
+            case["prompt"],
+            "show me the price of gold against the 10yr US treasury yield",
+        )
+        self.assertEqual(case["expected"]["conceptIds"], ["GOLD_PRICE", "DGS10"])
+        self.assertIsNone(case["expected"]["time"])
+        self.assertTrue(case["resolutionCheckpoint"])
+        observed = observe_case(case)
+        self.assertEqual(observed["residuals"], [])
+        self.assertEqual(observed["conceptIds"], ["GOLD_PRICE", "DGS10"])
+
     def test_repro_ids_are_stable(self):
         first = [repro_id(case) for case in self.cases[:200]]
         second = [repro_id(case) for case in generate_cases()[:200]]
@@ -60,7 +74,7 @@ class V12OracleTests(unittest.TestCase):
 class V12GateTests(unittest.TestCase):
     def test_small_gate_report_has_release_schema_and_no_network_model_budget(self):
         report = run_gate(cases=self.cases_for_smoke(), repeat=2)
-        self.assertEqual(report["gate"], "side-tools.v1.2")
+        self.assertEqual(report["gate"], "side-tools.v1.2.1")
         self.assertEqual(report["networkCalls"], 0)
         self.assertEqual(report["modelCalls"], 0)
         self.assertEqual(len(report["runHashes"]), 2)
