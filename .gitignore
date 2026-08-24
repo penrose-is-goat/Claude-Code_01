@@ -1,3 +1,9 @@
 # Generated Excel exports. The app produces these on demand; they are output, not
 # source, and must not drift into the repo.
 *.xlsx
+
+# Dependency and cache directories anywhere in the tree. A stray results.json from
+# vitest's local cache got committed once — this line is what prevents the next one.
+node_modules/
+.vite/
+.next/
