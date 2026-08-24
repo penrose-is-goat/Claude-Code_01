@@ -6,7 +6,9 @@ and source URLs are supplied by code rather than generated from user text.
 
 from __future__ import annotations
 
+import calendar
 import csv
+import html
 import io
 import json
 import math
@@ -29,6 +31,13 @@ PROVIDER_CACHE_DIR = APP_DIR / ".cache" / "providers"
 FED_DFA_PAGE_URL = "https://www.federalreserve.gov/releases/z1/dataviz/dfa/"
 FED_DFA_TABLE_URL = "https://www.federalreserve.gov/releases/z1/dataviz/dfa/distribute/table/"
 FED_DFA_ZIP_URL = "https://www.federalreserve.gov/releases/z1/dataviz/download/zips/dfa.zip"
+
+WORLD_BANK_COMMODITY_PAGE_URL = "https://www.worldbank.org/en/research/commodity-markets"
+WORLD_BANK_MONTHLY_WORKBOOK_FALLBACK = (
+    "https://thedocs.worldbank.org/en/doc/"
+    "74e8be41ceb20fa0da750cda2f6b9e4e-0050012026/related/"
+    "CMO-Historical-Data-Monthly.xlsx"
+)
 
 QUANTIFIER_NUMBER_WORDS = {
     "zero": "0",
@@ -608,7 +617,16 @@ def _countries_in_prompt(prompt: str) -> list[tuple[str, str]]:
         geography_probe,
     )
     geography_probe = re.sub(r"[^a-z]+", " ", geography_probe).strip()
-    if not static_match and world_bank_metric_match and geography_probe:
+    dynamic_geography_syntax = bool(
+        re.search(r"\b(?:in|across|among)\s+[a-z]", text)
+        or re.match(r"^\s*[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?\s+", prompt)
+    )
+    if (
+        not static_match
+        and world_bank_metric_match
+        and geography_probe
+        and dynamic_geography_syntax
+    ):
         catalog.update(_world_bank_country_catalog())
     for phrase in sorted(catalog, key=len, reverse=True):
         pattern = r"(?<![a-z])" + re.escape(phrase) + r"(?![a-z])"
@@ -1327,6 +1345,126 @@ def _xlsx_sheet_cells(content: bytes, sheet_name: str) -> dict[tuple[int, int], 
                     value = raw
             cells[(row_number, column_number)] = value
         return cells
+
+
+def _world_bank_monthly_workbook_url() -> str:
+    """Discover the current official Pink Sheet workbook without trusting arbitrary hosts."""
+
+    try:
+        page = http_get(
+            WORLD_BANK_COMMODITY_PAGE_URL,
+            timeout=20,
+            cache_ttl=24 * 60 * 60,
+            allow_stale=True,
+        )
+        candidates = re.findall(
+            r"href=[\"']([^\"']*CMO-Historical-Data-Monthly\.xlsx[^\"']*)[\"']",
+            page.text,
+            flags=re.I,
+        )
+        for raw_url in candidates:
+            candidate = urllib.parse.urljoin(
+                WORLD_BANK_COMMODITY_PAGE_URL,
+                html.unescape(raw_url),
+            )
+            parsed = urllib.parse.urlparse(candidate)
+            if (
+                parsed.scheme == "https"
+                and parsed.hostname == "thedocs.worldbank.org"
+                and parsed.path.lower().endswith("cmo-historical-data-monthly.xlsx")
+            ):
+                return candidate
+    except Exception:  # noqa: BLE001 - the known official URL remains the declared fallback.
+        pass
+    return WORLD_BANK_MONTHLY_WORKBOOK_FALLBACK
+
+
+def fetch_world_bank_commodity_series(
+    entry: dict[str, Any],
+    start: date | None,
+    end: date | None,
+) -> dict[str, Any]:
+    """Fetch monthly commodity levels from the official World Bank Pink Sheet."""
+
+    commodity = str(entry.get("commodity") or "").strip()
+    if not commodity:
+        raise RuntimeError("World Bank commodity mapping is missing its commodity label.")
+    workbook_url = _world_bank_monthly_workbook_url()
+    download = http_get_bytes(
+        workbook_url,
+        timeout=45,
+        cache_ttl=24 * 60 * 60,
+        allow_stale=True,
+    )
+    cells = _xlsx_sheet_cells(download.content, "Monthly Prices")
+    commodity_column = next(
+        (
+            column
+            for (row, column), value in cells.items()
+            if row == 5 and _normalized_label(value) == _normalized_label(commodity)
+        ),
+        None,
+    )
+    if commodity_column is None:
+        raise RuntimeError(
+            f"The official World Bank monthly workbook did not contain {commodity!r}."
+        )
+    unit = str(cells.get((6, commodity_column)) or entry.get("unit") or "").strip()
+    observations: list[dict[str, Any]] = []
+    for (row, column), raw_period in cells.items():
+        if column != 1 or row < 7:
+            continue
+        match = re.fullmatch(r"\s*(\d{4})M(\d{2})\s*", str(raw_period or ""), re.I)
+        if not match:
+            continue
+        year = int(match.group(1))
+        month = int(match.group(2))
+        try:
+            row_date = date(year, month, calendar.monthrange(year, month)[1])
+            value = float(cells[(row, commodity_column)])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not math.isfinite(value):
+            continue
+        if start and row_date < start:
+            continue
+        if end and row_date > end:
+            continue
+        observations.append({"date": row_date.isoformat(), "value": value})
+    observations.sort(key=lambda row: row["date"])
+    if not observations:
+        raise RuntimeError(
+            f"World Bank returned no usable monthly {commodity} observations in the requested range."
+        )
+    updated_label = str(cells.get((4, 1)) or "").strip()
+    warnings = [download.warning] if download.warning else []
+    return {
+        "id": entry.get("id") or f"WORLD_BANK_{commodity.upper()}",
+        "name": entry.get("name") or f"{commodity} Price",
+        "unit": entry.get("unit") or unit,
+        "origin": "World Bank Commodity Markets (Pink Sheet)",
+        "provider": "World Bank Pink Sheet",
+        "providerSeries": f"Monthly Prices / {commodity} / {unit}",
+        "observations": observations,
+        "firstDate": observations[0]["date"],
+        "lastDate": observations[-1]["date"],
+        "latest": observations[-1]["value"],
+        "sourceUrl": WORLD_BANK_COMMODITY_PAGE_URL,
+        "resolution": "official monthly World Bank commodity history",
+        "frequency": "Monthly",
+        "providerWarnings": warnings,
+        "providerNotes": [
+            updated_label,
+            "Monthly values are published in the World Bank Commodity Price Data workbook.",
+        ],
+        "supportingSources": [
+            {
+                "name": "World Bank monthly commodity workbook",
+                "url": workbook_url,
+                "role": f"Official downloadable {commodity} history",
+            }
+        ],
+    }
 
 
 def _excel_date(value: Any) -> date | None:
@@ -2340,6 +2478,8 @@ def fetch_special_series(entry: dict[str, Any], start: date | None, end: date | 
         return fetch_sp_earnings_series(entry, start, end)
     if provider == "world-bank":
         return fetch_world_bank_series(entry, start, end)
+    if provider == "world-bank-commodity":
+        return fetch_world_bank_commodity_series(entry, start, end)
     if provider == "sec-companyfacts":
         return fetch_sec_companyfacts_series(entry, start, end)
     if provider == "fed-dfa":

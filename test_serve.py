@@ -1205,7 +1205,7 @@ class ResolverTests(unittest.TestCase):
 
     def test_backend_status_exposes_build_and_detects_source_changes(self):
         status = serve.backend_status()
-        self.assertEqual(status["version"], "side-tools.v1.2.1")
+        self.assertEqual(status["version"], "side-tools.v1.3.0")
         self.assertEqual(status["build"], serve.BACKEND_BUILD)
         self.assertTrue(status["startedAt"])
         self.assertFalse(status["restartRequired"])

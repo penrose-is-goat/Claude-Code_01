@@ -34,6 +34,7 @@ const clarificationIntro = $("#clarificationIntro");
 const editClarificationPrompt = $("#editClarificationPrompt");
 const submitClarification = $("#submitClarification");
 const ctx = canvas.getContext("2d");
+const chartScale = window.SideToolsChartScale;
 
 const COLORS = ["#0b65c2", "#d1495b", "#16865a", "#e07a10", "#6d5bd0", "#087f8c"];
 const RECESSIONS = [
@@ -595,8 +596,10 @@ function renderAudit() {
   auditRows.innerHTML = state.rows.map(({ series }) => {
     const fallback = series.fallbackReason || series.fallbackError || "";
     const validation = series.calculationValidation?.status ? `Calculation check: ${series.calculationValidation.status}` : "";
+    const coverage = series.coveragePlan?.status ? `Coverage plan: ${series.coveragePlan.status} (${series.coveragePlan.policy})` : "";
+    const comparison = series.sourceComparison?.status ? `Source overlap: ${series.sourceComparison.status}` : "";
     const providerNotes = (series.providerNotes || []).join(" ");
-    const derivation = [series.resolution, series.formula ? `Formula: ${series.formula}` : "", providerNotes, validation, series.actualThrough ? `Actual through ${series.actualThrough}` : "", fallback].filter(Boolean).join("; ");
+    const derivation = [series.resolution, series.formula ? `Formula: ${series.formula}` : "", providerNotes, coverage, comparison, validation, series.actualThrough ? `Actual through ${series.actualThrough}` : "", fallback].filter(Boolean).join("; ");
     return `<tr><td><strong>${escapeHtml(series.name)}</strong><br><small>${escapeHtml(series.unit)}</small></td>
       <td>${safeExternalLink(series.sourceUrl, series.provider, "table-source-link")}</td><td>${escapeHtml(series.providerSeries || series.id)}</td>
       <td>${escapeHtml(series.firstDate)} to ${escapeHtml(series.lastDate)}</td>
@@ -626,6 +629,8 @@ function renderQuality() {
       <p>${escapeHtml(series.firstDate)} to ${escapeHtml(series.lastDate)} | ${series.observations.length.toLocaleString("en-US")} observations${series.actualThrough ? ` | actual through ${escapeHtml(series.actualThrough)}` : ""}</p>
       <p>${escapeHtml(series.formula ? `Formula: ${series.formula}` : (series.resolution || "Curated mapping"))}</p>
       ${(series.providerNotes || []).length ? `<p>${series.providerNotes.map(escapeHtml).join("<br>")}</p>` : ""}
+      ${series.coveragePlan ? `<p>Coverage: ${escapeHtml(series.coveragePlan.status)} | ${escapeHtml(series.coveragePlan.policy)} | ${escapeHtml(series.coveragePlan.outputFrequency || series.frequency || "native")} output | historical base through ${escapeHtml(series.coveragePlan.baseLastDate)} | ${Number(series.coveragePlan.continuationObservations || 0).toLocaleString("en-US")} current continuation observations (${escapeHtml(series.coveragePlan.continuationAggregation || "native cadence")})</p>` : ""}
+      ${series.sourceComparison ? `<p>Cross-source check: ${escapeHtml(series.sourceComparison.status)} | ${Number(series.sourceComparison.overlapMonths || series.sourceComparison.overlap || 0).toLocaleString("en-US")} overlap observations${Number.isFinite(Number(series.sourceComparison.correlation)) ? ` | correlation ${formatNumber(Number(series.sourceComparison.correlation), 6)}` : ""}${Number.isFinite(Number(series.sourceComparison.medianPercentDifference)) ? ` | median level difference ${formatNumber(Number(series.sourceComparison.medianPercentDifference) * 100, 3)}%` : ""}</p>` : ""}
       ${series.calculationValidation ? `<p>Contribution check: ${escapeHtml(series.calculationValidation.status)} | ${escapeHtml(series.calculationValidation.snapshotsChecked)} published snapshot(s) | ${Number(series.calculationValidation.reconstructedQuarters || 0).toLocaleString("en-US")} reconstructed quarter(s) | published-overlap max difference ${formatNumber(Number(series.calculationValidation.publishedOverlapMaxAbsoluteError || 0) * 100, 3)} percentage points</p>` : ""}
       <p>Validation: ${escapeHtml(series.quality?.status || "not run")}${seriesWarnings.length ? `<br>${seriesWarnings.map(escapeHtml).join("<br>")}` : ""}</p>
     </article>`;
@@ -641,17 +646,6 @@ function renderQuality() {
   cards.unshift(`<article class="quality-card"><strong>Request routing</strong><span>${intent.usedModel ? `Constrained local model: ${escapeHtml(intent.model || "configured model")}` : "Deterministic parser"}</span><p>Every observation, provider, formula, and source came from allowlisted code and data services. Model-generated data values: no.</p>${parsedOperands.length ? `<p>Parsed ${escapeHtml(contract.operation || "chart")}: ${escapeHtml(parsedOperands.join(" | "))}</p>` : ""}<p>Verification: ${escapeHtml(payload.verification?.status || "pass")}</p></article>`);
   if (warnings.length) cards.push(`<article class="quality-card warning"><strong>Review these details</strong><p>${warnings.map(escapeHtml).join("<br>")}</p></article>`);
   qualityBody.innerHTML = cards.join("");
-}
-
-function niceDomain(values, axis) {
-  const usable = values.filter(Number.isFinite).filter((value) => !axis.log || value > 0);
-  let min = axis.min ?? Math.min(...usable);
-  let max = axis.max ?? Math.max(...usable);
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return [0, 1];
-  if (min === max) { min -= Math.abs(min || 1) * 0.05; max += Math.abs(max || 1) * 0.05; }
-  if (axis.min == null && !axis.log) min -= (max - min) * 0.06;
-  if (axis.max == null && !axis.log) max += (max - min) * 0.06;
-  return [min, max];
 }
 
 function drawMarker(x, y, marker, color, size = 4) {
@@ -714,16 +708,33 @@ function drawChart() {
   const allTimes = rows.flatMap((row) => row.points.map((point) => point.date.getTime()));
   const minTime = Math.min(...allTimes); const maxTime = Math.max(...allTimes); const span = Math.max(1, maxTime - minTime);
   const xFor = (dateValue) => plot.x + ((dateValue.getTime() - minTime) / span) * plot.w;
-  const domains = {};
-  ["left", "right"].forEach((side) => {
-    domains[side] = niceDomain(rows.filter((row) => row.config.axis === side).flatMap((row) => row.points.map((point) => point.value)), state.axes[side]);
-  });
+  const scales = {};
+  try {
+    ["left", "right"].filter((side) => activeSides.has(side)).forEach((side) => {
+      const sideRows = rows.filter((row) => row.config.axis === side);
+      const units = [...new Set(sideRows.map((row) => row.series.unit).filter(Boolean))];
+      const transforms = [...new Set(sideRows.map((row) => row.config.units).filter(Boolean))];
+      scales[side] = chartScale.buildAxisScale(
+        sideRows.flatMap((row) => row.points.map((point) => point.value)),
+        state.axes[side],
+        {
+          unit: units.length === 1 ? units[0] : "",
+          transform: transforms.length === 1 ? transforms[0] : "raw",
+          includeZero: true,
+        },
+        plot.h,
+      );
+    });
+  } catch (error) {
+    state.render = null;
+    ctx.fillStyle = state.graph.textColor;
+    ctx.textAlign = "center";
+    ctx.fillText(error.message, width / 2, height / 2);
+    setStatus(error.message, true);
+    return;
+  }
   const yFor = (value, side) => {
-    const [rawMin, rawMax] = domains[side];
-    const log = state.axes[side].log;
-    const min = log ? Math.log10(Math.max(rawMin, Number.MIN_VALUE)) : rawMin;
-    const max = log ? Math.log10(Math.max(rawMax, Number.MIN_VALUE)) : rawMax;
-    const normalized = ((log ? Math.log10(value) : value) - min) / Math.max(Number.EPSILON, max - min);
+    const normalized = chartScale.normalizedPosition(value, scales[side]);
     return plot.y + plot.h - normalized * plot.h;
   };
 
@@ -738,16 +749,18 @@ function drawChart() {
 
   ctx.font = "12px Bahnschrift, sans-serif";
   ctx.lineWidth = 1;
-  for (let tick = 0; tick <= 5; tick += 1) {
-    const y = plot.y + (plot.h * tick) / 5;
+  const gridSide = activeSides.has("left") ? "left" : [...activeSides][0];
+  (scales[gridSide]?.ticks || []).forEach((tick) => {
+    const y = yFor(tick.value, gridSide);
     ctx.strokeStyle = "rgba(80, 100, 120, 0.16)"; ctx.beginPath(); ctx.moveTo(plot.x, y); ctx.lineTo(plot.x + plot.w, y); ctx.stroke();
-    ["left", "right"].filter((side) => activeSides.has(side)).forEach((side) => {
-      const axis = state.axes[side]; const [min, max] = domains[side];
-      const value = axis.log ? Math.pow(10, Math.log10(max) - (Math.log10(max) - Math.log10(min)) * tick / 5) : max - (max - min) * tick / 5;
+  });
+  ["left", "right"].filter((side) => activeSides.has(side)).forEach((side) => {
+    scales[side].ticks.forEach((tick) => {
+      const y = yFor(tick.value, side);
       ctx.fillStyle = state.graph.textColor; ctx.textAlign = side === "left" ? "right" : "left";
-      ctx.fillText(formatNumber(value, 2), side === "left" ? plot.x - 10 : plot.x + plot.w + 10, y + 4);
+      ctx.fillText(tick.label, side === "left" ? plot.x - 10 : plot.x + plot.w + 10, y + 4);
     });
-  }
+  });
   for (let tick = 0; tick <= 6; tick += 1) {
     const ms = minTime + (span * tick) / 6; const x = plot.x + (plot.w * tick) / 6;
     ctx.fillStyle = state.graph.textColor; ctx.textAlign = tick === 0 ? "left" : tick === 6 ? "right" : "center";
@@ -767,7 +780,8 @@ function drawChart() {
       ctx.lineTo(xFor(row.points.at(-1).date), plot.y + plot.h); ctx.lineTo(xFor(row.points[0].date), plot.y + plot.h); ctx.closePath(); ctx.globalAlpha = 0.18; ctx.fill(); ctx.globalAlpha = 1;
     }
     if (config.type === "bar") {
-      const barWidth = Math.max(1, Math.min(16, plot.w / Math.max(row.points.length, 1) * 0.72)); const zeroY = yFor(Math.max(domains[config.axis][0], Math.min(0, domains[config.axis][1])), config.axis);
+      const scale = scales[config.axis];
+      const barWidth = Math.max(1, Math.min(16, plot.w / Math.max(row.points.length, 1) * 0.72)); const zeroY = yFor(Math.max(scale.domainMin, Math.min(0, scale.domainMax)), config.axis);
       ctx.globalAlpha = 0.75; row.points.forEach((point) => { const x = xFor(point.date); const y = yFor(point.value, config.axis); ctx.fillRect(x - barWidth / 2, Math.min(y, zeroY), barWidth, Math.abs(zeroY - y)); }); ctx.globalAlpha = 1;
     } else if (config.type === "scatter") {
       row.points.forEach((point) => drawMarker(xFor(point.date), yFor(point.value, config.axis), config.marker === "none" ? "circle" : config.marker, config.color, 3.5));
@@ -827,13 +841,15 @@ function drawChart() {
       ctx.fillText(item.label, x + 22, y - 4);
     });
   }
-  state.render = { rows, plot, minTime, maxTime, span, xFor };
+  state.render = { rows, plot, minTime, maxTime, span, xFor, scales };
 }
 
 function renderAll() {
   state.hover = null;
   chartTitle.textContent = state.graph.title;
-  rangeLabel.textContent = state.payload.range.label;
+  const loadedStart = state.rows.map((row) => row.series.firstDate).filter(Boolean).sort()[0] || "n/a";
+  const loadedEnd = state.rows.map((row) => row.series.lastDate).filter(Boolean).sort().at(-1) || "n/a";
+  rangeLabel.textContent = `Requested ${state.payload.range.label} | loaded observations ${loadedStart} to ${loadedEnd}`;
   $("#rangeStart").value = state.payload.range.start || state.rows.map((row) => row.series.firstDate).sort()[0] || "";
   $("#rangeEnd").value = state.payload.range.end || state.rows.map((row) => row.series.lastDate).sort().at(-1) || "";
   const recognized = state.payload.chartConfig?.recognizedInstructions || [];

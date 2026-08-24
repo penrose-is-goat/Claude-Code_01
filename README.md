@@ -1,6 +1,6 @@
 # Portfolio Analyzer Side Tools
 
-Release: **side-tools.v1.2.1**
+Release: **side-tools.v1.3.0**
 
 Three local, dependency-free tools:
 
@@ -36,7 +36,8 @@ The resolver never asks a language model to invent a provider ID. It uses:
 - Direct Federal Reserve Financial Accounts (Z.1) archives for broad U.S. public-equity market capitalization and total debt securities outstanding, with exact FRED mirrors as fallbacks.
 - Treasury Fiscal Data's Debt to the Penny API for federal public debt, kept distinct from debt securities and credit-market debt definitions.
 - Direct BLS API data for CPI, core CPI, unemployment, payrolls, job openings, and producer prices.
-- Yahoo Finance for long market-index history, with an overlapping FRED comparison where available.
+- Yahoo Finance for current market-index and commodity-proxy history, with overlapping source comparisons where available.
+- The official World Bank Commodity Markets Pink Sheet for long monthly gold and silver history. When a current Yahoo continuation is needed, the app aggregates it to the same monthly cadence and combines the sources only after their overlap passes explicit correlation and level-difference checks.
 - S&P Dow Jones Indices' archived official earnings workbooks for quarterly index operating EPS and validated sector earnings-contribution shares.
 - SEC Company Facts for annual company revenue, income, EPS, assets, cash flow, and R&D requests that include an explicit ticker; annual-duration filters and approved taxonomy fallbacks prevent quarterly duplicates and truncated histories.
 - World Bank API indicators for supported cross-country macro and development comparisons.
@@ -59,7 +60,7 @@ Use **Edit graph** after any prompt to:
 
 Natural-language axis instructions are returned as an explicit chart specification. A phrase such as “Nasdaq Composite may be used as a substitute for S&P 500” is treated as a contingency, not an instruction to plot both; the substitute is used only if all configured S&P 500 sources fail.
 
-Version 1.2.1 parses each Macro Data Lab request into one typed contract before data lookup. Economic concepts, time windows, transformations, chart types, colors, styles, and axis instructions are separated so presentation wording never becomes a provider search term. Heterogeneous native units use independent left and right axes automatically unless the user explicitly requests one scale. Compact and reordered U.S. Treasury tenor phrases such as `10yr US Treasury yield` are normalized deterministically, while foreign sovereign scopes and numeric conditions remain fail-closed instead of being silently substituted.
+Version 1.3.0 adds requested-window coverage planning before a chart can pass verification. A provider response that begins materially after the requested start is no longer accepted as complete; declared long-history sources are checked, compared on an overlapping cadence, and combined only after validation passes. The chart renderer now uses context-aware financial scales with zero baselines for automatically bounded linear charts, `1/2/2.5/5/10` tick steps, unit-aware labels, and decimals only when the selected step requires them. Presentation phrases such as `separate left and right scales` and request wrappers such as `build a macro chart comparing` are removed before provider resolution.
 
 ## Fed Tracker Method
 
@@ -99,12 +100,12 @@ python serve.py --doctor
 python serve.py --check
 python -m unittest -v
 python -m qa.runner --tool all --strict
-python -m qa.v1_2_gate --strict --repeat 2
+python -m qa.v1_3_gate --strict --artifact-dir qa\artifacts\v1_3_0
 ```
 
 `--doctor` distinguishes an execution-policy block from a provider outage. `--check` validates the macro providers, Fed inputs, and Treasury auction database coverage.
 The semantic QA gate uses fixed Macro, Fed, and Treasury corpora with typo, metatext, and paraphrase variants; it also validates source, probability, observation, and auction invariants without calling a model.
-The v1.2.1 release gate executes 33,599 deterministic semantic and layout cases twice, including 2,400 U.S. Treasury language variants and 15 foreign-scope negative controls. It compares stable result hashes and makes no network or model calls.
+The v1.3.0 release gate executes exactly 100,000 deterministic cases: the established 33,599 semantic/layout cases, 46,401 seeded complex prompt combinations, 10,000 provider coverage/failure cases, and 10,000 tests against the exported browser scale implementation. Network and model tripwires ensure the deterministic phases do not silently depend on a live source or local model.
 
 ## Important Limits
 

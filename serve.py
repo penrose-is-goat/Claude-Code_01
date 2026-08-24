@@ -55,16 +55,18 @@ import treasury_auctions
 import macro_providers
 import model_router
 import intent_contract
+import coverage_planner
 
 
 APP_DIR = Path(__file__).resolve().parent
-APP_VERSION = "side-tools.v1.2.1"
+APP_VERSION = "side-tools.v1.3.0"
 DEFAULT_PORT = 8017
 HTTP_TIMEOUT = 18
 STATIC_FILES = {
     "index.html",
     "fred-tool.html",
     "fred-tool.js",
+    "chart-scale.js",
     "fed-tracker.html",
     "fed-tracker.js",
     "treasury-auctions.html",
@@ -89,6 +91,7 @@ BACKEND_SOURCE_FILES = [
         "data_core.py",
         "model_router.py",
         "intent_contract.py",
+        "coverage_planner.py",
         "treasury_auctions.py",
     )
 ]
@@ -1124,21 +1127,31 @@ SERIES_CATALOG.extend(
         },
         {
             "id": "GOLD_PRICE",
-            "name": "Gold Futures Price",
+            "name": "Gold Price",
             "unit": "U.S. dollars per troy ounce",
-            "origin": "CME COMEX via Yahoo Finance",
+            "origin": "World Bank Pink Sheet and CME COMEX via Yahoo Finance",
             "aliases": [r"\bgold price\b", r"\bprice of gold\b", r"\bgold futures\b", r"\bgold\b"],
             "primary": "yahoo",
             "yahoo": "GC=F",
+            "coverageFallback": {
+                "primary": "world-bank-commodity",
+                "commodity": "Gold",
+            },
+            "requireRequestedCoverage": True,
         },
         {
             "id": "SILVER_PRICE",
-            "name": "Silver Futures Price",
+            "name": "Silver Price",
             "unit": "U.S. dollars per troy ounce",
-            "origin": "CME COMEX via Yahoo Finance",
+            "origin": "World Bank Pink Sheet and CME COMEX via Yahoo Finance",
             "aliases": [r"\bsilver price\b", r"\bprice of silver\b", r"\bsilver futures\b", r"\bsilver\b"],
             "primary": "yahoo",
             "yahoo": "SI=F",
+            "coverageFallback": {
+                "primary": "world-bank-commodity",
+                "commodity": "Silver",
+            },
+            "requireRequestedCoverage": True,
         },
     ]
 )
@@ -1558,7 +1571,8 @@ def _search_clauses(prompt: str) -> list[str]:
     )
     cleaned = re.sub(r"\busing\s+(?:a\s+)?separate\s+axes?\b", "", cleaned)
     cleaned = re.sub(
-        r"\b(?:for|over|during|past|previous|trailing)\s+(?:the\s+)?(?:last\s+)?"
+        r"\b(?:for|over|during|across|past|previous|trailing)\s+(?:the\s+)?"
+        r"(?:(?:last|preceding)\s+)?"
         r"\d+[\s-]*(?:years?|yrs?|months?|mos?|quarters?|decades?|weeks?|days?)\b",
         "",
         cleaned,
@@ -1614,7 +1628,11 @@ def _search_clauses(prompt: str) -> list[str]:
             lambda match: re.sub(r"\band\b", protected_and, match.group(0)),
             cleaned,
         )
-    cleaned = re.sub(r"\b(?:chart|plot|graph|show|compare|versus|vs\.?|with)\b", ",", cleaned)
+    cleaned = re.sub(
+        r"\b(?:compared\s+(?:with|to)|chart|plot|graph|show|compare|versus|vs\.?|against|with)\b",
+        ",",
+        cleaned,
+    )
     clauses = re.split(r",|\band\b", cleaned)
     output: list[str] = []
     for clause in clauses:
@@ -1650,9 +1668,11 @@ def unresolved_clause_residual(clause: str) -> str:
     residual = re.sub(r"(?<!\w)(?:\$[a-z][a-z0-9.-]{0,9}|\^[a-z0-9.-]{1,9})", " ", residual)
     residual = re.sub(r"\b(?:fred\s+(?:series|id)|series)\s+[a-z][a-z0-9]{1,24}\b", " ", residual)
     residual = re.sub(
-        r"\b(?:chart|plot|graph|show|compare|versus|vs|with|and|divided\s+by|over|ratio|"
+        r"\b(?:chart|plot|graph|show|build|create|make|display|give|please|macro|comparing|"
+        r"compare|versus|vs|with|using|and|divided\s+by|over|ratio|"
         r"multiplied\s+by|times|plus|minus|against|for|the|a|an|of|data|series|index|level|"
-        r"rate|rates|yield|yields|treasury|market|spread)\b",
+        r"rate|rates|yield|yields|treasury|market|spread|first|second|left|right|axis|axes|"
+        r"scale|scales|same|separate|secondary|opposite|native|values)\b",
         " ",
         residual,
     )
@@ -3723,6 +3743,51 @@ def validate_series_result(series: dict[str, Any], requested_start: date | None)
     }
 
 
+def _coverage_fallback_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    fallback = copy.deepcopy(entry.get("coverageFallback") or {})
+    fallback.update(
+        {
+            "id": entry["id"],
+            "name": entry["name"],
+            "unit": entry["unit"],
+            "origin": fallback.get("origin") or entry.get("origin"),
+        }
+    )
+    return fallback
+
+
+def _series_coverage(
+    series: dict[str, Any],
+    entry: dict[str, Any],
+    start: date | None,
+    end: date | None,
+    *,
+    base_only: bool = False,
+) -> dict[str, Any]:
+    return coverage_planner.coverage_status(
+        series.get("observations") or [],
+        start,
+        end,
+        start_tolerance_days=int(entry.get("coverageStartToleranceDays", 45)),
+        end_tolerance_days=int(
+            entry.get("coverageBaseEndToleranceDays", 62)
+            if base_only
+            else entry.get("coverageEndToleranceDays", 10)
+        ),
+    )
+
+
+def _fetch_declared_coverage_base(
+    entry: dict[str, Any],
+    start: date | None,
+    end: date | None,
+) -> dict[str, Any]:
+    fallback = _coverage_fallback_entry(entry)
+    if not fallback.get("primary"):
+        raise RuntimeError(f"{entry['name']} has no configured long-history coverage source.")
+    return macro_providers.fetch_special_series(fallback, start, end)
+
+
 def fetch_display_series(entry: dict[str, Any], start: date | None, end: date | None) -> dict[str, Any]:
     if entry.get("primary") in {"sp-earnings", "world-bank", "sec-companyfacts", "fed-dfa"}:
         return macro_providers.fetch_special_series(entry, start, end)
@@ -3829,6 +3894,45 @@ def fetch_display_series(entry: dict[str, Any], start: date | None, end: date | 
         except NetworkPolicyError:
             raise
         except Exception as yahoo_exc:  # noqa: BLE001 - use the index series as a backup when defined.
+            if entry.get("coverageFallback"):
+                try:
+                    coverage_base = _fetch_declared_coverage_base(entry, start, end)
+                    coverage = _series_coverage(
+                        coverage_base,
+                        entry,
+                        start,
+                        end,
+                        base_only=True,
+                    )
+                    if not coverage["complete"] and entry.get("requireRequestedCoverage"):
+                        raise RuntimeError(
+                            "The long-history source did not cover the requested window: "
+                            f"start gap={coverage.get('startGapDays')} days, "
+                            f"end gap={coverage.get('endGapDays')} days."
+                        )
+                    coverage_base.update(
+                        {
+                            "id": entry["id"],
+                            "name": entry["name"],
+                            "unit": entry["unit"],
+                            "origin": entry.get("origin"),
+                            "coverage": coverage,
+                            "fallbackReason": f"Yahoo Finance failed: {yahoo_exc}",
+                            "sourceComparison": {
+                                "status": "unavailable",
+                                "reference": f"Yahoo Finance {entry['yahoo']}",
+                                "detail": "Primary continuation was unavailable; official coverage source used alone.",
+                            },
+                        }
+                    )
+                    return coverage_base
+                except NetworkPolicyError:
+                    raise
+                except Exception as coverage_exc:  # noqa: BLE001 - continue to an exact FRED fallback if declared.
+                    yahoo_exc = RuntimeError(
+                        f"Yahoo Finance failed ({yahoo_exc}); configured coverage source also failed "
+                        f"({coverage_exc})."
+                    )
             fallback_id = entry.get("validationFred")
             if not fallback_id:
                 raise RuntimeError(
@@ -3855,6 +3959,64 @@ def fetch_display_series(entry: dict[str, Any], start: date | None, end: date | 
                 "resolution": entry.get("resolution", "curated market-data mapping"),
             }
         )
+        coverage = _series_coverage(yahoo_result, entry, start, end)
+        if not coverage["complete"] and entry.get("coverageFallback"):
+            try:
+                coverage_base = _fetch_declared_coverage_base(entry, start, end)
+            except NetworkPolicyError:
+                raise
+            except Exception as coverage_exc:  # noqa: BLE001 - partial primary data must not be mislabeled complete.
+                if entry.get("requireRequestedCoverage"):
+                    raise RuntimeError(
+                        f"{entry['name']} returned partial history from Yahoo "
+                        f"({yahoo_result['firstDate']} to {yahoo_result['lastDate']}); the configured "
+                        f"coverage source failed: {coverage_exc}"
+                    ) from coverage_exc
+                yahoo_result["fallbackError"] = str(coverage_exc)
+            else:
+                comparison = coverage_planner.compare_monthly_levels(
+                    yahoo_result["observations"],
+                    coverage_base["observations"],
+                    primary_label=f"Yahoo Finance {entry['yahoo']}",
+                    reference_label=str(coverage_base.get("providerSeries") or coverage_base["provider"]),
+                    minimum_months=int(entry.get("coverageMinimumOverlapMonths", 24)),
+                    minimum_correlation=float(entry.get("coverageMinimumCorrelation", 0.98)),
+                    maximum_median_percent_difference=float(
+                        entry.get("coverageMaximumMedianPercentDifference", 0.08)
+                    ),
+                )
+                yahoo_result = coverage_planner.compose_coverage_base(
+                    yahoo_result,
+                    coverage_base,
+                    start=start,
+                    end=end,
+                    comparison=comparison,
+                    start_tolerance_days=int(entry.get("coverageStartToleranceDays", 45)),
+                    end_tolerance_days=int(entry.get("coverageEndToleranceDays", 10)),
+                )
+                yahoo_result["resolution"] = (
+                    "verified long-history coverage base with current market-price continuation"
+                )
+                yahoo_result["fallbackReason"] = (
+                    f"Yahoo history began {coverage.get('startGapDays')} days after the requested "
+                    "start, so the configured long-history source supplied the missing period."
+                )
+                yahoo_result["providerWarnings"] = [
+                    *(coverage_base.get("providerWarnings") or []),
+                    *(yahoo_result.get("providerWarnings") or []),
+                ]
+                yahoo_result["providerNotes"] = [
+                    *(coverage_base.get("providerNotes") or []),
+                    "The two sources were compared on overlapping monthly averages before composition.",
+                ]
+                coverage = yahoo_result["coverage"]
+        yahoo_result["coverage"] = coverage
+        if entry.get("requireRequestedCoverage") and not coverage["complete"]:
+            raise RuntimeError(
+                f"{entry['name']} did not cover the requested range after every configured source "
+                f"was checked: start gap={coverage.get('startGapDays')} days, "
+                f"end gap={coverage.get('endGapDays')} days."
+            )
         if entry.get("validationFred"):
             validation_start = max(start or date(2016, 1, 1), date(2016, 1, 1))
             try:

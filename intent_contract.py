@@ -35,7 +35,11 @@ KNOWN_TYPOS = {
 _LEADING_COMMAND = re.compile(
     r"^\s*(?:(?:please|kindly)\s+)?"
     r"(?:(?:can|could|would|will)\s+you\s+)?"
-    r"(?:show|display|graph|plot|chart|compare|give)\s+(?:me\s+)?",
+    r"(?:"
+    r"(?:show|display|graph|plot|chart|compare|give)\s+(?:me\s+)?|"
+    r"(?:build|create|make)\s+(?:me\s+)?(?:a\s+)?(?:macro\s+)?"
+    r"(?:chart|graph|plot)\s+(?:comparing\s+)?"
+    r")",
     re.IGNORECASE,
 )
 _META_PREFIX = re.compile(
@@ -71,6 +75,8 @@ _PRESENTATION_AXIS_COMMAND = re.compile(
     re.IGNORECASE,
 )
 _PRESENTATION_AXIS_PHRASE = re.compile(
+    r"\b(?:with|using|use)\s+(?:separate\s+)?left\s+and\s+right\s+"
+    r"(?:y[- ]?)?(?:axis|axes|scale|scales)\b|"
     r"\b(?:on|to)\s+(?:the\s+)?left\s+and\s+right\s+(?:y[- ]?)?(?:axis|axes)\b|"
     r"\b(?:on|to)\s+(?:(?:the|a|an)\s+)?(?:opposite|secondary|other|right|left|separate|different|distinct)\s+"
     r"(?:y[- ]?)?(?:axis|axes|scale|scales)\b|"
@@ -80,6 +86,11 @@ _PRESENTATION_AXIS_PHRASE = re.compile(
     r"same|single|common|shared)\s+(?:y[- ]?)?(?:axis|axes)\b|"
     r"\b(?:opposite|secondary|dual|separate|different|distinct)\s+(?:y[- ]?)?(?:axis|axes)\b|"
     r"\b(?:same|single|one|common|shared)\s+(?:y[- ]?)?axis\b",
+    re.IGNORECASE,
+)
+_PRESENTATION_AXIS_TARGET = re.compile(
+    r"\b(?:with|using|use|on)\s+(?:an?\s+)?(?:secondary|opposite|separate|right|left)\s+"
+    r"(?:y[- ]?)?(?:axis|scale)\s+for\s+(?:the\s+)?(?:first|second)\s+series\b",
     re.IGNORECASE,
 )
 _PRESENTATION_SIDE_PHRASE = re.compile(
@@ -145,7 +156,7 @@ _UNSUPPORTED_CHART_PRESENTATION = re.compile(
 )
 _TIME_PATTERNS = (
     re.compile(
-        r"\b(?:for|over|during|past|previous|trailing)\s+(?:the\s+)?(?:last\s+)?"
+        r"\b(?:for|over|during|across|past|previous|trailing)\s+(?:the\s+)?(?:(?:last|preceding)\s+)?"
         r"\d+[\s-]*(?:years?|yrs?|months?|mos?|quarters?|decades?|weeks?|days?)\b",
         re.IGNORECASE,
     ),
@@ -308,6 +319,7 @@ def extract_presentation(text: str) -> tuple[str, dict[str, Any]]:
     consume(_PRESENTATION_AXIS_MAPPING, "axis", record_axis)
     consume(_PRESENTATION_SIDE_MAPPING, "axis", record_axis)
     consume(_PRESENTATION_AXIS_COMMAND, "axis", record_axis)
+    consume(_PRESENTATION_AXIS_TARGET, "axis", record_axis)
     consume(_PRESENTATION_SIDE_PHRASE, "axis", record_axis)
     consume(_PRESENTATION_AXIS_PHRASE, "axis", record_axis)
 
