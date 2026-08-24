@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "prisma generate",
+    "predev": "prisma generate && prisma db push --skip-generate",
     "dev": "next dev -H 127.0.0.1",
     "browser": "node scripts/start-browser.mjs",
     "build": "next build",
