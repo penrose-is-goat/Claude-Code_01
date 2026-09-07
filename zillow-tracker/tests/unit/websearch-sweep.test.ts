@@ -313,3 +313,105 @@ describe('stopReason — the sweep knows why it ended', () => {
     expect(report.queriesSpent).toBe(8);
   });
 });
+
+/**
+ * The failure these cover is the one that made the app look broken: a sweep bounded only
+ * by a query COUNT runs for minutes, the caller awaiting it gives up, and every home
+ * already found dies with the request. "Times out after only a few results."
+ *
+ * A slow backend is the honest way to test it — the delay is in the transport, exactly
+ * where real latency lives, and the assertions are all about the sweep returning its
+ * accumulated harvest instead of nothing.
+ */
+function slowBackend(perCallMs: number, results: (n: number) => SearchResult[]) {
+  let calls = 0;
+  const backend: SearchBackend = {
+    id: 'slow',
+    displayName: 'slow',
+    setupHint: '',
+    isConfigured: () => true,
+    async search() {
+      calls++;
+      await new Promise((r) => setTimeout(r, perCallMs));
+      return results(calls);
+    },
+  };
+  return { backend, calls: () => calls };
+}
+
+describe('sweep — time budget', () => {
+  it('returns the homes it already found when the clock runs out, instead of nothing', async () => {
+    // Each query costs 20ms and yields one distinct home; a 120ms deadline can only
+    // afford a handful of the 40 the budget would otherwise allow.
+    const { backend } = slowBackend(20, (n) => [home(String(n), `${n} Pearl St`, 900000)]);
+
+    const report = await sweep(backend, TARGET, {
+      queryBudget: 40,
+      minIntervalMs: 0,
+      deadlineMs: 120,
+      now: NOW,
+    });
+
+    expect(report.stopReason).toBe('deadline');
+    // The point of the whole change: a short harvest, not an empty one.
+    expect(report.listings.length).toBeGreaterThan(0);
+    // And it genuinely stopped early rather than running the full budget.
+    expect(report.queriesSpent).toBeLessThan(40);
+  });
+
+  it('does not let the between-query wait outlive the deadline', async () => {
+    // A 10s interval against a 150ms deadline: the old code would sleep the full
+    // interval and blow through the deadline by two orders of magnitude.
+    const { backend } = slowBackend(5, (n) => [home(String(n), `${n} Pearl St`, 900000)]);
+
+    const startedAt = Date.now();
+    const report = await sweep(backend, TARGET, {
+      queryBudget: 40,
+      minIntervalMs: 10_000,
+      deadlineMs: 150,
+      now: NOW,
+    });
+    const elapsed = Date.now() - startedAt;
+
+    expect(report.stopReason).toBe('deadline');
+    expect(elapsed).toBeLessThan(2_000);
+  });
+
+  it('stops promptly when the caller aborts, and still reports what it found', async () => {
+    const { backend } = slowBackend(10, (n) => [home(String(n), `${n} Pearl St`, 900000)]);
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 60);
+
+    const startedAt = Date.now();
+    const report = await sweep(backend, TARGET, {
+      queryBudget: 40,
+      // A long interval proves the sleep itself is abort-aware: without that, aborting
+      // would not be felt until the full interval elapsed.
+      minIntervalMs: 5_000,
+      deadlineMs: 0,
+      signal: controller.signal,
+      now: NOW,
+    });
+    const elapsed = Date.now() - startedAt;
+
+    expect(report.stopReason).toBe('aborted');
+    expect(elapsed).toBeLessThan(2_000);
+    expect(report.listings.length).toBeGreaterThan(0);
+  });
+
+  it('runs to completion when the deadline is disabled, for a CLI harvest', async () => {
+    const { backend } = fakeBackend({
+      '~homes for sale': [home('1', '100 Pearl St', 900000)],
+    });
+
+    const report = await sweep(backend, TARGET, {
+      queryBudget: 6,
+      minIntervalMs: 0,
+      deadlineMs: 0,
+      now: NOW,
+    });
+
+    // No deadline means the old stopping conditions still decide, unchanged.
+    expect(['budget', 'exhausted', 'coverage']).toContain(report.stopReason);
+  });
+});

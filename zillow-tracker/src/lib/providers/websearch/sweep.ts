@@ -56,6 +56,21 @@ export interface SweepOptions {
   queryBudget?: number;
   /** Milliseconds between queries. Free tiers are usually 1 query/second. */
   minIntervalMs?: number;
+  /**
+   * Wall-clock ceiling, in milliseconds. The sweep returns what it has found so far
+   * once this elapses, rather than running to the end of the query budget.
+   *
+   * A query budget alone does not bound TIME, and time is what actually breaks: at the
+   * default pacing, 40 queries is over a minute and a half of deliberate sleeping before
+   * a single query's own latency is counted. A caller waiting on one HTTP request gives
+   * up long before that and gets NOTHING — every home already found is thrown away with
+   * the request. That is the "times out after only a few results" failure. Returning a
+   * short harvest beats returning an error, so this deadline exists to make the sweep
+   * finish early with real listings instead of late with none.
+   *
+   * 0 or a negative value disables the deadline (a CLI harvest that can run for minutes).
+   */
+  deadlineMs?: number;
   /** Only homes with an upcoming open house. */
   openHouseOnly?: boolean;
   now?: () => Date;
@@ -110,11 +125,46 @@ export interface SweepReport {
    * unknown, rather than implying completeness.
    */
   coverage?: { found: number; published: number; ratio: number; scope: string };
-  /** Why the loop stopped: budget, coverage target hit, or a dry stretch. */
-  stopReason?: 'budget' | 'coverage' | 'exhausted';
+  /**
+   * Why the loop stopped.
+   *
+   * `coverage` and `exhausted` mean done. `budget` and `deadline` both mean "there is
+   * more out there, ask again" — and a `deadline` report still carries every listing
+   * found before the clock ran out. `aborted` means the caller went away.
+   */
+  stopReason?: 'budget' | 'coverage' | 'exhausted' | 'deadline' | 'aborted';
 }
 
 const DEFAULT_BUDGET = Number(process.env.SEARCH_QUERY_BUDGET ?? 40);
+
+/**
+ * Default wall-clock ceiling for one sweep.
+ *
+ * Sized to come back well inside the patience of whatever is awaiting the request — a
+ * browser fetch, a Next route, a proxy — so the answer is a partial harvest rather than
+ * a timeout with nothing in it.
+ */
+const DEFAULT_DEADLINE_MS = Number(process.env.SEARCH_TIME_BUDGET_MS ?? 60_000);
+
+/**
+ * A sleep that gives up the moment the caller aborts.
+ *
+ * A plain setTimeout keeps a cancelled sweep alive for the rest of its interval and
+ * makes cancellation feel broken; it also burns time the deadline is trying to protect.
+ */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0 || signal?.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const done = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', done);
+      resolve();
+    };
+    timer = setTimeout(done, ms);
+    signal?.addEventListener('abort', done, { once: true });
+  });
+}
 
 /**
  * Phase 1: ask what Zillow itself says exists.
@@ -261,12 +311,28 @@ export async function sweep(
 
   let spent = 0;
 
+  // Wall-clock governor. Everything below returns what it has rather than throwing, so a
+  // sweep that runs out of time still hands back the homes it already found.
+  const deadlineMs = opts.deadlineMs ?? DEFAULT_DEADLINE_MS;
+  const deadlineAt = deadlineMs > 0 ? Date.now() + deadlineMs : Infinity;
+  let haltReason: 'deadline' | 'aborted' | undefined;
+
+  const halted = (): boolean => {
+    if (haltReason) return true;
+    if (opts.signal?.aborted) haltReason = 'aborted';
+    else if (Date.now() >= deadlineAt) haltReason = 'deadline';
+    return haltReason !== undefined;
+  };
+
   const run = async (query: string): Promise<void> => {
-    if (spent >= queryBudget || seenQueries.has(query)) return;
+    if (spent >= queryBudget || seenQueries.has(query) || halted()) return;
     seenQueries.add(query);
 
     if (spent > 0 && minIntervalMs > 0) {
-      await new Promise((r) => setTimeout(r, minIntervalMs));
+      // Never sleep past the deadline: waiting out a full interval we cannot afford
+      // would spend the caller's last seconds on nothing.
+      await sleep(Math.min(minIntervalMs, deadlineAt - Date.now()), opts.signal);
+      if (halted()) return;
     }
 
     spent++;
@@ -327,25 +393,34 @@ export async function sweep(
   for (const street of opts.seedStreets ?? []) streetsSeen.add(street);
 
   // Phase 0 — caller-supplied queries, if any.
-  for (const q of opts.extraQueries ?? []) await run(q);
+  for (const q of opts.extraQueries ?? []) {
+    if (halted()) break;
+    await run(q);
+  }
 
   // Phase 1 — what does Zillow say is here?
-  for (const q of planDiscoveryQueries(target)) await run(q);
+  for (const q of planDiscoveryQueries(target)) {
+    if (halted()) break;
+    await run(q);
+  }
 
   // Fold discovered areas into the target so phase 2 partitions by Zillow's own
   // subdivision rather than by a guess about the city's shape.
   const discovered = mergeDiscoveredAreas(target, published);
 
   // Phase 2 — area x facet.
-  for (const q of planFacetQueries(discovered, { openHouseOnly: opts.openHouseOnly })) await run(q);
+  for (const q of planFacetQueries(discovered, { openHouseOnly: opts.openHouseOnly })) {
+    if (halted()) break;
+    await run(q);
+  }
 
   // Phase 3 — streets, newest discoveries first, until the budget runs out. Re-read
   // `streetsSeen` each pass because every street query can reveal more streets.
-  while (spent < queryBudget) {
+  while (spent < queryBudget && !halted()) {
     const next = [...streetsSeen].filter((s) => !streetsQueried.has(s));
     if (next.length === 0) break;
     for (const street of next) {
-      if (spent >= queryBudget) break;
+      if (spent >= queryBudget || halted()) break;
       streetsQueried.add(street);
       await run(planStreetQueries(discovered, [street])[0]);
     }
@@ -359,7 +434,12 @@ export async function sweep(
     published,
     dropped,
     coverage: computeCoverage(byKey.size, published, opts.openHouseOnly ?? false, target),
-    stopReason: decideStop(queryYield, spent, queryBudget, byKey.size, published, opts.openHouseOnly ?? false, target),
+    // A sweep the clock cut short has NOT exhausted its axes and has NOT spent its
+    // budget — calling it either would tell the caller the market was fully swept when
+    // it was merely interrupted, and "try again" is the correct advice here.
+    stopReason:
+      haltReason ??
+      decideStop(queryYield, spent, queryBudget, byKey.size, published, opts.openHouseOnly ?? false, target),
   };
 }
 

@@ -80,6 +80,11 @@ export class WebSearchProvider implements ListingProvider<NormalizedListing> {
     const report = await sweep(this.backend, target, {
       queryBudget: this.capabilities.rateLimit!.requestsPerRun,
       minIntervalMs: this.capabilities.rateLimit!.minIntervalMs,
+      // Bound the sweep in TIME, not just in queries. A request-driven search is being
+      // awaited by a browser; coming back at 60s with a partial harvest is worth far
+      // more than being killed at two minutes with nothing. `sweep` reports
+      // stopReason: 'deadline' so a short harvest is never mistaken for a complete one.
+      deadlineMs: Number(process.env.SEARCH_TIME_BUDGET_MS ?? 60_000),
       openHouseOnly: opts.filters?.openHouseOnly,
       signal: opts.signal,
     });
