@@ -1,0 +1,234 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --border: #e4e4e1;
+  --text: #1a1a18;
+  --muted: #6b6b66;
+  --accent: #1f3864;
+  --good: #0f7a3d;
+  --bad: #a51d2d;
+}
+
+:root {
+  /* Badge colours are separate tokens because a badge sits on a coloured fill and a
+     status pill sits on --surface: the light-theme values fail contrast in dark mode. */
+  --on-accent: #ffffff;
+  --warn: #b45309;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16161a;
+    --surface: #1f1f24;
+    --border: #33333a;
+    --text: #ececef;
+    --muted: #9b9ba3;
+    --accent: #8ab4f8;
+    --good: #4ade80;
+    --bad: #f87171;
+    /* #fff on #8ab4f8 is 2.11:1. Dark text on that same blue is ~9:1. */
+    --on-accent: #16161a;
+    /* #b45309 on #1f1f24 is 3.27:1; amber-400 clears 4.5:1. */
+    --warn: #fbbf24;
+  }
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.muted { color: var(--muted); }
+.good { color: var(--good); }
+.bad { color: var(--bad); }
+
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+tbody tr:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+
+/* Wide tables scroll inside their own container; the page body never scrolls sideways. */
+.table-scroll { overflow-x: auto; }
+
+input, select, textarea, button {
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 9px;
+}
+button { cursor: pointer; }
+button:hover { border-color: var(--accent); }
+a { color: var(--accent); }
+
+
+/*
+ * Listing detail layout.
+ *
+ * The two-column grid was `minmax(0, 2fr) minmax(260px, 1fr)` with no breakpoint. At
+ * 375px that computes to roughly 55px + 260px: the main column collapses to a sliver,
+ * its content overflows, and the sticky sidebar paints on top of the price and the
+ * price-history table. Single column below 900px, and the sidebar stops being sticky
+ * because there is nothing to stick beside.
+ */
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.detail-aside {
+  display: grid;
+  gap: 16px;
+}
+
+@media (min-width: 900px) {
+  .detail-grid {
+    grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+  }
+  .detail-aside {
+    position: sticky;
+    top: 16px;
+  }
+}
+
+/* Long addresses and descriptions must wrap rather than force the page sideways. */
+.detail-grid, .detail-grid * { min-width: 0; }
+.detail-grid p, .detail-grid dd { overflow-wrap: anywhere; }
+
+
+/*
+ * Search dashboard.
+ *
+ * `.dashboard-hero` centers and widens the search box before any results exist — the
+ * empty state is the front door, so it gets room to breathe. Once a search has run the
+ * caller drops this class and the same form collapses to a slim bar (see `compact` on
+ * SearchForm).
+ */
+.dashboard-hero {
+  max-width: 720px;
+  margin: 6vh auto 0;
+  padding: 0 4px;
+}
+
+.search-mode-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.search-tab {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 5px 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.search-tab-active {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+
+.search-place-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.search-place-input {
+  flex: 1 1 260px;
+  font-size: 16px;
+  padding: 12px 14px;
+}
+.search-radius-field {
+  display: grid;
+  gap: 4px;
+}
+.search-radius-field select { padding: 12px 10px; }
+
+.search-filters {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.search-type-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.chip {
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.chip-active {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.search-submit {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+  font-weight: 600;
+  padding: 9px 20px;
+}
+.search-submit:hover { opacity: 0.92; border-color: var(--accent); }
+.search-submit:disabled { opacity: 0.6; cursor: default; }
+
+.listing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.listing-card {
+  padding: 14px;
+  text-decoration: none;
+  color: var(--text);
+  display: block;
+}
+.listing-card:hover { border-color: var(--accent); }
+
+.saved-search-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+/* Anchors that should look like buttons, without nesting a <button> inside an <a>. */
+.btn-link {
+  display: inline-block;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 9px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.btn-link:hover { border-color: var(--accent); }

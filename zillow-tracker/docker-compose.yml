@@ -1,0 +1,31 @@
+# Two processes sharing one SQLite file on a bind mount.
+#
+# The worker is separate from the web service on purpose: Next's dev reload would
+# otherwise re-register the cron on every file save, and in production a schedule tied to
+# a request lifecycle is not a schedule.
+services:
+  web:
+    build: .
+    command: sh -c "npx prisma db push --skip-generate && npm run start"
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: file:/app/data/app.db
+      POLL_TOKEN: ${POLL_TOKEN:-dev-local-token}
+      TZ: ${TZ:-America/Denver}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: npm run worker
+    environment:
+      DATABASE_URL: file:/app/data/app.db
+      POLL_CRON: ${POLL_CRON:-*/15 * * * *}
+      TZ: ${TZ:-America/Denver}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - web
+    restart: unless-stopped

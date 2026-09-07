@@ -1,0 +1,240 @@
+// Zillow Tracker — single-user schema.
+//
+// SQLite by choice, not by compromise: one user means no connection pooling, no server
+// to run, atomic backup via `cp`, and `prisma studio` as a free admin UI. All access
+// goes through lib/db repositories, so switching to Postgres is a provider swap.
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+/// A search the user typed or drew, and chose to keep.
+///
+/// Nothing is seeded. There are no built-in areas and no ZIP-code concept: a person
+/// describes somewhere to look ("Boulder, CO within 5 miles", or a shape drawn on the
+/// map) and may then save that description. An empty table is the correct initial state
+/// and the dashboard is designed for it.
+model SavedSearch {
+  id                String    @id @default(cuid())
+  name              String
+  /// JSON SearchQuery — the whole query, so the search that produced these results can
+  /// always be replayed exactly as the user expressed it.
+  query             String
+  /// Cached geocode of the typed place, so a refresh does not re-geocode needlessly.
+  resolved          String?
+  active            Boolean   @default(true)
+  /// null = manual refresh only.
+  pollCron          String?
+  notifyOnNew       Boolean   @default(true)
+  notifyOnPriceDrop Boolean   @default(true)
+  notifyOnOpenHouse Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  lastRunAt         DateTime?
+
+  listings ListingSearch[]
+  runs     PollRun[]
+}
+
+model Listing {
+  id              String  @id @default(cuid())
+  providerId      String
+  sourceListingId String
+  /// "${providerId}:${sourceListingId}" — identity WITHIN a provider
+  sourceKey       String  @unique
+  /// sha1(normalized address + zip) — identity ACROSS providers, so favorites survive a swap
+  addressKey      String
+  mlsId           String?
+  mlsName         String?
+
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  state        String
+  postalCode   String
+  county       String?
+  lat          Float?
+  lng          Float?
+
+  status            String
+  propertyType      String
+  listPrice         Int?
+  originalListPrice Int?
+  beds              Float?
+  bathsFull         Int?
+  bathsHalf         Int?
+  bathsTotal        Float?
+  livingAreaSqft    Int?
+  lotSizeSqft       Int?
+  yearBuilt         Int?
+  stories           Int?
+  garageSpaces      Int?
+  hoaFeeMonthly     Int?
+  taxAnnual         Int?
+
+  listingUrl        String?
+  listingAgentName  String?
+  listingOfficeName String?
+  description       String?
+  /// JSON NormalizedPhoto[] — URLs only, never image bytes (independent copyright)
+  photos            String  @default("[]")
+
+  listedAt             DateTime?
+  providerDaysOnMarket Int?
+  statusChangedAt      DateTime?
+
+  firstSeenAt   DateTime  @default(now())
+  lastSeenAt    DateTime  @default(now())
+  lastChangedAt DateTime  @default(now())
+  /// Set only when the listing is absent from EVERY area tracking it. Per-area absence
+  /// lives on ListingArea.
+  removedAt     DateTime?
+  contentHash   String
+  raw           String
+
+  searches   ListingSearch[]
+  snapshots  ListingSnapshot[]
+  events     ListingEvent[]
+  openHouses OpenHouse[]
+  saved      SavedListing?
+
+  @@index([addressKey])
+  @@index([status, listPrice])
+  @@index([lastSeenAt])
+  @@index([postalCode, status])
+}
+
+/// Absence is tracked HERE, not on Listing.
+///
+/// Areas poll on independent schedules and can legitimately disagree about whether they
+/// can see a listing. With one counter on Listing they fought over it: an area that
+/// still saw the home kept resetting the counter so another area could never delist it,
+/// and an area polling twice inside another's interval could mark a listing removed
+/// seconds after the first reported it active — hiding it from every view at once.
+model ListingSearch {
+  listingId      String
+  searchId       String
+  matchedAt      DateTime  @default(now())
+  missedRunCount Int       @default(0)
+  absentSince    DateTime?
+
+  listing Listing     @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  search  SavedSearch @relation(fields: [searchId], references: [id], onDelete: Cascade)
+
+  @@id([listingId, searchId])
+  @@index([searchId, absentSince])
+}
+
+/// Append-only, written ONLY when contentHash changes. This is what keeps the database
+/// small enough that 15-minute polling is sustainable indefinitely.
+model ListingSnapshot {
+  id          String   @id @default(cuid())
+  listingId   String
+  capturedAt  DateTime @default(now())
+  contentHash String
+  listPrice   Int?
+  status      String
+  payload     String
+  pollRunId   String?
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([listingId, capturedAt])
+}
+
+/// The typed diff feed. Drives the "new since last visit" badge, the price-drop view,
+/// and the Excel history sheet.
+model ListingEvent {
+  id         String    @id @default(cuid())
+  listingId  String
+  type       String
+  occurredAt DateTime  @default(now())
+  oldValue   String?
+  newValue   String?
+  /// Negative = price DROP
+  deltaAbs   Int?
+  deltaPct   Float?
+  message    String
+  notifiedAt DateTime?
+  seenAt     DateTime?
+  pollRunId  String?
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([occurredAt])
+  @@index([type, occurredAt])
+  @@index([seenAt])
+}
+
+model OpenHouse {
+  id                String    @id @default(cuid())
+  listingId         String
+  sourceOpenHouseId String?
+  startsAt          DateTime
+  endsAt            DateTime
+  timezone          String    @default("America/Denver")
+  appointmentOnly   Boolean   @default(false)
+  virtual           Boolean   @default(false)
+  note              String?
+  firstSeenAt       DateTime  @default(now())
+  lastSeenAt        DateTime  @default(now())
+  cancelledAt       DateTime?
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@unique([listingId, startsAt, endsAt])
+  @@index([startsAt])
+}
+
+/// YOUR data — kept in its own table and re-linkable by addressKey so that changing
+/// data provider never destroys your notes and ratings.
+model SavedListing {
+  id         String   @id @default(cuid())
+  listingId  String   @unique
+  addressKey String
+  favorite   Boolean  @default(true)
+  userStatus String   @default("NEW") // NEW|WATCHING|TOURED|CONTACTED|REJECTED|OFFER
+  rating     Int?
+  notes      String?
+  tags       String   @default("[]")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([addressKey])
+}
+
+/// One row per poll. A "last 20 runs" page costs half an hour to build and saves hours
+/// of wondering whether the thing is even running.
+model PollRun {
+  id            String    @id @default(cuid())
+  searchId      String?
+  providerId    String
+  startedAt     DateTime  @default(now())
+  finishedAt    DateTime?
+  status        String    @default("RUNNING") // RUNNING|SUCCESS|PARTIAL|FAILED
+  listingsSeen  Int       @default(0)
+  listingsNew   Int       @default(0)
+  eventsCreated Int       @default(0)
+  requestsUsed  Int       @default(0)
+  canaryOk      Boolean   @default(true)
+  canaryReason  String?
+  errorMessage  String?
+
+  search SavedSearch? @relation(fields: [searchId], references: [id], onDelete: SetNull)
+
+  @@index([startedAt])
+}
+
+/// key/value scratch: lastVisitedAt, mock run counter, etc.
+model AppState {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}

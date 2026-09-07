@@ -1,0 +1,20 @@
+node_modules
+.next
+.env.local
+exports/
+.DS_Store
+tsconfig.tsbuildinfo
+.playwright-artifacts/
+
+# The SQLite database and its sidecars. `data/` is disposable runtime state and is
+# wiped on rebuild; the real captured listing data lives in top-level `snapshots/`,
+# which is checked in.
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+/data/*
+
+# Prisma resolves relative sqlite paths against the schema file, so a misconfigured
+# DATABASE_URL lands the database here instead of /data.
+prisma/data/

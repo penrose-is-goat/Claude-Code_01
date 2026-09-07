@@ -1,0 +1,176 @@
+import { describe, expect, it } from 'vitest';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { filterToPlace } from '../../src/lib/providers/snapshot';
+import { filterToLocation } from '../../src/lib/search/service';
+import type { NormalizedListing } from '../../src/lib/providers/normalized';
+
+/**
+ * The app must have NO built-in area.
+ *
+ * This is a product requirement, not a preference: the user asked for something they
+ * could point anywhere, and deliberately would not name their own city so that it could
+ * not be baked in. These tests are what makes that checkable instead of promised.
+ *
+ * They exist because the promise was already broken once. Snapshots are a pile of
+ * captures from whatever has been harvested so far, and the snapshot provider served
+ * all of them for every search — so a search for Austin returned 49 Boulder homes. The
+ * geometry filter downstream could not catch it, because captured listings carry no
+ * coordinates and that filter keeps what it cannot place.
+ */
+
+const listing = (city: string, state: string): NormalizedListing => ({
+  providerId: 'snapshot',
+  sourceListingId: `${city}-1`,
+  addressLine1: '1 Main St',
+  city, state, postalCode: '00000',
+  status: 'ACTIVE', propertyType: 'SINGLE_FAMILY',
+  listingUrl: 'https://www.zillow.com/homedetails/1_zpid/',
+  photos: [], openHouses: [], raw: {}, fetchedAt: new Date('2026-08-21T00:00:00Z'),
+});
+
+const ROWS = [listing('Boulder', 'CO'), listing('Austin', 'TX'), listing('Portland', 'OR')];
+
+describe('captured snapshots are scoped to the place being searched', () => {
+  it('returns only the searched city', () => {
+    const got = filterToPlace(ROWS, {
+      area: { kind: 'cityRadius', city: 'Austin', state: 'TX', radiusMiles: 10 },
+    });
+    expect(got.map((l) => l.city)).toEqual(['Austin']);
+  });
+
+  it('does not match a same-named city in another state', () => {
+    expect(filterToPlace(ROWS, {
+      area: { kind: 'cityRadius', city: 'Boulder', state: 'TX', radiusMiles: 10 },
+    })).toEqual([]);
+  });
+
+  it('fails closed: no place to match means no listings, not every listing', () => {
+    // The regression, stated directly. Returning ROWS here is what shipped before.
+    expect(filterToPlace(ROWS, {
+      area: { kind: 'bbox', minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+    })).toEqual([]);
+  });
+
+  it('uses the label the user gave a drawn shape', () => {
+    const got = filterToPlace(ROWS, {
+      area: { kind: 'bbox', minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+      placeHint: 'Portland, OR',
+    });
+    expect(got.map((l) => l.city)).toEqual(['Portland']);
+  });
+
+  it('is case- and spacing-insensitive about how the user typed it', () => {
+    const rows = [listing('San Francisco', 'CA')];
+    for (const typed of ['san francisco', 'San  Francisco', ' SAN FRANCISCO ']) {
+      expect(filterToPlace(rows, {
+        area: { kind: 'cityRadius', city: typed, state: 'ca', radiusMiles: 5 },
+      }), typed).toHaveLength(1);
+    }
+  });
+});
+
+describe('the scheduled poll path carries the place name, not just the geometry', () => {
+  // Scoping snapshots to a place immediately created a second way to return nothing:
+  // the poll path built its SearchSpec from geometry alone, so a saved DRAWN search
+  // refreshed on a schedule matched no city, failed closed, and wrote an empty market
+  // over a good one. The interactive search path passed the hint; the poll path did not.
+  it('SearchSpec exposes placeHint so a drawn search still matches on a refresh', async () => {
+    const { placeHintFor } = await import('../../src/lib/search/service');
+
+    // A drawn ring the user labelled — the only name such a search ever has.
+    expect(placeHintFor({ kind: 'drawn', ring: [[0, 0], [1, 1], [0, 1]], label: 'Boulder, CO' }))
+      .toBe('Boulder, CO');
+
+    // And that hint is what makes the snapshot store return anything for it.
+    expect(filterToPlace(ROWS, {
+      area: { kind: 'bbox', minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+      placeHint: placeHintFor({ kind: 'drawn', ring: [[0, 0], [1, 1], [0, 1]], label: 'Boulder, CO' }),
+    }).map((l) => l.city)).toEqual(['Boulder']);
+  });
+
+  it('an unlabelled drawn search has no hint, and that is reported as no data', async () => {
+    const { placeHintFor } = await import('../../src/lib/search/service');
+    const hint = placeHintFor({ kind: 'drawn', ring: [[0, 0], [1, 1], [0, 1]] });
+    expect(hint).toBeUndefined();
+    expect(filterToPlace(ROWS, {
+      area: { kind: 'bbox', minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 }, placeHint: hint,
+    })).toEqual([]);
+  });
+});
+
+describe('filterToLocation does not keep another city as merely unplaceable', () => {
+  const resolved = { displayName: 'Austin, Texas', lat: 30.27, lng: -97.74, city: 'Austin', state: 'TX' };
+  const place = { kind: 'place' as const, query: 'Austin, TX', radiusMiles: 25 };
+
+  it('drops a coordinate-less listing that names a different city', () => {
+    const got = filterToLocation(
+      [{ lat: undefined, lng: undefined, city: 'Boulder' }, { lat: undefined, lng: undefined, city: 'Austin' }],
+      place, resolved,
+    );
+    expect(got.map((l) => l.city)).toEqual(['Austin']);
+  });
+
+  it('still keeps a coordinate-less listing that names no city at all', () => {
+    expect(filterToLocation([{ lat: undefined, lng: undefined }], place, resolved)).toHaveLength(1);
+  });
+});
+
+describe('no city is hardcoded anywhere that runs', () => {
+  /*
+   * `src` was the only directory this scanned, and that is how a real violation shipped:
+   * scripts/verify-zillow.ts carried `?? 'Silver Spring, MD'` as a CLI default — the
+   * user's own town, learned from a bug report, written into the repository by the same
+   * assistant that had promised no area would ever be built in. A default is a built-in
+   * area no matter which file it lives in, so every directory that executes is scanned.
+   */
+  const ROOTS = ['src', 'scripts'].map((d) => join(process.cwd(), d));
+
+  function tsFiles(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const full = join(dir, e.name);
+      if (e.isDirectory()) return tsFiles(full);
+      // .mjs too — the start script is one, and it hardcoded a place as well.
+      return /\.(tsx?|mjs)$/.test(e.name) ? [full] : [];
+    });
+  }
+
+  /** Comments legitimately cite real addresses as parser examples; code must not. */
+  function codeOnly(source: string): string {
+    return source
+      .split('\n')
+      .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+      .join('\n');
+  }
+
+  it('never names a specific city or ZIP in a URL, constant or default', () => {
+    const offenders: string[] = [];
+
+    for (const file of ROOTS.flatMap(tsFiles)) {
+      const code = codeOnly(readFileSync(file, 'utf8'));
+
+      // A city slug inside a zillow.com URL is the exact shape of the bug this catches:
+      // healthCheck used to probe https://www.zillow.com/boulder-co/open-house/.
+      const slugInUrl = code.match(/zillow\.com\/[a-z]+(?:-[a-z]+)*-[a-z]{2}\//g);
+      if (slugInUrl) offenders.push(`${file}: ${slugInUrl.join(', ')}`);
+
+      // A bare five-digit ZIP as a literal value.
+      const zipLiteral = code.match(/['"`]\d{5}['"`]/g);
+      if (zipLiteral) offenders.push(`${file}: ZIP literal ${zipLiteral.join(', ')}`);
+
+      /*
+       * A "City, ST" string literal — the shape a CLI default takes, and the one that
+       * actually slipped through: `at('--place') ?? 'Silver Spring, MD'`.
+       *
+       * A usage message has to show the expected FORM, so a generic placeholder is
+       * allowed and a real place is not. The distinction is whether the string names
+       * somewhere: "City, ST" and "Your City, ST" name nowhere; "Boulder, CO" does.
+       */
+      const placeLiteral = (code.match(/['"`][A-Z][A-Za-z.'-]+(?: [A-Z][A-Za-z.'-]+)*,\s?[A-Z]{2}['"`]/g) ?? [])
+        .filter((lit) => !/\bcity\b/i.test(lit));
+      if (placeLiteral.length) offenders.push(`${file}: place literal ${placeLiteral.join(', ')}`);
+    }
+
+    expect(offenders).toEqual([]);
+  });
+});

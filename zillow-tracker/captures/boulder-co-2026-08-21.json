@@ -1,0 +1,494 @@
+{
+  "place": "Boulder, CO",
+  "capturedAt": "2026-08-21T02:00:00Z",
+  "method": "Claude Code WebSearch tool against the public web index",
+  "_readme": [
+    "Every url and title below was returned verbatim by a real web search on 2026-08-21.",
+    "Nothing here was authored: no address, no zpid and no MLS number was written by hand.",
+    "The search tool used answers in prose rather than returning the raw meta description,",
+    "so results carry no `description` field. The facts that prose did state are recorded",
+    "separately under `observations`, each with a note naming the query it came from, and",
+    "are merged only into fields the parser left empty. A home the prose did not price has",
+    "a null price rather than an estimated one."
+  ],
+  "queries": [
+    {
+      "query": "site:zillow.com/homedetails \"Boulder, CO 80304\" \"3 beds\"",
+      "results": [
+        {
+          "url": "https://www.zillow.com/homedetails/2076-Oak-Ave-Boulder-CO-80304/13240579_zpid/",
+          "title": "2076 Oak Ave, Boulder, CO 80304 | MLS #1059810 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/2635-Mapleton-Ave-Boulder-CO-80304/13263453_zpid/",
+          "title": "2635 Mapleton Ave, Boulder, CO 80304 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/3171-4th-St-Boulder-CO-80304/13177636_zpid/",
+          "title": "3171 4th St, Boulder, CO 80304 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/177-Boulder-View-Ln-Boulder-CO-80304/13197243_zpid/",
+          "title": "177 Boulder View Ln, Boulder, CO 80304 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/407-Alpine-Way-Boulder-CO-80304/13197214_zpid/",
+          "title": "407 Alpine Way, Boulder, CO 80304 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/1205-Sumac-Ave-Boulder-CO-80304/123949662_zpid/",
+          "title": "1205 Sumac Ave, Boulder, CO 80304 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/225-Balsam-Ln-Boulder-CO-80304/13197217_zpid/",
+          "title": "225 Balsam Ln, Boulder, CO 80304 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/2050-Neher-Ln-Boulder-CO-80304/13179314_zpid/",
+          "title": "2050 Neher Ln, Boulder, CO 80304 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/3565-19th-St-Boulder-CO-80304/13183297_zpid/",
+          "title": "3565 19th St, Boulder, CO 80304 | MLS #1060925"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/2055-Kalmia-Ave-Boulder-CO-80304/13180638_zpid/",
+          "title": "2055 Kalmia Avenue, Boulder, CO 80304 | MLS #8169666"
+        }
+      ]
+    },
+    {
+      "query": "site:zillow.com/homedetails \"Boulder, CO 80301\" \"single family home\"",
+      "results": [
+        {
+          "url": "https://www.zillow.com/homedetails/4251-Peach-Way-Boulder-CO-80301/13214933_zpid/",
+          "title": "4251 Peach Way, Boulder, CO 80301 | MLS #1042448 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/7205-Rustic-Trl-Boulder-CO-80301/13199724_zpid/",
+          "title": "7205 Rustic Trl, Boulder, CO 80301 | MLS #990983 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/6955-Cordwood-Ct-Boulder-CO-80301/13195545_zpid/",
+          "title": "6955 Cordwood Ct, Boulder, CO 80301 | MLS #1063771 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/4507-S-Hampton-Cir-Boulder-CO-80301/13249452_zpid/",
+          "title": "4507 S Hampton Cir, Boulder, CO 80301 | MLS #1066082 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/2500-30th-St-120-Boulder-CO-80301/63507062_zpid/",
+          "title": "2500 30th St #120, Boulder, CO 80301 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/2884-Nebrina-Pl-Boulder-CO-80301/13194669_zpid/",
+          "title": "2884 Nebrina Pl, Boulder, CO 80301 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/4557-Apple-Way-Boulder-CO-80301/13214905_zpid/",
+          "title": "4557 Apple Way, Boulder, CO 80301 | MLS #1060273 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/4083-Eleuthera-Ct-Boulder-CO-80301/13250946_zpid/",
+          "title": "4083 Eleuthera Ct, Boulder, CO 80301 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/2300-75th-St-Boulder-CO-80301/13253284_zpid/",
+          "title": "2300 75th St, Boulder, CO 80301 | MLS #1060172"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/5531-High-Country-Ct-Boulder-CO-80301/13243043_zpid/",
+          "title": "5531 High Country Ct, Boulder, CO 80301 | MLS #1052357"
+        }
+      ]
+    },
+    {
+      "query": "site:zillow.com/homedetails \"Boulder, CO 80302\" \"single family home\"",
+      "results": [
+        {
+          "url": "https://www.zillow.com/homedetails/1860-Bluebell-Ave-Boulder-CO-80302/13177278_zpid/",
+          "title": "1860 Bluebell Ave, Boulder, CO 80302 | MLS #947447 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/200-Boulder-St-Boulder-CO-80302/68052673_zpid/",
+          "title": "200 Boulder St, Boulder, CO 80302 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/2025-18th-St-Boulder-CO-80302/13176350_zpid/",
+          "title": "2025 18th St, Boulder, CO 80302 | MLS #1062086 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/541-Arapahoe-Ave-Boulder-CO-80302/13183065_zpid/",
+          "title": "541 Arapahoe Ave, Boulder, CO 80302 | MLS #1059247 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/842-Lakeshore-Dr-Boulder-CO-80302/13192976_zpid/",
+          "title": "842 Lakeshore Dr, Boulder, CO 80302 | MLS #1064323 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/5411-Sunshine-Canyon-Dr-Boulder-CO-80302/13230295_zpid/",
+          "title": "5411 Sunshine Canyon Dr, Boulder, CO 80302 | MLS #1059783 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/2250-Bluebell-Ave-Boulder-CO-80302/13176392_zpid/",
+          "title": "2250 Bluebell Ave, Boulder, CO 80302 | MLS #1024943"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/2101-Bison-Dr-Boulder-CO-80302/13225841_zpid/",
+          "title": "2101 Bison Drive, Boulder, CO 80302 | MLS #4685661 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/2205-Grove-Cir-Boulder-CO-80302/13181323_zpid/",
+          "title": "2205 Grove Cir, Boulder, CO 80302 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/757-8th-St-Boulder-CO-80302/13179929_zpid/",
+          "title": "757 8th St, Boulder, CO 80302 | MLS #1016587 | Zillow"
+        }
+      ]
+    },
+    {
+      "query": "site:zillow.com/homedetails \"Boulder, CO 80305\" \"for sale\"",
+      "results": [
+        {
+          "url": "https://www.zillow.com/homedetails/4086-Greenbriar-Blvd-Boulder-CO-80305/13216106_zpid/",
+          "title": "4086 Greenbriar Blvd, Boulder, CO 80305"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/4370-Butler-Cir-Boulder-CO-80305/13184933_zpid/",
+          "title": "4370 Butler Cir, Boulder, CO 80305 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/370-S-40th-St-Boulder-CO-80305/13186479_zpid/",
+          "title": "370 S 40th St, Boulder, CO 80305 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/3935-Darley-Ave-Boulder-CO-80305/13188574_zpid/",
+          "title": "3935 Darley Ave, Boulder, CO 80305 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/360-S-40th-St-Boulder-CO-80305/13184112_zpid/",
+          "title": "360 S 40th St, Boulder, CO 80305 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/75-S-35th-St-Boulder-CO-80305/13184683_zpid/",
+          "title": "75 S 35th St, Boulder, CO 80305 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/310-28th-St-A-Boulder-CO-80305/13215392_zpid/",
+          "title": "310 28th St #A, Boulder, CO 80305 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/3965-Darley-Ave-Boulder-CO-80305/13186063_zpid/",
+          "title": "3965 Darley Ave, Boulder, CO 80305 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/3030-Dover-Dr-Boulder-CO-80305/13176283_zpid/",
+          "title": "3030 Dover Dr, Boulder, CO 80305 | MLS #957718 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/1225-Bear-Mountain-Dr-APT-D-Boulder-CO-80305/13214811_zpid/",
+          "title": "1225 Bear Mountain Dr APT D, Boulder, CO 80305 | Zillow"
+        }
+      ]
+    },
+    {
+      "query": "\"1655 Walnut St\" Boulder CO zillow",
+      "results": [
+        {
+          "url": "https://www.zillow.com/homedetails/1655-Walnut-St-STE-309-Boulder-CO-80302/88906621_zpid/",
+          "title": "1655 Walnut St #309, Boulder, CO 80302 | MLS #1025654 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/1655-Walnut-St-UNIT-106-Boulder-CO-80302/88908043_zpid/",
+          "title": "1655 Walnut St UNIT 106, Boulder, CO 80302 | MLS #950962 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/1655-Walnut-St-UNIT-103-Boulder-CO-80302/88907298_zpid/",
+          "title": "1655 Walnut St UNIT 103, Boulder, CO 80302 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/1655-Walnut-St-UNIT-204-Boulder-CO-80302/88907601_zpid/",
+          "title": "1655 Walnut St UNIT 204, Boulder, CO 80302 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/1655-Walnut-St-UNIT-102-Boulder-CO-80302/88906421_zpid/",
+          "title": "1655 Walnut St UNIT 102, Boulder, CO 80302 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/1655-Walnut-St-UNIT-109-Boulder-CO-80302/88905778_zpid/",
+          "title": "1655 Walnut St UNIT 109, Boulder, CO 80302 | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/1655-Walnut-St-STE-301-Boulder-CO-80302/88904926_zpid/",
+          "title": "1655 Walnut St #301, Boulder, CO 80302"
+        },
+        {
+          "url": "https://www.zillow.com/homedetails/1655-Walnut-St-UNIT-101-Boulder-CO-80302/88907315_zpid/",
+          "title": "1655 Walnut St UNIT 101, Boulder, CO 80302 | Zillow"
+        }
+      ]
+    },
+    {
+      "query": "Zillow Boulder CO open house this weekend",
+      "results": [
+        {
+          "url": "https://www.zillow.com/boulder-co/open-house/",
+          "title": "Boulder CO Open Houses - 61 Upcoming | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/boulder-county-co/open-house/",
+          "title": "Boulder County CO Open Houses - 84 Upcoming | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/boulder-co-80306/open-house/",
+          "title": "80306 Open Houses - 4 Upcoming | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/boulder-co-80304/open-house/",
+          "title": "80304 Open Houses - 13 Upcoming | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/central-boulder-boulder-co/open-house/",
+          "title": "Central Boulder Boulder Open Houses - 26 Upcoming | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/east-boulder-boulder-co/open-house/",
+          "title": "East Boulder Boulder Open Houses - 4 Upcoming | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/old-north-boulder-boulder-co/open-house/",
+          "title": "Old North Boulder Boulder Open Houses - 1 Upcoming | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/southeast-boulder-boulder-co/open-house/",
+          "title": "Southeast Boulder Boulder Open Houses - 10 Upcoming | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/ara-boulder-co/open-house/",
+          "title": "Ara Boulder Open Houses - 22 Upcoming | Zillow"
+        }
+      ]
+    },
+    {
+      "query": "zillow homedetails Boulder CO for sale 3 beds \"Square Feet\" single family home",
+      "results": [
+        {
+          "url": "https://www.zillow.com/boulder-co/",
+          "title": "Boulder CO Real Estate - Boulder CO Homes For Sale | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/boulder-co/houses/",
+          "title": "Boulder CO Single Family Homes For Sale - 406 Homes | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/boulder-co/3-bedrooms/",
+          "title": "3 Bedroom Homes for Sale in Boulder CO | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/boulder-county-co/houses/",
+          "title": "Boulder County CO Single Family Homes For Sale - 1042 Homes | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/boulder-county-co/",
+          "title": "Boulder County CO Real Estate - Boulder County CO Homes For Sale | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/boulder-co-80301/houses/",
+          "title": "80301 Single Family Homes For Sale - 67 Homes | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/boulder-co-80301/",
+          "title": "80301 Real Estate - 80301 Homes For Sale | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/boulder-co-80303/",
+          "title": "80303 Real Estate - 80303 Homes For Sale | Zillow"
+        },
+        {
+          "url": "https://www.zillow.com/boulder-co-80305/",
+          "title": "80305 Real Estate - 80305 Homes For Sale | Zillow"
+        }
+      ]
+    }
+  ],
+  "observations": [
+    {
+      "url": "https://www.zillow.com/homedetails/2076-Oak-Ave-Boulder-CO-80304/13240579_zpid/",
+      "note": "prose answer to query site:zillow.com/homedetails \"Boulder, CO 80304\" \"3 beds\" (2026-08-21)",
+      "listPrice": 1795000,
+      "beds": 3,
+      "bathsTotal": 4,
+      "livingAreaSqft": 3113,
+      "propertyType": "SINGLE_FAMILY"
+    },
+    {
+      "url": "https://www.zillow.com/homedetails/3565-19th-St-Boulder-CO-80304/13183297_zpid/",
+      "note": "prose answer to query site:zillow.com/homedetails \"Boulder, CO 80304\" \"3 beds\" (2026-08-21)",
+      "beds": 3,
+      "bathsTotal": 1.5,
+      "livingAreaSqft": 1400,
+      "yearBuilt": 1972,
+      "propertyType": "SINGLE_FAMILY"
+    },
+    {
+      "url": "https://www.zillow.com/homedetails/2055-Kalmia-Ave-Boulder-CO-80304/13180638_zpid/",
+      "note": "prose answer to query site:zillow.com/homedetails \"Boulder, CO 80304\" \"3 beds\" (2026-08-21)",
+      "beds": 3,
+      "bathsTotal": 3,
+      "livingAreaSqft": 2765,
+      "yearBuilt": 1983,
+      "propertyType": "SINGLE_FAMILY"
+    },
+    {
+      "url": "https://www.zillow.com/homedetails/4251-Peach-Way-Boulder-CO-80301/13214933_zpid/",
+      "note": "prose answer to query site:zillow.com/homedetails \"Boulder, CO 80301\" \"single family home\" (2026-08-21)",
+      "listPrice": 1150000,
+      "beds": 4,
+      "bathsTotal": 4,
+      "livingAreaSqft": 3445,
+      "propertyType": "SINGLE_FAMILY"
+    },
+    {
+      "url": "https://www.zillow.com/homedetails/7205-Rustic-Trl-Boulder-CO-80301/13199724_zpid/",
+      "note": "prose answer to query site:zillow.com/homedetails \"Boulder, CO 80301\" \"single family home\" (2026-08-21)",
+      "listPrice": 5495000,
+      "beds": 6,
+      "bathsTotal": 7,
+      "livingAreaSqft": 8028,
+      "yearBuilt": 2007,
+      "propertyType": "SINGLE_FAMILY"
+    },
+    {
+      "url": "https://www.zillow.com/homedetails/6955-Cordwood-Ct-Boulder-CO-80301/13195545_zpid/",
+      "note": "prose answer to query site:zillow.com/homedetails \"Boulder, CO 80301\" \"single family home\" (2026-08-21)",
+      "listPrice": 2495000,
+      "beds": 5,
+      "bathsTotal": 5,
+      "livingAreaSqft": 5767,
+      "propertyType": "SINGLE_FAMILY"
+    },
+    {
+      "url": "https://www.zillow.com/homedetails/4507-S-Hampton-Cir-Boulder-CO-80301/13249452_zpid/",
+      "note": "prose answer to query site:zillow.com/homedetails \"Boulder, CO 80301\" \"single family home\" (2026-08-21)",
+      "listPrice": 1597000,
+      "beds": 5,
+      "bathsTotal": 4,
+      "livingAreaSqft": 3870,
+      "propertyType": "SINGLE_FAMILY"
+    },
+    {
+      "url": "https://www.zillow.com/homedetails/4557-Apple-Way-Boulder-CO-80301/13214905_zpid/",
+      "note": "prose answer to query site:zillow.com/homedetails \"Boulder, CO 80301\" \"single family home\" (2026-08-21)",
+      "listPrice": 2695000,
+      "beds": 5,
+      "bathsTotal": 5,
+      "livingAreaSqft": 5052,
+      "propertyType": "SINGLE_FAMILY"
+    },
+    {
+      "url": "https://www.zillow.com/homedetails/2300-75th-St-Boulder-CO-80301/13253284_zpid/",
+      "note": "prose answer to query site:zillow.com/homedetails \"Boulder, CO 80301\" \"single family home\" (2026-08-21)",
+      "beds": 7,
+      "bathsTotal": 10,
+      "livingAreaSqft": 20113,
+      "yearBuilt": 1999,
+      "propertyType": "SINGLE_FAMILY"
+    },
+    {
+      "url": "https://www.zillow.com/homedetails/1860-Bluebell-Ave-Boulder-CO-80302/13177278_zpid/",
+      "note": "prose answer to query site:zillow.com/homedetails \"Boulder, CO 80302\" \"single family home\" (2026-08-21)",
+      "listPrice": 4995000,
+      "beds": 6,
+      "bathsTotal": 7,
+      "livingAreaSqft": 4924,
+      "yearBuilt": 2022,
+      "propertyType": "SINGLE_FAMILY"
+    },
+    {
+      "url": "https://www.zillow.com/homedetails/2025-18th-St-Boulder-CO-80302/13176350_zpid/",
+      "note": "prose answer to query site:zillow.com/homedetails \"Boulder, CO 80302\" \"single family home\" (2026-08-21)",
+      "listPrice": 1595000,
+      "beds": 3,
+      "bathsTotal": 3,
+      "livingAreaSqft": 1896,
+      "propertyType": "SINGLE_FAMILY"
+    },
+    {
+      "url": "https://www.zillow.com/homedetails/541-Arapahoe-Ave-Boulder-CO-80302/13183065_zpid/",
+      "note": "prose answer to query site:zillow.com/homedetails \"Boulder, CO 80302\" \"single family home\" (2026-08-21)",
+      "beds": 5,
+      "bathsTotal": 5,
+      "livingAreaSqft": 4069,
+      "propertyType": "SINGLE_FAMILY"
+    },
+    {
+      "url": "https://www.zillow.com/homedetails/842-Lakeshore-Dr-Boulder-CO-80302/13192976_zpid/",
+      "note": "prose answer to query site:zillow.com/homedetails \"Boulder, CO 80302\" \"single family home\" (2026-08-21)",
+      "listPrice": 1295000,
+      "beds": 2,
+      "bathsTotal": 2,
+      "livingAreaSqft": 1896,
+      "propertyType": "SINGLE_FAMILY"
+    },
+    {
+      "url": "https://www.zillow.com/homedetails/5411-Sunshine-Canyon-Dr-Boulder-CO-80302/13230295_zpid/",
+      "note": "prose answer to query site:zillow.com/homedetails \"Boulder, CO 80302\" \"single family home\" (2026-08-21)",
+      "beds": 4,
+      "bathsTotal": 3,
+      "livingAreaSqft": 4411,
+      "propertyType": "SINGLE_FAMILY"
+    },
+    {
+      "url": "https://www.zillow.com/homedetails/2250-Bluebell-Ave-Boulder-CO-80302/13176392_zpid/",
+      "note": "prose answer to query site:zillow.com/homedetails \"Boulder, CO 80302\" \"single family home\" (2026-08-21)",
+      "beds": 4,
+      "bathsTotal": 2.25,
+      "livingAreaSqft": 2301,
+      "propertyType": "SINGLE_FAMILY"
+    },
+    {
+      "url": "https://www.zillow.com/homedetails/2101-Bison-Dr-Boulder-CO-80302/13225841_zpid/",
+      "note": "prose answer to query site:zillow.com/homedetails \"Boulder, CO 80302\" \"single family home\" (2026-08-21)",
+      "beds": 5,
+      "bathsTotal": 4,
+      "livingAreaSqft": 4877,
+      "propertyType": "SINGLE_FAMILY"
+    },
+    {
+      "url": "https://www.zillow.com/homedetails/757-8th-St-Boulder-CO-80302/13179929_zpid/",
+      "note": "prose answer to query site:zillow.com/homedetails \"Boulder, CO 80302\" \"single family home\" (2026-08-21)",
+      "beds": 4,
+      "bathsTotal": 3,
+      "livingAreaSqft": 3305,
+      "propertyType": "SINGLE_FAMILY"
+    },
+    {
+      "url": "https://www.zillow.com/homedetails/3030-Dover-Dr-Boulder-CO-80305/13176283_zpid/",
+      "note": "prose answer to query site:zillow.com/homedetails \"Boulder, CO 80305\" \"for sale\" (2026-08-21)",
+      "listPrice": 1250000,
+      "beds": 5,
+      "bathsTotal": 2,
+      "livingAreaSqft": 2270,
+      "propertyType": "SINGLE_FAMILY"
+    },
+    {
+      "url": "https://www.zillow.com/homedetails/1655-Walnut-St-STE-309-Boulder-CO-80302/88906621_zpid/",
+      "note": "prose answer to query \"1655 Walnut St\" Boulder CO zillow (2026-08-21)",
+      "listPrice": 1690000,
+      "beds": 2,
+      "bathsTotal": 3,
+      "livingAreaSqft": 2181,
+      "propertyType": "CONDO"
+    },
+    {
+      "url": "https://www.zillow.com/homedetails/1655-Walnut-St-UNIT-106-Boulder-CO-80302/88908043_zpid/",
+      "note": "prose answer to query \"1655 Walnut St\" Boulder CO zillow (2026-08-21)",
+      "listPrice": 1470000,
+      "beds": 2,
+      "bathsTotal": 3,
+      "livingAreaSqft": 2094,
+      "propertyType": "CONDO"
+    }
+  ]
+}

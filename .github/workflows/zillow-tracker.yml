@@ -1,0 +1,132 @@
+name: zillow-tracker
+
+on:
+  push:
+    branches: [main]
+    paths: ['zillow-tracker/**', '.github/workflows/zillow-tracker.yml']
+  pull_request:
+    paths: ['zillow-tracker/**', '.github/workflows/zillow-tracker.yml']
+
+defaults:
+  run:
+    working-directory: zillow-tracker
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # SQLite file, created fresh by db push. No external service needed.
+      # Relative sqlite paths resolve against prisma/schema.prisma, not the working
+      # directory — hence the "../".
+      DATABASE_URL: file:../data/ci.db
+      TZ: America/Denver
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: zillow-tracker/package-lock.json
+
+      - run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Create database
+        run: |
+          mkdir -p data
+          npx prisma db push --skip-generate
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      # The browser transport is tested against a real Chromium driving a real HTTP
+      # server. Without this the suite silently SKIPS those tests, and "406 passed"
+      # would quietly stop covering the only path that gets a real Zillow page.
+      - name: Install Chromium for the browser-transport tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Unit and integration tests
+        run: npx vitest run
+
+      - name: Production build
+        run: npx next build
+
+      # Guards the ToS/safety posture against accidental regression: the Zillow provider
+      # must stay logged-out. Strips comments first — the file DOCUMENTS that it sends no
+      # cookies and performs no login, and a naive word grep flags that prose as a
+      # violation of the property it describes.
+      - name: Assert no credential handling in the Zillow provider
+        run: |
+          violations=0
+          for f in $(find src/lib/providers/zillow -name '*.ts'); do
+            code=$(sed -e 's://.*::' -e '/^\s*\*/d' -e '/^\s*\/\*/d' "$f")
+            if echo "$code" | grep -niE "(cookie|authorization|credentials)\s*:|document\.cookie|setCookie|password|signIn|logIn\b"; then
+              echo "::error file=$f::Zillow provider must remain logged-out — no credential or cookie handling in code"
+              violations=1
+            fi
+          done
+          [ "$violations" -eq 0 ] && echo "OK: no credential handling found in Zillow provider code"
+          exit "$violations"
+
+      # The websearch provider's central claim is that it reads Zillow's crawler-facing
+      # data from a search index and never requests anything from zillow.com. That is
+      # checkable: every outbound request it makes lives in backends.ts, and backends.ts
+      # must not mention zillow at all. If someone later "helpfully" adds a direct fetch,
+      # this fails rather than quietly changing what the provider does.
+      - name: Assert the websearch provider never contacts zillow.com
+        run: |
+          violations=0
+
+          stray=$(grep -rln "fetch(" src/lib/providers/websearch --include='*.ts' \
+                  | grep -v 'backends\.ts' || true)
+          if [ -n "$stray" ]; then
+            echo "::error::websearch makes network calls outside backends.ts: $stray"
+            violations=1
+          fi
+
+          # Comments first, again: backends.ts DOCUMENTS that it never talks to Zillow,
+          # and a naive grep flags that sentence as the violation it rules out.
+          #
+          # Delete comment LINES rather than substituting away "//..." — that
+          # substitution also eats the "//" in "https://www.zillow.com", which turned a
+          # planted direct fetch into "const leak = await fetch(\"https:" and let it pass.
+          strip="/^[[:space:]]*\/\//d;/^[[:space:]]*\*/d;/^[[:space:]]*\/\*/d"
+          backends=$(sed -e "$strip" src/lib/providers/websearch/backends.ts)
+          if echo "$backends" | grep -niE "zillow"; then
+            echo "::error file=src/lib/providers/websearch/backends.ts::websearch backends must not reference zillow.com — the provider reads the search index, it does not fetch Zillow"
+            violations=1
+          fi
+
+          code=$(sed -e "$strip" src/lib/providers/websearch/*.ts)
+          if echo "$code" | grep -niE "(cookie)\s*:|document\.cookie|setCookie|password|signIn|logIn\b"; then
+            echo "::error::websearch provider must remain credential-free"
+            violations=1
+          fi
+
+          [ "$violations" -eq 0 ] && echo "OK: websearch contacts only the configured search backend"
+          exit "$violations"
+
+  # The Ubuntu job above cannot catch a Windows-only break in the start path, and twice
+  # it did not: `npm run go` first ran a bash script that PowerShell has no way to
+  # execute, then spawned npm.cmd without a shell, which Node refuses with EINVAL since
+  # the CVE-2024-27980 fix. Both shipped green. Both were found by a person on Windows.
+  #
+  # This job runs the real start script on a real Windows runner, doing everything except
+  # launching the server.
+  start-script-windows:
+    runs-on: windows-latest
+    env:
+      DATABASE_URL: file:../data/ci.db
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run the documented start command
+        working-directory: zillow-tracker
+        run: npm run go -- --no-start
