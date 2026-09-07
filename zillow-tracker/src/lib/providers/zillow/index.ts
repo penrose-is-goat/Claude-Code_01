@@ -3,6 +3,7 @@ import { browserAvailable, fetchRendered } from './browser';
 import { UserBrowserSession, howToEnable, userBrowserAvailable } from './userBrowser';
 import { querySearchApi, type SearchQueryState } from './searchApi';
 import { boundsOf } from './bounds';
+import { harvestArea, type HarvestReport } from './harvest';
 import type {
   AreaQuery, FetchOptions, HealthCheckResult, ListingProvider, ProviderCapabilities, ProviderPage,
 } from '../types';
@@ -76,6 +77,13 @@ export class ZillowPublicProvider implements ListingProvider<NormalizedListing> 
   /** Set while a human-verification challenge is waiting to be solved. */
   private challengeNote: string | null = null;
   private session: UserBrowserSession | null = null;
+
+  /**
+   * The most recent map harvest, so callers can say how complete a search was — how many
+   * page reads it took, how many areas were left incomplete, and what Zillow itself
+   * reported as the total for the area.
+   */
+  lastHarvest: HarvestReport | null = null;
   /** The search page the session is currently sitting on. */
   private landedOn: string | null = null;
   /** Why the JSON path was skipped, if it was. */
@@ -276,40 +284,65 @@ export class ZillowPublicProvider implements ListingProvider<NormalizedListing> 
     }
 
     const page = await this.session.openPage(landingUrl, { signal: opts.signal });
-    const bounds = boundsOf(opts.area);
+    const openHouseOnly = Boolean(opts.filters?.openHouseOnly);
 
-    const state: SearchQueryState = {
-      isMapVisible: true,
-      isListVisible: true,
-      mapBounds: bounds,
-      pagination: pageNumber > 1 ? { currentPage: pageNumber } : undefined,
-      filterState: opts.filters?.openHouseOnly ? { isOpenHousesOnly: { value: true } } : undefined,
-    };
+    /*
+     * One harvest, not one page.
+     *
+     * Zillow will not page past a fixed number of pages for a single map box, so asking
+     * a metro in one rectangle returns the cap and stops — no error, no gap marker. A
+     * measured example: an area holding 1,737 for-sale homes yields exactly 800 through
+     * a flat 20-page scan, and all 1,737 when the box is quartered until each piece fits.
+     * `harvestArea` owns that traversal and its stopping conditions; this closure is only
+     * the transport.
+     */
+    const report = await harvestArea(
+      async (mapBounds, pageNo) => {
+        const state: SearchQueryState = {
+          isMapVisible: true,
+          isListVisible: true,
+          mapBounds,
+          pagination: pageNo > 1 ? { currentPage: pageNo } : undefined,
+          filterState: openHouseOnly ? { isOpenHousesOnly: { value: true } } : undefined,
+        };
+        const r = await querySearchApi(page, state);
+        return { results: r.results, total: r.total, totalPages: r.totalPages };
+      },
+      boundsOf(opts.area),
+      {
+        maxPagesPerBox: Number(process.env.ZILLOW_MAX_PAGES_PER_BOX ?? 20),
+        maxPageReads: Number(process.env.ZILLOW_MAX_PAGE_READS ?? 400),
+        // Same lesson as the websearch sweep: return a partial harvest rather than let
+        // the caller time out holding nothing.
+        deadlineMs: Number(process.env.ZILLOW_TIME_BUDGET_MS ?? 120_000),
+        signal: opts.signal,
+      },
+    );
 
-    const result = await querySearchApi(page, state);
     const ctx = this.ctx();
-
     const listings: NormalizedListing[] = [];
     let skipped = 0;
-    for (const row of result.results) {
+    for (const row of report.rows) {
       try {
         listings.push(normalizeZillowResult(row, ctx));
       } catch {
         skipped++;
       }
     }
-    if (skipped > 0) console.warn(`[zillow] skipped ${skipped} unparseable result(s) on page ${pageNumber}`);
+    if (skipped > 0) console.warn(`[zillow] skipped ${skipped} unparseable result(s)`);
 
-    // Zillow reports how many pages exist, so pagination follows its answer instead of
-    // guessing from how full a page looked.
-    const totalPages = result.totalPages ?? 1;
-    const hasMore = pageNumber < Math.min(totalPages, 20) && listings.length > 0;
+    this.lastHarvest = report;
+    console.log(
+      `[zillow] harvested ${listings.length} homes from ${report.pageReads} page reads ` +
+      `(${report.boxesCompleted} areas, ${report.boxesSubdivided} split` +
+      `${report.boxesTruncated > 0 ? `, ${report.boxesTruncated} left incomplete` : ''}) ` +
+      `- ${report.stopReason}` +
+      (report.sourceTotal ? `; Zillow reports ${report.sourceTotal} for the area` : ''),
+    );
 
-    return {
-      raw: listings,
-      cursor: hasMore ? String(pageNumber + 1) : undefined,
-      requestsUsed: 1,
-    };
+    // The traversal is exhaustive, so there is no next page to ask for. `lastHarvest`
+    // carries whether it finished, which is the honest answer to "is this everything?".
+    return { raw: listings, requestsUsed: report.pageReads };
   }
 
   /**
